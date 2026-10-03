@@ -1,0 +1,296 @@
+// HelixStac TryOn
+// Provider is sqlite by default so `npm run db:push` works with no extra services.
+// scripts/prepare-prisma.mjs switches this to postgresql when DATABASE_URL is a postgres URL.
+// JSON columns are stored as strings so the same schema runs on SQLite and PostgreSQL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                  String    @id @default(cuid())
+  slug                String    @unique
+  name                String
+  logoUrl             String?
+  primaryColor        String    @default("#C4622D")
+  accentColor         String    @default("#241C16")
+  languages           String    @default("[\"en\",\"hi\"]")
+  defaultLang         String    @default("en")
+  whatsapp            String    @default("")
+  address             String    @default("")
+  mapsUrl             String    @default("")
+  city                String    @default("")
+  gstin               String?
+  plan                String    @default("STARTER")
+  status              String    @default("TRIAL")
+  trialEndsAt         DateTime?
+  removeBranding      Boolean   @default(false)
+  allowedOrigins      String    @default("[]")
+  creditBalance       Int       @default(0)
+  dailyCap            Int       @default(100)
+  showMen             Boolean   @default(true)
+  showWomen           Boolean   @default(true)
+  showKids            Boolean   @default(true)
+  onboardingDone      Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  domains             Domain[]
+  services            Service[]
+  styles              TenantStyle[]
+  shades              TenantShade[]
+  members             Membership[]
+  leads               Lead[]
+  ledger              CreditLedger[]
+  tryOns              TryOn[]
+  events              UsageEvent[]
+  consents            ConsentLog[]
+  subscription        Subscription?
+  dataRequests        DataRequest[]
+  outlets             Outlet[]
+  invoices            Invoice[]
+}
+
+model Domain {
+  id        String  @id @default(cuid())
+  tenantId  String
+  host      String  @unique
+  verified  Boolean @default(false)
+  token     String  @default("")
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model Outlet {
+  id        String  @id @default(cuid())
+  tenantId  String
+  name      String
+  whatsapp  String  @default("")
+  address   String  @default("")
+  mapsUrl   String  @default("")
+  isPrimary Boolean @default(false)
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String
+  passwordHash String
+  isSuperAdmin Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  memberships  Membership[]
+}
+
+model Membership {
+  id       String @id @default(cuid())
+  userId   String
+  tenantId String
+  role     String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+}
+
+model Service {
+  id          String  @id @default(cuid())
+  tenantId    String
+  key         String
+  name        String
+  nameI18n    String  @default("{}")
+  priceInr    Int
+  durationMin Int?
+  active      Boolean @default(true)
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+
+model TenantStyle {
+  id         String  @id @default(cuid())
+  tenantId   String
+  styleId    String
+  enabled    Boolean @default(true)
+  customName String?
+  sort       Int     @default(0)
+  serviceIds String  @default("[]")
+  tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, styleId])
+  @@index([tenantId])
+}
+
+model TenantShade {
+  id         String  @id @default(cuid())
+  tenantId   String
+  shadeId    String
+  enabled    Boolean @default(true)
+  serviceIds String  @default("[]")
+  tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, shadeId])
+  @@index([tenantId])
+}
+
+model ConsentLog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  sessionId   String
+  purpose     String
+  textVersion String
+  textHash    String
+  lang        String
+  accepted    Boolean
+  ageGate     Boolean  @default(false)
+  uaHash      String?
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([sessionId])
+}
+
+model TryOn {
+  id           String   @id @default(cuid())
+  tenantId     String
+  sessionId    String
+  styleId      String?
+  shadeId      String?
+  kind         String
+  quality      String   @default("standard")
+  provider     String?
+  status       String
+  latencyMs    Int?
+  costMicroUsd Int?
+  credits      Int      @default(0)
+  createdAt    DateTime @default(now())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+}
+
+model CreditLedger {
+  id           String    @id @default(cuid())
+  tenantId     String
+  delta        Int
+  reason       String
+  refId        String?
+  balanceAfter Int
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, refId])
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  tenantId  String
+  sessionId String?
+  name      String?
+  phone     String?
+  lookName  String
+  shadeName String?
+  services  String   @default("[]")
+  lang      String   @default("en")
+  src       String?
+  status    String   @default("NEW")
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+}
+
+model UsageEvent {
+  id        String   @id @default(cuid())
+  tenantId  String
+  sessionId String
+  name      String
+  props     String   @default("{}")
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, name, createdAt])
+}
+
+model Subscription {
+  id               String    @id @default(cuid())
+  tenantId         String    @unique
+  plan             String
+  interval         String
+  provider         String    @default("mock")
+  externalId       String?
+  status           String
+  currentPeriodEnd DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model DataRequest {
+  id        String   @id @default(cuid())
+  tenantId  String
+  kind      String
+  contact   String
+  sessionId String?
+  status    String   @default("OPEN")
+  note      String   @default("")
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+}
+
+model Invoice {
+  id          String   @id @default(cuid())
+  tenantId    String
+  number      String   @unique
+  amountExGst Int
+  gstInr      Int
+  totalInr    Int
+  description String
+  status      String
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model MagicLink {
+  id        String   @id @default(cuid())
+  email     String
+  tokenHash String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  action    String
+  target    String
+  meta      String   @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model PlatformSetting {
+  key   String @id
+  value String
+}
