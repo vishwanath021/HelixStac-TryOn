@@ -176,6 +176,7 @@ export function TryOnApp({
       consenting.current = null;
       return;
     }
+    setAccepted(true);
     const session = sid || sessionId();
     if (!sid) setSid(session);
     const job = (async () => {
@@ -192,6 +193,7 @@ export function TryOnApp({
     const id = await job;
     if (!id) {
       setAccepted(false);
+      consentRef.current = "";
       setError(t(lang, "privacyTick"));
       return;
     }
