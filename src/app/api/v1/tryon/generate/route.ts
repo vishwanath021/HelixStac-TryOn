@@ -181,7 +181,14 @@ export async function POST(req: Request) {
         tenantId: tenant.id,
         sessionId,
         name: "generate_succeeded",
-        props: JSON.stringify({ styleId, quality, provider: result.provider, latencyMs: result.latencyMs }),
+        props: JSON.stringify({
+          styleId,
+          quality,
+          provider: result.provider,
+          latencyMs: result.latencyMs,
+          estimateInr: result.estimateInr ?? 0,
+          demoReason: result.demoReason || "",
+        }),
       },
     });
     return new NextResponse(new Uint8Array(result.image), {
@@ -192,6 +199,8 @@ export async function POST(req: Request) {
         "x-tryon-id": tryOn.id,
         "x-credits-left": String(balance?.creditBalance ?? 0),
         "x-provider": result.provider,
+        "x-demo-reason": result.demoReason || "",
+        "x-estimate-inr": String(result.estimateInr ?? 0),
       },
     });
   } catch (error) {

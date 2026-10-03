@@ -40,6 +40,10 @@ Default is the mock renderer. It does not call a network.
 
 If you set `AI_PROVIDER=gemini`, use a **paid** key. Google's pricing page states that paid-tier content is not used to improve Google's products, and free-tier content is. Do not point production at the free tier.
 
+`AI_PROVIDER=openai` sends the same in-memory JPEG to OpenAI's image-edit endpoint and does not store it. Keys belong in `.env` or the host secret store, never in git.
+
+The spend ledger stores provider, quality, model id, and an estimated rupee amount. It does not store the photo.
+
 The concierge is rules over the salon's menu unless `CONCIERGE_LLM=gemini`. It does not receive the photo.
 
 ## Guests under 18

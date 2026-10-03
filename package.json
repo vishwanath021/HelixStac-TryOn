@@ -15,7 +15,10 @@
     "db:generate": "prisma generate",
     "seed": "tsx prisma/seed.ts",
     "screenshots": "playwright test tests/e2e/screenshots.spec.ts",
-    "placeholders": "tsx scripts/generate-placeholders.ts"
+    "placeholders": "tsx scripts/generate-placeholders.ts",
+    "ai:smoke": "node --env-file=.env --import tsx scripts/ai-smoke.ts",
+    "scan:secrets": "tsx scripts/scan-secrets.ts",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

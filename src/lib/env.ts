@@ -13,10 +13,15 @@ export function rootDomain() {
 export function aiProviderName() {
   const requested = (process.env.AI_PROVIDER || "mock").toLowerCase();
   if (requested === "gemini" && process.env.GEMINI_API_KEY) return "gemini";
+  if (requested === "openai" && process.env.OPENAI_API_KEY) return "openai";
   if ((requested === "replicate" || requested === "fal") && (process.env.REPLICATE_API_TOKEN || process.env.FAL_KEY)) {
     return requested === "fal" ? "fal" : "replicate";
   }
   return "mock";
+}
+
+export function usingDemoProvider() {
+  return aiProviderName() === "mock";
 }
 
 export function billingProviderName() {

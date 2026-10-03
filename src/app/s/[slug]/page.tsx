@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { TryOnApp } from "@/components/tryon/TryOnApp";
+import { usingDemoProvider } from "@/lib/env";
 import { verifySalonToken } from "@/lib/preview-access";
 import { loadTenantByHost, loadTenantBySlug, toSalonConfig } from "@/lib/salon";
 
@@ -29,6 +30,7 @@ export default async function SalonPage({
       initialShadeId={query.shade}
       salonToken={salonMode ? query.salon : undefined}
       salonMode={salonMode}
+      demoMode={usingDemoProvider()}
     />
   );
 }

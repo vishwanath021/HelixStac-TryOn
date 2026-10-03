@@ -69,10 +69,18 @@ Demo WhatsApp number: `919800011122` (not a live handset).
 | `npm test` | Vitest |
 | `npm run test:e2e` | Playwright smoke against the dev server |
 | `npm run build` | Production build |
+| `npm run ai:smoke` | Run N styles on local photos in `ai-samples/`. Writes `ai-smoke/out/` and respects the spend cap. |
+| `npm run scan:secrets` | Fail if committed files contain API-key patterns |
 
 ## Environment
 
-Copy `.env.example`. Real keys are optional.
+Copy `.env.example` to `.env`. Real keys are optional.
+
+### Where API keys go
+
+Put keys only in `.env` on your machine. That file is gitignored. On a host, put them in the platform's secret or environment settings (Vercel, Railway, or the server's env), not in the repo and not in a screenshot.
+
+`npm run scan:secrets` fails if patterns such as a Google key (`AIza` plus a long token) or an OpenAI key (`sk-` plus a long token) are committed. CI runs the same check. After `npm install`, git uses `.githooks/pre-commit`, which runs it before each commit.
 
 | Variable | Purpose |
 |---|---|
@@ -82,8 +90,14 @@ Copy `.env.example`. Real keys are optional.
 | `APP_BASE_URL` | Used in QR codes and magic links |
 | `ROOT_DOMAIN` | Apex domain. `{slug}.try.{ROOT_DOMAIN}` routes to that salon. |
 | `BRAND_NAME` | Platform name. Default `HelixStac TryOn`. |
-| `AI_PROVIDER` | `mock` (default), `gemini`, `replicate`, or `fal` |
+| `AI_PROVIDER` | `mock` (default), `gemini`, `openai`, `replicate`, or `fal` |
 | `GEMINI_API_KEY` | Paid-tier key. Leave empty to stay on the mock. |
+| `OPENAI_API_KEY` | OpenAI key for `AI_PROVIDER=openai`. Leave empty to stay on the mock. |
+| `OPENAI_IMAGE_MODEL` | gpt-image model id. Default `gpt-image-1`. |
+| `OPENAI_IMAGE_QUALITY` | `low`, `medium`, or `high` for a standard preview. Default `medium`. |
+| `OPENAI_IMAGE_QUALITY_HD` | Quality when the guest picks HD. Default `high`. |
+| `AI_SPEND_CAP_INR` | Hard testing cap for paid image calls. Default `500`. |
+| `AI_COST_PER_CALL_INR_{PROVIDER}_{QUALITY}` | Estimated rupees for one call, for example `AI_COST_PER_CALL_INR_OPENAI_MEDIUM`. |
 | `GEMINI_MODEL_STANDARD` | Default `gemini-3.1-flash-lite-image` (~$0.0336 / 1K image) |
 | `GEMINI_MODEL_HD` | Default `gemini-3.1-flash-image` (~$0.067 / 1K image) |
 | `GEMINI_TEXT_MODEL` | Optional concierge text model, default `gemini-3.1-flash-lite` |
@@ -104,7 +118,28 @@ Copy `.env.example`. Real keys are optional.
 3. Leave the model ids unless you have re-checked the docs.
 4. Standard previews use 1 credit. HD uses 2 and the HD model.
 
-If the call fails, the app falls back to the watermarked mock so the salon page does not die.
+If the call fails, or the testing spend cap is already used, the app returns a labelled sample so the salon page does not die. With no key, the try-on shows: “Demo mode – connect an AI key for real hairstyle previews”. The before/after pair is a sample illustration, not a tint of the guest's photo.
+
+### OpenAI
+
+1. Set `AI_PROVIDER=openai` and `OPENAI_API_KEY` in `.env` or the host secret store.
+2. `OPENAI_IMAGE_MODEL` is the gpt-image model id. `OPENAI_IMAGE_QUALITY` is `low`, `medium`, or `high` for a standard preview. HD uses `OPENAI_IMAGE_QUALITY_HD`.
+3. The photo is sent once, in memory, to `POST /v1/images/edits`. It is not written to the database.
+
+### Spend cap
+
+`AI_SPEND_CAP_INR` defaults to 500. Each paid attempt adds `AI_COST_PER_CALL_INR_{PROVIDER}_{QUALITY}` (an estimate, not a provider invoice) to `AiCall`. The super-admin page shows the total against the cap. The next paid call after the cap returns the labelled sample and a short explanation. `npm run ai:smoke` uses the same guard.
+
+### Smoke a provider locally
+
+Put your own JPEG, PNG, or WebP files in `ai-samples/` (gitignored). Then:
+
+```bash
+npm run ai:smoke
+npm run ai:smoke -- ai-samples 2
+```
+
+The second form runs 2 styles per photo. Outputs land in `ai-smoke/out/`, which is gitignored. The script prints the estimated cost and stops charging once the cap is hit.
 
 ### Razorpay
 

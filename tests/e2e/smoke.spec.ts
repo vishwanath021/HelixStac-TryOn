@@ -46,6 +46,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: /i agree/i }).click();
   await expect(page.getByLabel("Password")).toHaveCount(0);
+  await expect(page.getByText("Demo mode – connect an AI key for real hairstyle previews")).toBeVisible();
   await expect(page.getByRole("tab", { name: "COLOUR" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "STYLE" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "BROWS" })).toBeVisible();

@@ -5,6 +5,8 @@ dist
 .env
 .env.local
 .env.*.local
+ai-samples/
+ai-smoke/
 *.db
 *.db-journal
 test-results

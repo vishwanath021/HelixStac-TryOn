@@ -309,6 +309,19 @@ model PlatformSetting {
   value String
 }
 
+model AiCall {
+  id            String   @id @default(cuid())
+  provider      String
+  quality       String
+  model         String   @default("")
+  estimatePaise Int      @default(0)
+  tenantId      String   @default("")
+  status        String   @default("CHARGED")
+  createdAt     DateTime @default(now())
+
+  @@index([status, createdAt])
+}
+
 model Customer {
   id           String        @id @default(cuid())
   tenantId     String

@@ -17,6 +17,9 @@ export type GenerateOutput = {
   provider: string;
   providerCostUsd: number;
   latencyMs: number;
+  /** Set when the bytes are a labelled sample, not a paid edit of the guest photo. */
+  demoReason?: "no-key" | "spend-cap" | "failover";
+  estimateInr?: number;
 };
 
 export interface ImageStyleProvider {

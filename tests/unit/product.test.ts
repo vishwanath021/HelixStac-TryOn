@@ -14,6 +14,10 @@ import { parseHost } from "@/lib/host";
 import { sanitizeSelfie } from "@/lib/images";
 import { redact } from "@/lib/logger";
 import { annualExGst, assumedInr, breakEvenAccounts, previewCogsInr, withGst } from "@/lib/pricing";
+import { openAIQuality } from "@/lib/ai/openai";
+import { beginPaidCall, costPerCallInr, spendCapInr } from "@/lib/ai/spend";
+import { prisma } from "@/lib/prisma";
+import { findSecrets, scanRepo } from "@/lib/secrets";
 import { ageYears, capForTier, signSalonToken, verifySalonToken } from "@/lib/preview-access";
 import { buildBeardPrompt, buildBrowPrompt, buildNailPrompt, buildStylePrompt } from "@/lib/prompts";
 import { colourGuidance, faceGuidance, quizGuidance } from "@/lib/guidance";
@@ -186,6 +190,41 @@ describe("preview caps and guidance", () => {
     const quiz = quizGuidance({ who: "kids", length: "short", texture: "curly", occasion: "daily" });
     expect(quiz.styles.map((style) => style.id)).toEqual(expect.arrayContaining(["kids-soft-bob"]));
     expect(quiz.label.toLowerCase()).toContain("quiz");
+  });
+});
+
+describe("openai quality and spend cap", () => {
+  it("reads quality from env and stops the call that would pass the cap", async () => {
+    process.env.OPENAI_IMAGE_QUALITY = "low";
+    process.env.OPENAI_IMAGE_QUALITY_HD = "high";
+    expect(openAIQuality("standard")).toBe("low");
+    expect(openAIQuality("hd")).toBe("high");
+    process.env.OPENAI_IMAGE_QUALITY = "nope";
+    expect(openAIQuality("standard")).toBe("medium");
+    process.env.AI_COST_PER_CALL_INR_OPENAI_MEDIUM = "6";
+    process.env.AI_SPEND_CAP_INR = "10";
+    expect(costPerCallInr("openai", "medium")).toBe(6);
+    expect(spendCapInr()).toBe(10);
+    await prisma.aiCall.deleteMany();
+    const first = await beginPaidCall({ provider: "openai", quality: "medium", model: "gpt-image-1", tenantId: "spend-test" });
+    const second = await beginPaidCall({ provider: "openai", quality: "medium", model: "gpt-image-1", tenantId: "spend-test" });
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(false);
+    expect(await prisma.aiCall.count({ where: { status: "CHARGED" } })).toBe(1);
+    expect(await prisma.aiCall.count({ where: { status: "REFUSED" } })).toBe(1);
+    delete process.env.AI_SPEND_CAP_INR;
+    delete process.env.AI_COST_PER_CALL_INR_OPENAI_MEDIUM;
+    delete process.env.OPENAI_IMAGE_QUALITY;
+    delete process.env.OPENAI_IMAGE_QUALITY_HD;
+  });
+});
+
+describe("secret scan", () => {
+  it("flags a long token and ignores the short examples in the docs", () => {
+    expect(findSecrets(`sk-${"a".repeat(24)}`).map((hit) => hit.name)).toContain("openai");
+    expect(findSecrets(`AIza${"b".repeat(20)}`).map((hit) => hit.name)).toContain("google");
+    expect(findSecrets("keys look like sk-... or AIza...")).toEqual([]);
+    expect(scanRepo()).toEqual([]);
   });
 });
 

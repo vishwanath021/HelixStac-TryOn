@@ -65,6 +65,7 @@ export function TryOnApp({
   initialShadeId,
   salonToken,
   salonMode = false,
+  demoMode = false,
 }: {
   config: SalonConfig;
   embed?: boolean;
@@ -73,6 +74,7 @@ export function TryOnApp({
   initialShadeId?: string;
   salonToken?: string;
   salonMode?: boolean;
+  demoMode?: boolean;
 }) {
   const initialLang = isLocale(config.defaultLang) ? config.defaultLang : "en";
   const [lang, setLang] = useState<Locale>(initialLang);
@@ -100,6 +102,7 @@ export function TryOnApp({
   const [progress, setProgress] = useState(0);
   const [pendingName, setPendingName] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [looks, setLooks] = useState<Look[]>([]);
   const [activeId, setActiveId] = useState("");
   const [modelStatus, setModelStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -327,7 +330,6 @@ export function TryOnApp({
       setTool(chosen.tool);
       return;
     }
-    const before = URL.createObjectURL(blob);
     setPendingName(chosen.name);
     setBusy(true);
     setTool(chosen.tool);
@@ -352,13 +354,16 @@ export function TryOnApp({
       return;
     }
     const out = await res.blob();
+    const reason = res.headers.get("x-demo-reason") || "";
+    const sample = reason === "no-key" || reason === "spend-cap" || reason === "failover" || (res.headers.get("x-provider") || "").includes("mock");
+    setNotice(reason === "spend-cap" ? t(lang, "spendCapNote") : "");
     const after = URL.createObjectURL(out);
     const look: Look = {
       id: res.headers.get("x-tryon-id") || crypto.randomUUID(),
       styleId: chosen.id,
       styleName: chosen.name,
       shadeName: chosen.tool === "style" ? shade?.name ?? null : null,
-      before,
+      before: sample ? "/samples/demo-before.jpg" : URL.createObjectURL(blob),
       after,
       serviceKeys: chosen.serviceKeys,
       tool: chosen.tool,
@@ -460,6 +465,7 @@ export function TryOnApp({
         </label>
       </header>
 
+      {demoMode && <p className="mb-3 rounded-2xl bg-[#241c16] px-3 py-2 text-center text-sm text-white" role="status">{t(lang, "demoBanner")}</p>}
       {salonMode && <p className="mb-3 rounded-2xl bg-[#241c16] px-3 py-2 text-center text-xs text-white" role="status">{t(lang, "salonModeOn")}</p>}
 
       {config.status === "SUSPENDED" ? (
@@ -847,6 +853,7 @@ export function TryOnApp({
             {answer && <p className="mt-3 text-sm leading-6" role="status">{answer}</p>}
           </section>
 
+          {notice && <p className="text-sm" role="status">{notice}</p>}
           {error && <p className="text-sm text-[var(--bad)]" role="alert">{error}</p>}
           {cameraError && (cameraOn || photoUrl) && <p className="text-sm text-[var(--bad)]" role="alert">{cameraError}</p>}
           {config.poweredBy && <p className="text-center text-xs text-muted">{t(lang, "poweredBy")} HelixStac TryOn</p>}

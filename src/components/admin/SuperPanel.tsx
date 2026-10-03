@@ -14,7 +14,17 @@ export type SuperRow = {
   cogsInr: number;
 };
 
-export function SuperPanel({ rows, mrr, assumption }: { rows: SuperRow[]; mrr: number; assumption: string }) {
+export function SuperPanel({
+  rows,
+  mrr,
+  assumption,
+  spend,
+}: {
+  rows: SuperRow[];
+  mrr: number;
+  assumption: string;
+  spend: { spentInr: number; capInr: number; calls: number };
+}) {
   const [message, setMessage] = useState("");
 
   async function update(id: string, body: Record<string, unknown>) {
@@ -29,6 +39,9 @@ export function SuperPanel({ rows, mrr, assumption }: { rows: SuperRow[]; mrr: n
   return (
     <div>
       <p className="text-sm">MRR (active plans, ex-GST): ₹{mrr.toLocaleString("en-IN")}. Trials are not in MRR.</p>
+      <p className="mt-2 text-sm" role="status">
+        Paid preview estimate: ₹{spend.spentInr.toFixed(2)} of ₹{spend.capInr.toFixed(0)} ({spend.calls} calls). Further paid calls stop at the cap and return a labelled sample.
+      </p>
       <p className="mt-2 text-xs text-muted">{assumption}</p>
       <div className="mt-4 overflow-x-auto">
         <table className="w-full text-left text-sm">

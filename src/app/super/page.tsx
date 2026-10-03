@@ -1,4 +1,5 @@
 import { SuperPanel } from "@/components/admin/SuperPanel";
+import { spendSummary } from "@/lib/ai/spend";
 import { numberEnv } from "@/lib/env";
 import { PLANS } from "@/data/plans";
 import { previewCogsInr } from "@/lib/pricing";
@@ -33,14 +34,15 @@ export default async function SuperPage() {
       cogsInr: previewCogsInr(standard, hd, standardInr, hdInr),
     });
   }
-  const assumption = `COGS is an assumption: ₹${standardInr} per standard preview and ₹${hdInr} per HD preview (about ₹3.5 Lite and ₹7 Flash at ₹96/USD, including 8% retries). It is not a bill from the provider.`;
+  const spend = await spendSummary();
+  const assumption = `COGS is an assumption: ₹${standardInr} per standard preview and ₹${hdInr} per HD preview (about ₹3.5 Lite and ₹7 Flash at ₹96/USD, including 8% retries). The spend cap uses the same kind of estimate. Neither number is a bill from the provider.`;
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="font-serif text-4xl">HelixStac</h1>
         <SignOutButton />
       </div>
-      <SuperPanel rows={rows} mrr={mrr} assumption={assumption} />
+      <SuperPanel rows={rows} mrr={mrr} assumption={assumption} spend={spend} />
     </main>
   );
 }
