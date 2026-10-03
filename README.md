@@ -151,7 +151,7 @@ If a paid call fails, or the testing spend cap is already used, the app returns 
 
 ### What the offline tests prove
 
-Before a paid edit, the server builds a region mask from a frontal-face check (one face, upright, not a profile, large enough to place) and facial proportions:
+Before a paid edit, the server finds the face from the skin region and places the mask with facial proportions (one upright face, not a profile, large enough to place). This is not a neural face mesh, and it is not a claim about how a real model blends:
 
 - Hair and colour: the hair and top of the head only
 - Brows: the brow band, above the eyes
