@@ -113,7 +113,10 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
     },
   });
   if (!locked.ok) {
-    if (locked.callId) await releasePaidCall(locked.callId);
+    if (locked.callId) {
+      const keepBill = locked.reason === "postcheck" || locked.reason === "face-guard";
+      await releasePaidCall(locked.callId, keepBill ? "BILLED_FAILED" : "REFUNDED");
+    }
     if (locked.reason === "spend-cap") return demoFallback(input, "mock:spend-cap", "spend-cap");
     if (locked.reason === "provider" || locked.reason === "unknown-model") {
       return demoFallback(input, `mock:failover-from-${primary.name}`, "failover");

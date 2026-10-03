@@ -39,9 +39,9 @@ export function costPerCallInr(provider: string, quality: string) {
   return DEFAULTS[`${provider.toUpperCase()}_${quality.toUpperCase()}`] ?? numberEnv("AI_COST_INR_STANDARD", 3.5);
 }
 
-export async function releasePaidCall(id: string) {
+export async function releasePaidCall(id: string, status: "REFUNDED" | "BILLED_FAILED" = "REFUNDED") {
   if (!id) return;
-  await prisma.aiCall.updateMany({ where: { id, status: "CHARGED" }, data: { status: "REFUNDED", charged: false } });
+  await prisma.aiCall.updateMany({ where: { id, status: "CHARGED" }, data: { status, charged: false } });
 }
 
 export async function finalizePaidCall(

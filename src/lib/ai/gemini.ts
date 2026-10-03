@@ -1,6 +1,7 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import { BilledProviderError, UnknownModelError } from "@/lib/ai/errors";
 import { styleReferenceFor } from "@/lib/ai/style-reference";
+import { padImageAndMask, restoreSquareContent } from "@/lib/ai/square";
 import { prepareTierInput, tierRequest, type UsageNumbers } from "@/lib/ai/tiers";
 import type { GenerateInput, GenerateOutput, ImageStyleProvider } from "@/lib/ai/types";
 
@@ -18,10 +19,11 @@ export class GeminiProvider implements ImageStyleProvider {
     if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
     const spec = tierRequest("gemini", input.tier || "test");
     const prepared = await prepareTierInput(input.image, undefined, spec);
+    const padded = await padImageAndMask(prepared.image);
     const started = Date.now();
     const ai = new GoogleGenAI({ apiKey });
     const parts: Array<{ inlineData: { mimeType: string; data: string } } | { text: string }> = [
-      { inlineData: { mimeType: "image/jpeg", data: prepared.image.toString("base64") } },
+      { inlineData: { mimeType: "image/jpeg", data: padded.image.toString("base64") } },
     ];
     const reference = styleReferenceFor(input, "gemini");
     if (reference) parts.push({ inlineData: { mimeType: "image/jpeg", data: reference.toString("base64") } });
@@ -49,7 +51,7 @@ export class GeminiProvider implements ImageStyleProvider {
     const data = response.data;
     if (!data) throw new BilledProviderError(spec.estimateUsd, usage);
     return {
-      image: Buffer.from(data, "base64"),
+      image: await restoreSquareContent(Buffer.from(data, "base64"), padded),
       mime: "image/jpeg",
       provider: `${this.name}:${spec.model}:${spec.quality}`,
       providerCostUsd: spec.estimateUsd,

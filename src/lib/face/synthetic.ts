@@ -110,6 +110,34 @@ export function drawProfile(width = 480, height = 640): Scene {
   return { ...base, name: "profile", face: { x: face.x, y: face.y, w: Math.round(face.w / 2), h: face.h } };
 }
 
+const SHIRT: RGB = { r: 36, g: 118, b: 64 };
+
+/** Landscape portrait: long dark hair past the shoulders, and a shirt that must stay out of the hair zone. */
+export function drawLongHair(width = 1280, height = 720): Scene {
+  const data = blank(width, height);
+  const cx = Math.round(width * 0.5);
+  const cy = Math.round(height * 0.34);
+  const unit = Math.min(width, height);
+  const rx = Math.round(unit * 0.11);
+  const ry = Math.round(unit * 0.15);
+  fillRect(data, width, height, cx - Math.round(rx * 3.2), cy + Math.round(ry * 0.85), cx + Math.round(rx * 3.2), height - 1, SHIRT);
+  fillEllipse(data, width, height, cx, cy - Math.round(ry * 1.2), Math.round(rx * 1.4), Math.round(ry * 0.7), HAIR);
+  fillRect(data, width, height, cx - Math.round(rx * 1.55), cy - ry, cx - Math.round(rx * 0.9), cy + Math.round(ry * 2.8), HAIR);
+  fillRect(data, width, height, cx + Math.round(rx * 0.9), cy - ry, cx + Math.round(rx * 1.55), cy + Math.round(ry * 2.8), HAIR);
+  fillEllipse(data, width, height, cx, cy, rx, ry, SKIN);
+  fillEllipse(data, width, height, cx - Math.round(rx * 0.38), cy - Math.round(ry * 0.12), Math.round(rx * 0.12), Math.round(ry * 0.06), FEATURE);
+  fillEllipse(data, width, height, cx + Math.round(rx * 0.38), cy - Math.round(ry * 0.12), Math.round(rx * 0.12), Math.round(ry * 0.06), FEATURE);
+  fillEllipse(data, width, height, cx, cy + Math.round(ry * 0.38), Math.round(rx * 0.22), Math.round(ry * 0.07), FEATURE);
+  return {
+    name: "long-hair",
+    data,
+    width,
+    height,
+    face: { x: cx - rx, y: cy - ry, w: rx * 2, h: ry * 2 },
+    nails: [],
+  };
+}
+
 export function drawTilted(width = 480, height = 640): Scene {
   const data = blank(width, height);
   const cx = Math.round(width * 0.5);

@@ -5,6 +5,7 @@ import { preflightPhoto, renderOverlay, type RegionTool } from "@/lib/face/regio
 import {
   drawFrontal,
   drawHand,
+  drawLongHair,
   drawProfile,
   drawTilted,
   drawTwoFaces,
@@ -34,6 +35,7 @@ export function sceneCatalog() {
     profile: drawProfile(),
     mirrored: frontal,
     "upload-wide": wide,
+    "long-hair": drawLongHair(),
     "camera-portrait": camera,
     hand: drawHand(),
     exif: frontal,

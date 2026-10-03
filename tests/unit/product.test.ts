@@ -51,6 +51,10 @@ describe("prompts", () => {
     expect(prompt).toContain("skin tone");
     expect(prompt).toContain("Cherry Red");
     expect(prompt).toContain("not a guarantee");
+    expect(prompt).toContain("forehead skin");
+    expect(prompt).toContain("natural hairline");
+    expect(prompt).toContain("long hair becoming a bob");
+    expect(prompt).toContain("Transparent mask pixels may change");
     expect(prompt.toLowerCase()).not.toContain("change the face");
   });
 });

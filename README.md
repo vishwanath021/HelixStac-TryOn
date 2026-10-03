@@ -177,19 +177,30 @@ Salon owner pages and the guest try-on do not receive model ids, provider cost, 
 
 Before a paid edit, the server finds the face from the skin region and places the mask with facial proportions (one upright face, not a profile, large enough to place). This is not a neural face mesh, and it is not a claim about how a real model blends:
 
-- Hair and colour: the hair and top of the head only
+- Hair and colour: the hair, plus room beside and above the head for the new length, minus the face and clothing. Eyes, brows, forehead skin, the nose, and the lips are cut out of the zone. A shirt below the chin is left out. Long hair that is actually hair-coloured can extend past the shoulders. The MediaPipe hair-segmenter weights are not in this repo, so clothing is excluded with a colour check rather than that model.
 - Brows: the brow band, above the eyes
 - Beard: the jaw and chin below the nose, with the mouth left out
 - Nails: fingertip regions on a hand photo. A picture that looks like a face is refused
 
-OpenAI receives that mask on the image edit. Gemini does not take a mask; the same server-side composite still runs. After the provider responds, pixels outside the feathered mask are copied back from the original photo. A provider cannot leave a beard on the forehead or change the background, because those pixels are restored.
+OpenAI receives that mask on the image edit. Transparent mask pixels are the editable area. Opaque pixels must stay. Gemini does not take a mask; the same server-side composite still runs. The hair prompt tells the model to keep the face and forehead skin untouched, to change only hair length, cut, and shape, and to remove original hair inside the mask that falls outside the new style (long hair becoming a bob).
+
+Photos are not stretched to the square the image model returns. The photo and the mask are padded onto a centered square with a neutral edge fill (mask bars are opaque, so they are not editable). The result is cropped back to the original aspect before it is composited. The same pad and crop is used for every tool.
+
+After a hair or colour composite, if the brows, eyes, or nose differ materially from the original, the edit is rejected. The guest sees “Try another photo.” The provider cost stays on the ledger as billed but failed, it does not count toward the spend cap, and the provider is not called again.
+
+Set `DEBUG_SAVE_RAW=true` to write the raw provider JPEG, before that composite, under `var/ai-debug/`. That folder is gitignored and is not served. It is for local diagnosis of a failed paid edit.
 
 The unit suite proves this without a provider key:
 
 - A mock edit that paints the whole frame one colour leaves every pixel outside the mask byte-for-byte identical to the original
+- Eyes, forehead, nose, and mouth stay out of the hair and colour zones on landscape, portrait, small, and tilted fixtures
+- Long hair past the shoulders is inside the zone and a shirt in the same frame is not
+- Padding to a square and cropping back reproduces the original pixels exactly
+- OpenAI mask alpha is 0 on editable hair and 255 on the face
 - Masks sit in the expected zone on frontal, off-centre, mirrored, EXIF-rotated, wide, and camera-shaped fixtures
 - No face, two faces, a tilt, a side profile, a tiny face, and a hand sent to the beard tool are rejected before the edit function is called
-- A provider error is tried once more. An unknown model id is not tried again. A placement failure is not tried again and does not keep the rupee charge
+- A hair edit that changes the eyes is rejected once and is not retried
+- A provider error is tried once more. An unknown model id is not tried again. A placement failure is not tried again and does not keep the rupee charge. A billed post-check or face-guard failure stays billed and is not charged against the cap
 - Calibration stops at 5 images or about ₹30, whichever comes first
 
 `npm run calibrate` writes before / mask / after files under `docs/mask-overlays/` using the flat-colour edit. The same action is the **Calibration run** button on `/super/ai`. With no key it spends ₹0. With a key it uses the real model inside that cap.

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
@@ -7,15 +7,26 @@ import { BROWS } from "@/data/brows";
 import { NAILS } from "@/data/nails";
 import { CALIBRATION_CAP_INR, CALIBRATION_MAX_IMAGES, runCalibration } from "@/lib/ai/calibrate";
 import { paintFlat } from "@/lib/ai/flat-edit";
-import { releasePaidCall, beginPaidCall } from "@/lib/ai/spend";
+import { cropRgb, padImageAndMask, padRgb } from "@/lib/ai/square";
+import { finalizePaidCall, releasePaidCall, beginPaidCall } from "@/lib/ai/spend";
 import { writeOverlays } from "@/lib/face/fixtures";
-import { outsideMaskDelta, runLockedEdit } from "@/lib/face/pipeline";
-import { analyzeRegion, compositeLocked, decodeRgb, preflightPhoto, type RegionTool } from "@/lib/face/region";
+import { outsideMaskDelta, runLockedEdit, saveRawProviderImage } from "@/lib/face/pipeline";
+import { analyzeRegion, compositeLocked, decodeRgb, maskPng, preflightPhoto, type FaceBox, type RegionTool } from "@/lib/face/region";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 import { prisma } from "@/lib/prisma";
-import { drawFrontal, drawHand } from "@/lib/face/synthetic";
+import { drawFrontal, drawHand, drawLongHair, drawTilted, type Scene } from "@/lib/face/synthetic";
 
 const FACE_TOOLS: RegionTool[] = ["style", "colour", "brows", "beard"];
+
+function faceSpots(face: FaceBox): [number, number][] {
+  return [
+    [face.cx, face.y + face.h * 0.12],
+    [face.cx - face.w * 0.18, face.y + face.h * 0.42],
+    [face.cx + face.w * 0.18, face.y + face.h * 0.42],
+    [face.cx, face.y + face.h * 0.55],
+    [face.cx, face.y + face.h * 0.72],
+  ];
+}
 
 function pixel(data: Buffer, width: number, x: number, y: number) {
   const i = (y * width + x) * 3;
@@ -54,7 +65,8 @@ describe("region masks", () => {
     expect(brows.ok && beard.ok && colour.ok).toBe(true);
     const sample = (mask: Uint8Array, x: number, y: number) => mask[Math.round(y) * scene.width + Math.round(x)] > 0;
     const cx = face.cx;
-    expect(sample(hair.mask, cx, face.y + face.h * 0.05)).toBe(true);
+    expect(sample(hair.mask, cx, face.y - face.h * 0.1)).toBe(true);
+    expect(sample(hair.mask, cx, face.y + face.h * 0.05)).toBe(false);
     expect(sample(hair.mask, cx, face.y + face.h * 0.7)).toBe(false);
     expect(sample(brows.mask, cx, face.y + face.h * 0.27)).toBe(true);
     expect(sample(brows.mask, cx, face.y + face.h * 0.05)).toBe(false);
@@ -63,6 +75,155 @@ describe("region masks", () => {
     expect(sample(beard.mask, cx, face.y + face.h * 0.2)).toBe(false);
     expect(sample(beard.mask, cx, face.y + face.h * 0.42)).toBe(false);
     expect(sample(beard.mask, cx, face.y + face.h * 0.73)).toBe(false);
+  });
+
+  it("keeps eyes, forehead, nose, and mouth out of the hair and colour zones", () => {
+    const scenes: Scene[] = [
+      drawFrontal(480, 640),
+      drawFrontal(720, 1280, 0.5, 0.42, 0.9),
+      drawFrontal(1280, 720, 0.42, 0.5, 0.85),
+      drawLongHair(),
+      drawFrontal(96, 128, 0.5, 0.48, 0.7),
+      drawTilted(),
+    ];
+    for (const scene of scenes) {
+      for (const tool of ["style", "colour"] as const) {
+        const report = analyzeRegion(scene.data, scene.width, scene.height, tool);
+        const face = report.face;
+        expect(face, `${scene.name} ${tool}`).toBeTruthy();
+        if (!face) continue;
+        let skinInside = 0;
+        let rectInside = 0;
+        const y0 = Math.ceil(face.y + face.h * 0.2);
+        const y1 = Math.floor(face.y + face.h * 0.9);
+        const x0 = Math.ceil(face.cx - face.w * 0.35);
+        const x1 = Math.floor(face.cx + face.w * 0.35);
+        for (let y = y0; y <= y1; y += 1) {
+          for (let x = x0; x <= x1; x += 1) {
+            if (x < 0 || y < 0 || x >= scene.width || y >= scene.height) continue;
+            const on = report.mask[y * scene.width + x] > 0;
+            if (on) rectInside += 1;
+            const i = (y * scene.width + x) * 3;
+            const r = scene.data[i];
+            const g = scene.data[i + 1];
+            const b = scene.data[i + 2];
+            if (r > 90 && g > 40 && b > 20 && r > g && r > b && r - g > 12 && r - b > 12 && on) skinInside += 1;
+          }
+        }
+        expect(skinInside, `${scene.name} ${tool} skin`).toBe(0);
+        expect(report.mask[Math.round(face.cy) * scene.width + Math.round(face.cx)], `${scene.name} ${tool} center`).toBe(0);
+        if (scene.name === "tilted") continue;
+        expect(rectInside, `${scene.name} ${tool} face`).toBe(0);
+        for (const [px, py] of faceSpots(face)) {
+          const x = Math.round(px);
+          const y = Math.round(py);
+          if (x < 0 || y < 0 || x >= scene.width || y >= scene.height) continue;
+          expect(report.mask[y * scene.width + x], `${scene.name} ${tool} ${x},${y}`).toBe(0);
+        }
+      }
+    }
+  });
+
+  it("includes long hair and leaves the shirt out of the hair zone", () => {
+    const scene = drawLongHair();
+    const report = analyzeRegion(scene.data, scene.width, scene.height, "style");
+    expect(report.ok).toBe(true);
+    const face = report.face!;
+    const cx = Math.round(face.cx);
+    const below = Math.round(face.y + face.h * 1.55);
+    const hairX = Math.round(face.x - face.w * 0.2);
+    expect(report.mask[below * scene.width + hairX]).toBe(255);
+    expect(report.mask[below * scene.width + cx]).toBe(0);
+    expect(report.mask[Math.round(face.y + face.h * 0.45) * scene.width + Math.round(face.cx)]).toBe(0);
+    expect(report.mask[Math.round(face.y + face.h * 0.4) * scene.width + Math.round(face.x - face.w * 0.3)]).toBe(255);
+  });
+
+  it("marks transparent mask pixels as editable and opaque pixels as keep for the OpenAI edit", async () => {
+    const scene = drawFrontal(480, 640);
+    const report = analyzeRegion(scene.data, scene.width, scene.height, "style");
+    expect(report.ok).toBe(true);
+    const png = await maskPng(report.feather, scene.width, scene.height);
+    const decoded = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const alphaAt = (x: number, y: number) => decoded.data[(y * decoded.info.width + x) * decoded.info.channels + decoded.info.channels - 1];
+    const face = report.face!;
+    const hairX = Math.round(face.cx);
+    const hairY = Math.round(face.y - face.h * 0.1);
+    expect(report.feather[hairY * scene.width + hairX]).toBe(255);
+    expect(alphaAt(hairX, hairY)).toBe(0);
+    const faceX = Math.round(face.cx);
+    const faceY = Math.round(face.y + face.h * 0.45);
+    expect(report.feather[faceY * scene.width + faceX]).toBe(0);
+    expect(alphaAt(faceX, faceY)).toBe(255);
+  });
+
+  it("pads a photo to a square and crops it back to the same pixels", async () => {
+    for (const scene of [drawLongHair(), drawFrontal(480, 640), drawFrontal(320, 320)]) {
+      const pad = padRgb(scene.data, scene.width, scene.height);
+      expect(pad.size).toBe(Math.max(scene.width, scene.height));
+      expect(pad.offsetX).toBe(Math.floor((pad.size - scene.width) / 2));
+      expect(pad.offsetY).toBe(Math.floor((pad.size - scene.height) / 2));
+      const back = cropRgb(pad.data, pad.size, pad.offsetX, pad.offsetY, scene.width, scene.height);
+      expect(Buffer.compare(back, scene.data)).toBe(0);
+    }
+    const scene = drawLongHair();
+    const jpeg = await sharp(scene.data, { raw: { width: scene.width, height: scene.height, channels: 3 } }).jpeg({ quality: 95 }).toBuffer();
+    const report = analyzeRegion(scene.data, scene.width, scene.height, "style");
+    const png = await maskPng(report.feather, scene.width, scene.height);
+    const padded = await padImageAndMask(jpeg, png);
+    expect(padded.size).toBeGreaterThan(padded.contentHeight);
+    const mask = await sharp(padded.mask!).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const corner = mask.data[mask.info.channels - 1];
+    expect(corner).toBe(255);
+    const face = report.face!;
+    const hairX = padded.offsetX + Math.round(face.cx);
+    const hairY = padded.offsetY + Math.round(face.y - face.h * 0.1);
+    const hairAlpha = mask.data[(hairY * mask.info.width + hairX) * mask.info.channels + mask.info.channels - 1];
+    expect(hairAlpha).toBe(0);
+    const faceAlpha = mask.data[((padded.offsetY + Math.round(face.cy)) * mask.info.width + padded.offsetX + Math.round(face.cx)) * mask.info.channels + mask.info.channels - 1];
+    expect(faceAlpha).toBe(255);
+  });
+
+  it("rejects a hair edit that changes the eyes and does not retry", async () => {
+    const scene = drawFrontal(360, 480);
+    const jpeg = await sharp(scene.data, { raw: { width: 360, height: 480, channels: 3 } }).jpeg().toBuffer();
+    let calls = 0;
+    const guarded = await runLockedEdit({
+      image: jpeg,
+      tool: "style",
+      skipLock: true,
+      edit: async () => {
+        calls += 1;
+        return paintFlat(jpeg);
+      },
+    });
+    expect(guarded.ok).toBe(false);
+    expect(calls).toBe(1);
+    if (!guarded.ok) expect(guarded.reason).toBe("face-guard");
+
+    calls = 0;
+    const locked = await runLockedEdit({
+      image: jpeg,
+      tool: "colour",
+      edit: async () => {
+        calls += 1;
+        return paintFlat(jpeg);
+      },
+    });
+    expect(locked.ok).toBe(true);
+    expect(calls).toBe(1);
+  });
+
+  it("saves the raw provider image only when DEBUG_SAVE_RAW is on", async () => {
+    const scene = drawFrontal(360, 480);
+    const jpeg = await sharp(scene.data, { raw: { width: 360, height: 480, channels: 3 } }).jpeg().toBuffer();
+    const dir = path.join(process.cwd(), "var", "ai-debug");
+    rmSync(dir, { recursive: true, force: true });
+    expect(await saveRawProviderImage(jpeg, "style")).toBeNull();
+    process.env.DEBUG_SAVE_RAW = "true";
+    const saved = await saveRawProviderImage(jpeg, "style");
+    expect(saved && existsSync(saved)).toBe(true);
+    delete process.env.DEBUG_SAVE_RAW;
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("rejects a missing face, a second face, a tilt, a profile, and a tiny face before any edit", async () => {
@@ -256,5 +417,23 @@ describe("calibration budget", () => {
     expect(await prisma.aiCall.count({ where: { status: "REFUNDED" } })).toBe(1);
     delete process.env.AI_SPEND_CAP_INR;
     delete process.env.AI_COST_PER_CALL_INR_OPENAI_MEDIUM;
+  });
+
+  it("keeps a billed face-guard failure off the spend cap", async () => {
+    process.env.AI_SPEND_CAP_INR = "2";
+    await prisma.aiCall.deleteMany();
+    const first = await beginPaidCall({ provider: "openai", quality: "test", model: "gpt-image-1-mini", tenantId: "face-guard", estimateInr: 0.6 });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    await finalizePaidCall(first.id, { model: "gpt-image-1-mini", billed: true, charged: true, costUsd: 0.005, estimateInr: 0.6 });
+    await releasePaidCall(first.id, "BILLED_FAILED");
+    const row = await prisma.aiCall.findFirst({ where: { id: first.id } });
+    expect(row?.status).toBe("BILLED_FAILED");
+    expect(row?.charged).toBe(false);
+    expect(row?.billed).toBe(true);
+    const second = await beginPaidCall({ provider: "openai", quality: "test", model: "gpt-image-1-mini", tenantId: "face-guard", estimateInr: 0.6 });
+    expect(second.ok).toBe(true);
+    expect(await prisma.aiCall.count({ where: { status: "CHARGED" } })).toBe(1);
+    delete process.env.AI_SPEND_CAP_INR;
   });
 });

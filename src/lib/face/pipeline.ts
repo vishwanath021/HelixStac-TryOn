@@ -1,9 +1,12 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import sharp from "sharp";
 import {
   analyzeRegion,
   compositeLocked,
   decodeRgb,
   disallowedChange,
+  faceRegionDelta,
   preflightPhoto,
   TRY_ANOTHER_PHOTO,
   type RegionTool,
@@ -23,7 +26,7 @@ export type LockedEdit =
   | {
       ok: false;
       calls: number;
-      reason: "placement" | "provider" | "postcheck" | "unknown-model" | "spend-cap";
+      reason: "placement" | "provider" | "postcheck" | "face-guard" | "unknown-model" | "spend-cap";
       message: string;
       callId?: string;
     };
@@ -84,19 +87,36 @@ export async function runLockedEdit(args: {
   }
   if (!last) return { ok: false, calls, reason: "provider", message: TRY_ANOTHER_PHOTO };
 
+  await saveRawProviderImage(last.image, args.tool);
   const edited = await sharp(last.image, { failOn: "none" })
     .rotate()
-    .resize(decoded.width, decoded.height, { fit: "fill" })
+    .resize(decoded.width, decoded.height, { fit: "cover", position: "centre" })
     .removeAlpha()
     .raw()
     .toBuffer();
   const locked = args.skipLock ? edited : compositeLocked(decoded.data, edited, report.feather);
+  if ((args.tool === "style" || args.tool === "colour") && report.face) {
+    const delta = faceRegionDelta(decoded.data, locked, report.face, decoded.width, decoded.height);
+    if (delta > 18) return { ok: false, calls, reason: "face-guard", message: TRY_ANOTHER_PHOTO, callId: last.callId };
+  }
   const outside = await outsideMaskDelta(decoded.data, locked, report.feather);
   const spill = disallowedChange(args.tool, report.face, changedPixels(decoded.data, locked, decoded.width, decoded.height), decoded.width, decoded.height);
   if (outside !== 0 || spill > 0.02) return { ok: false, calls, reason: "postcheck", message: TRY_ANOTHER_PHOTO, callId: last.callId };
 
   const image = await sharp(locked, { raw: { width: decoded.width, height: decoded.height, channels: 3 } }).jpeg({ quality: 90 }).toBuffer();
   return { ok: true, image, calls, output: last };
+}
+
+/** Writes the provider JPEG from before the composite. Off unless DEBUG_SAVE_RAW is 1 or true. Not served. */
+export async function saveRawProviderImage(image: Buffer, tool: string) {
+  const flag = process.env.DEBUG_SAVE_RAW;
+  if (flag !== "1" && flag !== "true") return null;
+  const dir = path.join(process.cwd(), "var", "ai-debug");
+  await mkdir(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const file = path.join(dir, `${stamp}-${tool}.jpg`);
+  await writeFile(file, image);
+  return file;
 }
 
 export { preflightPhoto };

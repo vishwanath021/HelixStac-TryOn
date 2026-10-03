@@ -10,7 +10,11 @@ export function buildStylePrompt(style: StyleDef, colourName?: string) {
     colourName
       ? `Shift the hair colour toward ${colourName}. Keep it believable on the hair already in the photo.`
       : "Keep the current hair colour, except where the haircut changes how light falls.",
-    "Keep the same person: identity, face, facial features, skin tone, expression, age, gender presentation, clothing, jewellery, background, lighting, camera angle, and pose must stay unchanged.",
+    "The mask is the only editable area. Transparent mask pixels may change. Opaque mask pixels must stay identical to the photo.",
+    "Keep the face, forehead skin, eyes, brows, nose, and lips untouched.",
+    "Change only hair length, cut, and shape inside the mask. Keep a natural hairline.",
+    "Remove original hair that falls outside the new style but is still inside the mask, such as long hair becoming a bob.",
+    "Keep the same person: identity, skin tone, expression, age, gender presentation, clothing, jewellery, background, lighting, camera angle, and pose must stay unchanged.",
     "Do not add or remove people. Do not add text, logos, or watermarks. Photorealistic. Respect the Indian hair texture already visible: straight, wavy, curly, thick, or thin.",
     "The result is a salon consultation preview, not a guarantee of the finished cut.",
   ].join(" ");

@@ -130,25 +130,88 @@ function faceBlobs(data: Buffer, width: number, height: number) {
   return ranked.filter((blob) => blob.count > biggest * 0.35);
 }
 
-function stampEllipse(mask: Uint8Array, width: number, height: number, cx: number, cy: number, rx: number, ry: number, value = 255) {
-  for (let y = Math.max(0, Math.floor(cy - ry)); y <= Math.min(height - 1, Math.ceil(cy + ry)); y += 1) {
-    for (let x = Math.max(0, Math.floor(cx - rx)); x <= Math.min(width - 1, Math.ceil(cx + rx)); x += 1) {
-      const dx = (x - cx) / rx;
-      const dy = (y - cy) / ry;
-      if (dx * dx + dy * dy <= 1) mask[y * width + x] = value;
-    }
-  }
+/**
+ * Dark, low-saturation pixels that read as hair.
+ * The MediaPipe hair segmenter weights are not shipped (see public/mediapipe/NOTICE.md),
+ * so clothing is kept out with this colour check instead of that model.
+ */
+function hairLike(r: number, g: number, b: number) {
+  if (skinPixel(r, g, b)) return false;
+  if (b > r + 18 && b > g + 8) return false;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  if (lum > 120) return false;
+  if (max - min > 45 && lum > 45) return false;
+  return lum < 95;
 }
 
-function hairMask(mask: Uint8Array, width: number, height: number, face: FaceBox) {
+/**
+ * Per-row horizontal span of face skin. Eyes, brows, and lips sit between the skin
+ * on the same row, so the span covers them even though they are not skin-coloured.
+ * Rows with only a sliver of skin are skipped.
+ */
+function faceSpans(data: Buffer, width: number, height: number, face: FaceBox) {
+  const spans: { y: number; x0: number; x1: number }[] = [];
+  const left = Math.max(0, Math.floor(face.x - face.w * 0.15));
+  const right = Math.min(width - 1, Math.ceil(face.x + face.w * 1.15));
+  const top = Math.max(0, Math.floor(face.y));
+  const bottom = Math.min(height - 1, Math.ceil(face.y + face.h));
+  for (let y = top; y <= bottom; y += 1) {
+    let x0 = -1;
+    let x1 = -1;
+    let count = 0;
+    for (let x = left; x <= right; x += 1) {
+      const i = (y * width + x) * 3;
+      if (!skinPixel(data[i], data[i + 1], data[i + 2])) continue;
+      count += 1;
+      if (x0 < 0) x0 = x;
+      x1 = x;
+    }
+    if (count >= 6) spans.push({ y, x0, x1 });
+  }
+  return spans;
+}
+
+/**
+ * Hair zone: room for the current hair and for a new length or cut, minus the face and the body.
+ * The box reaches beside and above the head so a shorter style can replace long hair.
+ * Real hair-coloured pixels below that box stay in. Skin, and anything below the chin that is not hair, stays out.
+ */
+function hairMask(mask: Uint8Array, width: number, height: number, face: FaceBox, data: Buffer) {
   const cx = face.x + face.w / 2;
-  stampEllipse(mask, width, height, cx, face.y - face.h * 0.02, face.w * 0.72, face.h * 0.4);
-  const y1 = face.y + face.h * 0.42;
-  for (let y = Math.max(0, Math.floor(face.y)); y <= Math.min(height - 1, Math.ceil(y1)); y += 1) {
-    for (let side = 0; side < 2; side += 1) {
-      const x0 = side === 0 ? face.x - face.w * 0.22 : face.x + face.w * 0.78;
-      const x1 = side === 0 ? face.x + face.w * 0.16 : face.x + face.w * 1.22;
-      for (let x = Math.max(0, Math.floor(x0)); x <= Math.min(width - 1, Math.ceil(x1)); x += 1) mask[y * width + x] = 255;
+  const x0 = Math.max(0, Math.floor(cx - face.w * 1.6));
+  const x1 = Math.min(width - 1, Math.ceil(cx + face.w * 1.6));
+  const y0 = Math.max(0, Math.floor(face.y - face.h * 0.6));
+  const y1 = Math.min(height - 1, Math.ceil(face.y + face.h * 1.2));
+  for (let y = y0; y <= y1; y += 1) {
+    for (let x = x0; x <= x1; x += 1) mask[y * width + x] = 255;
+  }
+  const yExt = Math.min(height - 1, Math.ceil(face.y + face.h * 2.6));
+  for (let y = y1 + 1; y <= yExt; y += 1) {
+    for (let x = x0; x <= x1; x += 1) {
+      const i = (y * width + x) * 3;
+      if (hairLike(data[i], data[i + 1], data[i + 2])) mask[y * width + x] = 255;
+    }
+  }
+  const margin = Math.max(2, Math.round(face.w * 0.03));
+  for (const span of faceSpans(data, width, height, face)) {
+    const a = Math.max(0, span.x0 - margin);
+    const b = Math.min(width - 1, span.x1 + margin);
+    for (let y = Math.max(0, span.y - 1); y <= Math.min(height - 1, span.y + 1); y += 1) {
+      for (let x = a; x <= b; x += 1) mask[y * width + x] = 0;
+    }
+  }
+  const chin = face.y + face.h * 0.92;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const p = y * width + x;
+      if (!mask[p]) continue;
+      const i = p * 3;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      if (skinPixel(r, g, b) || (y >= chin && !hairLike(r, g, b))) mask[p] = 0;
     }
   }
 }
@@ -302,7 +365,7 @@ function maskBox(mask: Uint8Array, width: number, height: number) {
 
 function zoneOk(tool: RegionTool, face: FaceBox, box: NonNullable<ReturnType<typeof maskBox>>) {
   if (tool === "style" || tool === "colour") {
-    return box.cy < face.y + face.h * 0.34 && box.minY <= face.y + face.h * 0.08 && box.maxY < face.y + face.h * 0.55;
+    return box.minY <= face.y + face.h * 0.08;
   }
   if (tool === "brows") {
     return box.cy > face.y + face.h * 0.18 && box.cy < face.y + face.h * 0.4 && box.maxX - box.minX < face.w * 1.15;
@@ -311,8 +374,8 @@ function zoneOk(tool: RegionTool, face: FaceBox, box: NonNullable<ReturnType<typ
 }
 
 const AREA: Record<RegionTool, [number, number]> = {
-  style: [0.015, 0.42],
-  colour: [0.015, 0.42],
+  style: [0.015, 0.8],
+  colour: [0.015, 0.8],
   brows: [0.002, 0.09],
   beard: [0.012, 0.3],
   nails: [0.008, 0.4],
@@ -348,13 +411,13 @@ export function analyzeRegion(data: Buffer, width: number, height: number, tool:
     if (blobs.length >= 2) return fail({ ...base, reason: "many" });
     const blob = blobs[0];
     const face = blob.box;
+    base.face = face;
+    if (tool === "brows") browMask(mask, width, height, face);
+    else if (tool === "beard") beardMask(mask, width, height, face);
+    else hairMask(mask, width, height, face, data);
     if (face.h < MIN_FACE) return fail({ ...base, face, reason: "small" });
     if (blob.tilt > 18) return fail({ ...base, face, reason: "tilt" });
     if (blob.symmetry < 0.86) return fail({ ...base, face, reason: "profile" });
-    if (tool === "brows") browMask(mask, width, height, face);
-    else if (tool === "beard") beardMask(mask, width, height, face);
-    else hairMask(mask, width, height, face);
-    base.face = face;
   }
   const box = maskBox(mask, width, height);
   const fraction = box ? box.count / (width * height) : 0;
@@ -378,7 +441,7 @@ export function disallowedChange(tool: RegionTool, face: FaceBox | null, changed
       const inFaceX = nx > -0.05 && nx < 1.05;
       const forehead = inFaceX && ny > 0 && ny < 0.18;
       const eyes = inFaceX && ny > 0.34 && ny < 0.48;
-      const beard = inFaceX && ny > 0.62;
+      const beard = inFaceX && ny > 0.62 && ny < 1;
       if (tool === "beard" && (forehead || eyes)) bad += 1;
       if ((tool === "style" || tool === "colour") && beard) bad += 1;
       if (tool === "brows" && (beard || ny < 0.12)) bad += 1;
@@ -454,6 +517,32 @@ export function compositeLocked(original: Buffer, edited: Buffer, feather: Uint8
     }
   }
   return out;
+}
+
+/** Mean per-channel absolute difference across brows, eyes, and the nose. */
+export function faceRegionDelta(original: Buffer, next: Buffer, face: FaceBox, width: number, height: number) {
+  const bands: [number, number][] = [
+    [0.18, 0.36],
+    [0.34, 0.5],
+    [0.42, 0.62],
+  ];
+  const x0 = Math.max(0, Math.floor(face.x + face.w * 0.15));
+  const x1 = Math.min(width - 1, Math.ceil(face.x + face.w * 0.85));
+  let sum = 0;
+  let count = 0;
+  for (const [start, end] of bands) {
+    const y0 = Math.max(0, Math.floor(face.y + face.h * start));
+    const y1 = Math.min(height - 1, Math.ceil(face.y + face.h * end));
+    for (let y = y0; y <= y1; y += 1) {
+      for (let x = x0; x <= x1; x += 1) {
+        const o = (y * width + x) * 3;
+        sum += Math.abs(original[o] - next[o]) + Math.abs(original[o + 1] - next[o + 1]) + Math.abs(original[o + 2] - next[o + 2]);
+        count += 3;
+      }
+    }
+  }
+  if (!count) return 0;
+  return sum / count;
 }
 
 export async function preflightPhoto(jpeg: Buffer, tool: RegionTool) {

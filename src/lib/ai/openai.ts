@@ -1,6 +1,6 @@
-import sharp from "sharp";
 import { BilledProviderError, isUnknownModelResponse, UnknownModelError } from "@/lib/ai/errors";
 import { styleReferenceFor } from "@/lib/ai/style-reference";
+import { padImageAndMask, restoreSquareContent } from "@/lib/ai/square";
 import { prepareTierInput, tierRequest, type UsageNumbers } from "@/lib/ai/tiers";
 import type { GenerateInput, GenerateOutput, ImageStyleProvider, PreviewQuality } from "@/lib/ai/types";
 
@@ -63,6 +63,7 @@ export class OpenAIProvider implements ImageStyleProvider {
     if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
     const spec = tierRequest("openai", input.tier || "test");
     const prepared = await prepareTierInput(input.image, input.maskPng, spec);
+    const padded = await padImageAndMask(prepared.image, prepared.mask);
     const started = Date.now();
     const form = new FormData();
     form.set("model", spec.model);
@@ -73,13 +74,13 @@ export class OpenAIProvider implements ImageStyleProvider {
     form.set("n", "1");
     const fidelity = inputFidelity(spec.model);
     if (fidelity) form.set("input_fidelity", fidelity);
-    form.append("image[]", new Blob([new Uint8Array(prepared.image)], { type: "image/jpeg" }), "selfie.jpg");
+    form.append("image[]", new Blob([new Uint8Array(padded.image)], { type: "image/jpeg" }), "selfie.jpg");
     const reference = styleReferenceFor(input, "openai");
     if (reference) {
       form.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
     }
-    if (prepared.mask) {
-      form.append("mask", new Blob([new Uint8Array(prepared.mask)], { type: "image/png" }), "mask.png");
+    if (padded.mask) {
+      form.append("mask", new Blob([new Uint8Array(padded.mask)], { type: "image/png" }), "mask.png");
     }
     const response = await fetch("https://api.openai.com/v1/images/edits", {
       method: "POST",
@@ -104,7 +105,7 @@ export class OpenAIProvider implements ImageStyleProvider {
     const usage = usageFromPayload(payload);
     const b64 = payload.data?.[0]?.b64_json;
     if (!b64) throw new BilledProviderError(spec.estimateUsd, usage);
-    const image = await sharp(Buffer.from(b64, "base64")).rotate().jpeg({ quality: 86 }).toBuffer();
+    const image = await restoreSquareContent(Buffer.from(b64, "base64"), padded);
     return {
       image,
       mime: "image/jpeg",

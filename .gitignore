@@ -14,5 +14,6 @@ playwright-report
 blob-report
 coverage
 *.log
+var/
 .DS_Store
 tsconfig.tsbuildinfo
