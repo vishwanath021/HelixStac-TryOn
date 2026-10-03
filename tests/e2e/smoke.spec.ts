@@ -18,7 +18,7 @@ test.beforeAll(async () => {
   const prisma = await salonDb();
   await prisma.tenant.update({
     where: { slug: "demo-salon" },
-    data: { anonDailyCap: 40, requireLoginToBook: false, toolBeard: true, toolNails: true },
+    data: { anonDailyCap: 200, requireLoginToBook: false, toolBeard: true, toolNails: true },
   });
   await prisma.$disconnect();
 });
@@ -266,7 +266,7 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
     await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" }).click();
     await expect(page.getByText("AI preview — actual results vary by hair type. Consult your stylist.")).toBeVisible({ timeout: 20_000 });
   } finally {
-    await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { anonDailyCap: 40 } });
+    await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { anonDailyCap: 200 } });
     await prisma.$disconnect();
   }
 });
@@ -314,7 +314,7 @@ test("booking asks for a phone code only when the salon requires it", async ({ p
     await expect(popup).toHaveURL(/919800099111/);
     await popup.close();
   } finally {
-    await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { requireLoginToBook: false, anonDailyCap: 40 } });
+    await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { requireLoginToBook: false, anonDailyCap: 200 } });
     await prisma.customer.deleteMany({ where: { phone: "919800099111" } });
     await prisma.$disconnect();
   }

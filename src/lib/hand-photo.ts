@@ -39,6 +39,6 @@ export function classifySkinPhoto(pixels: ArrayLike<number>, width: number, heig
   const rightRatio = rightN ? right / rightN : 0;
   const centerRatio = centerN ? center / centerN : 0;
   if (leftRatio > 0.22 && rightRatio > 0.22 && centerRatio > 0.18) return "hand";
-  if (centerRatio > 0.38 && leftRatio < 0.12 && rightRatio < 0.12) return "face";
+  if (centerRatio > 0.28 && leftRatio < 0.14 && rightRatio < 0.14) return "face";
   return "unclear";
 }
