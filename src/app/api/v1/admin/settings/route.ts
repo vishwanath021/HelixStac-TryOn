@@ -24,6 +24,11 @@ const schema = z.object({
   toolColour: z.boolean().optional(),
   toolStyle: z.boolean().optional(),
   toolBrows: z.boolean().optional(),
+  toolBeard: z.boolean().optional(),
+  toolNails: z.boolean().optional(),
+  anonDailyCap: z.number().int().min(0).max(500).optional(),
+  memberDailyCap: z.number().int().min(0).max(500).optional(),
+  requireLoginToBook: z.boolean().optional(),
   gstin: z.string().max(20).optional().nullable(),
 });
 

@@ -13,6 +13,7 @@ The salon decides why a guest's data is processed. In DPDP terms that is the dat
 | Live colour | No. MediaPipe runs in the browser on files we host. | No |
 | Style preview | Yes. JPEG bytes go to the app server, then to the configured image provider. | No. Memory only. Response is `Cache-Control: no-store`. |
 | Eyebrow mapping | Same path as a style preview. The server sends a brow-only prompt. | No. The try-on row stores the shape id, not the photo. |
+| Beard and nail previews | Same path. Prompts edit facial hair or visible nails only. | No pixels stored. |
 | Sample portrait | The illustration in `/samples` is not a guest. | It is a static file, not a photo of a person. |
 
 The generate route checks magic bytes, rejects files over 2 MB, and re-encodes with `sharp`, which drops EXIF. Logs go through `redact()` so photo fields and long strings are not printed. Analytics events reject keys that look like images.
@@ -47,4 +48,4 @@ The age checkbox is an attestation, not an identity check. Kids' catalogue entri
 
 ## Cookies
 
-Auth uses an httpOnly session cookie for salon staff. Guests get a random id in `sessionStorage`, not an account.
+Auth.js uses an httpOnly session cookie for salon staff. Try-on guests get a random id in `sessionStorage` and do not need an account. The booking hub sets a separate httpOnly `helix_guest` cookie after a phone code. It stores name, date of birth, audience, hair length, family labels, and booking requests for that salon only. Photos are still not stored. **Delete my data** removes that guest row and writes a completed data request. OTP sends are logged as consent with the last four digits of the number, not the code and not a photo. The dev mock may show the code on screen when `NODE_ENV` is not production.

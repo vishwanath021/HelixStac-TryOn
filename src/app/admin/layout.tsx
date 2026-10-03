@@ -8,6 +8,7 @@ const LINKS = [
   ["/admin/styles", "Styles"],
   ["/admin/services", "Services"],
   ["/admin/leads", "Leads"],
+  ["/admin/bookings", "Bookings"],
   ["/admin/qr", "QR and embed"],
   ["/admin/billing", "Billing"],
   ["/admin/settings", "Settings"],

@@ -70,7 +70,7 @@ export function OnboardingWizard({
           ))}
         </div>
       )}
-      {step === 4 && <p className="mt-3 text-sm">Open the try-on, print the QR, and paste the embed if your plan includes it. Colour, style, and brows start on. Turn a tool off in Settings. Nail art is not available yet.</p>}
+      {step === 4 && <p className="mt-3 text-sm">Open the try-on, print the QR, and paste the embed if your plan includes it. Colour, style, brows, beard, and nails start on. Turn a tool off in Settings. Booking stays on WhatsApp unless you require a phone login.</p>}
       <div className="mt-4 flex gap-2">
         {step > 0 && <button className="btn secondary" type="button" onClick={() => setStep((value) => value - 1)}>Back</button>}
         {step < 4 && <button className="btn" type="button" onClick={() => { void save(false); setStep((value) => value + 1); }}>Next</button>}

@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BeardThumb } from "@/components/tryon/BeardThumb";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { BrowThumb } from "@/components/tryon/BrowThumb";
 import { ColourStage } from "@/components/tryon/ColourStage";
+import { NailThumb } from "@/components/tryon/NailThumb";
 import { StyleThumb } from "@/components/tryon/StyleThumb";
 import { isLocale, LOCALE_LABELS, t, type Locale } from "@/data/i18n";
 import { recommendStyles } from "@/lib/recommendations";
@@ -17,8 +19,31 @@ type Look = {
   before: string;
   after: string;
   serviceKeys: string[];
-  tool: "style" | "brows";
+  tool: "style" | "brows" | "beard" | "nails";
 };
+
+type TryTool = "colour" | "style" | "brows" | "beard" | "nails";
+
+function firstTool(config: SalonConfig, requested?: string): TryTool {
+  const allowed: TryTool[] = [];
+  if (config.toolColour) allowed.push("colour");
+  if (config.toolStyle) allowed.push("style");
+  if (config.toolBrows) allowed.push("brows");
+  if (config.toolBeard) allowed.push("beard");
+  if (config.toolNails) allowed.push("nails");
+  if (requested && allowed.includes(requested as TryTool)) return requested as TryTool;
+  return allowed[0] ?? "colour";
+}
+
+function resultKey(kind: Look["tool"], which: "disclaimer" | "book" | "again") {
+  const map = {
+    brows: { disclaimer: "browDisclaimer", book: "bookBrow", again: "tryAnotherBrow" },
+    beard: { disclaimer: "beardDisclaimer", book: "bookBeard", again: "tryAnotherBeard" },
+    nails: { disclaimer: "nailDisclaimer", book: "bookNail", again: "tryAnotherNail" },
+    style: { disclaimer: "disclaimer", book: "book", again: "tryAnother" },
+  } as const;
+  return map[kind][which];
+}
 
 const FACES = ["oval", "round", "square", "heart", "oblong", "diamond"] as const;
 const HAIRS = ["straight", "wavy", "curly", "thick", "thin"] as const;
@@ -32,7 +57,23 @@ function sessionId() {
   return created;
 }
 
-export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed?: boolean }) {
+export function TryOnApp({
+  config,
+  embed = false,
+  initialTool,
+  initialStyleId,
+  initialShadeId,
+  salonToken,
+  salonMode = false,
+}: {
+  config: SalonConfig;
+  embed?: boolean;
+  initialTool?: string;
+  initialStyleId?: string;
+  initialShadeId?: string;
+  salonToken?: string;
+  salonMode?: boolean;
+}) {
   const initialLang = isLocale(config.defaultLang) ? config.defaultLang : "en";
   const [lang, setLang] = useState<Locale>(initialLang);
   const [sid, setSid] = useState("");
@@ -50,8 +91,7 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [shadeId, setShadeId] = useState(config.shades[0]?.id ?? "");
   const [intensity, setIntensity] = useState(72);
-  const initialTool = config.toolColour ? "colour" : config.toolStyle ? "style" : "brows";
-  const [tool, setTool] = useState<"colour" | "style" | "brows">(initialTool);
+  const [tool, setTool] = useState<TryTool>(firstTool(config, initialTool));
   const [gender, setGender] = useState<"women" | "men" | "kids">(config.showWomen ? "women" : config.showMen ? "men" : "kids");
   const [styleId, setStyleId] = useState("");
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
@@ -81,6 +121,24 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
   }, [lang]);
 
   useEffect(() => {
+    if (initialShadeId && config.shades.some((item) => item.id === initialShadeId)) setShadeId(initialShadeId);
+  }, [initialShadeId, config.shades]);
+
+  useEffect(() => {
+    if (!initialStyleId) return;
+    const style = config.styles.find((item) => item.id === initialStyleId);
+    if (style) {
+      setGender(style.gender);
+      setStyleId(style.id);
+      return;
+    }
+    const known = config.brows.some((item) => item.id === initialStyleId)
+      || config.beards.some((item) => item.id === initialStyleId)
+      || config.nails.some((item) => item.id === initialStyleId);
+    if (known) setStyleId(initialStyleId);
+  }, [initialStyleId, config.styles, config.brows, config.beards, config.nails]);
+
+  useEffect(() => {
     if (!busy) return;
     setProgress(8);
     const started = Date.now();
@@ -101,7 +159,7 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
   const styles = config.styles.filter((style) => style.gender === gender);
   const active = looks.find((look) => look.id === activeId) ?? looks[0];
   const suggestions = useMemo(() => recommendStyles(styles, face, hair, 4), [styles, face, hair]);
-  const showResult = (tool === "style" || tool === "brows") && stylePhase === "result" && active?.tool === tool && !busy;
+  const showResult = tool !== "colour" && stylePhase === "result" && active?.tool === tool && !busy;
   const showStudio = (cameraOn || Boolean(photoEl)) && !showResult;
 
   function track(eventName: string, props?: Record<string, string | number | boolean | null>) {
@@ -239,13 +297,13 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
     await applyBlob(blob);
   }
 
-  function selectTool(next: "colour" | "style" | "brows") {
+  function selectTool(next: TryTool) {
     setTool(next);
     setStylePhase(active?.tool === next ? "result" : "pick");
     setError("");
   }
 
-  async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: "style" | "brows" }) {
+  async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }) {
     if (!consentId) {
       setError(t(lang, "consentRequired"));
       return;
@@ -283,6 +341,7 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
     body.set("consentId", consentId);
     body.set("sessionId", sid);
     if (chosen.tool === "style" && shadeId) body.set("shadeId", shadeId);
+    if (salonToken) body.set("salonToken", salonToken);
     const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
     if (!res.ok) {
       const data = await res.json().catch(() => ({ message: t(lang, "creditsEmpty") }));
@@ -314,6 +373,11 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
 
   async function book(shareOnly = false) {
     if (!active) return;
+    if (!shareOnly && config.requireLoginToBook) {
+      const params = new URLSearchParams({ book: "1", look: active.styleName, styleId: active.styleId, tool: active.tool });
+      window.location.assign(`/s/${config.slug}/me?${params.toString()}`);
+      return;
+    }
     const res = await fetch("/api/v1/leads", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -396,6 +460,8 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
         </label>
       </header>
 
+      {salonMode && <p className="mb-3 rounded-2xl bg-[#241c16] px-3 py-2 text-center text-xs text-white" role="status">{t(lang, "salonModeOn")}</p>}
+
       {config.status === "SUSPENDED" ? (
         <p className="card p-4 text-sm" role="status">{t(lang, "salonSuspended")}</p>
       ) : !accepted ? (
@@ -435,8 +501,18 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
               {config.toolBrows && (
                 <button className={`rounded-full px-4 py-2 text-xs font-semibold tracking-[0.14em] ${tool === "brows" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" role="tab" aria-selected={tool === "brows"} onClick={() => selectTool("brows")}>{t(lang, "browsTab")}</button>
               )}
-              <button className="rounded-full px-4 py-2 text-xs font-semibold tracking-[0.14em] text-white/45" type="button" role="tab" aria-disabled="true" disabled title={t(lang, "nailsSoon")}>{t(lang, "nailsTab")}</button>
+              {config.toolBeard && (
+                <button className={`rounded-full px-4 py-2 text-xs font-semibold tracking-[0.14em] ${tool === "beard" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" role="tab" aria-selected={tool === "beard"} onClick={() => selectTool("beard")}>{t(lang, "beardTab")}</button>
+              )}
+              {config.toolNails && (
+                <button className={`rounded-full px-4 py-2 text-xs font-semibold tracking-[0.14em] ${tool === "nails" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" role="tab" aria-selected={tool === "nails"} onClick={() => selectTool("nails")}>{t(lang, "nailsTab")}</button>
+              )}
             </div>
+            <p className="mt-3 text-xs">
+              <a className="underline" href={`/s/${config.slug}/guide`}>{t(lang, "guideLink")}</a>
+              {" · "}
+              <a className="underline" href={`/s/${config.slug}/me`}>{t(lang, "hubLink")}</a>
+            </p>
           </section>
 
           <section className="overflow-hidden rounded-[28px] bg-[#14110e] shadow-lg">
@@ -471,9 +547,9 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
                 {!cameraOn && !photoUrl && (
                   <div className="absolute inset-0 grid place-items-center px-8 text-center text-[#f6efe6]">
                     <div>
-                      <p className="text-sm leading-6">{t(lang, "mirrorHint")}</p>
+                      <p className="text-sm leading-6">{t(lang, tool === "nails" ? "nailCameraHint" : "mirrorHint")}</p>
                       {cameraError && <p className="mt-3 text-sm text-[#f0c7b0]" role="alert">{cameraError}</p>}
-                      <button className="btn mt-5 min-w-44" type="button" onClick={() => void startCamera("user")}>{t(lang, "startCamera")}</button>
+                      <button className="btn mt-5 min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "startCamera")}</button>
                       <div className="mt-3">
                         <button className="text-sm font-medium text-white underline underline-offset-4" type="button" onClick={openFile}>{t(lang, "uploadPhoto")}</button>
                       </div>
@@ -572,7 +648,7 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
             </p>
           )}
 
-          {tool === "style" && !photoBlob && !cameraOn && (
+          {tool !== "colour" && !photoBlob && !cameraOn && (
             <p className="text-center text-sm text-muted">{t(lang, "captureFirst")}</p>
           )}
 
@@ -606,10 +682,6 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
             </section>
           )}
 
-          {tool === "brows" && !photoBlob && !cameraOn && (
-            <p className="text-center text-sm text-muted">{t(lang, "captureFirst")}</p>
-          )}
-
           {tool === "brows" && photoBlob && stylePhase === "pick" && !busy && (
             <section className="card p-4" aria-label={t(lang, "brows")}>
               <p className="mb-3 text-sm leading-6">{t(lang, "browHint")}</p>
@@ -635,14 +707,64 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
             </section>
           )}
 
+          {tool === "beard" && photoBlob && stylePhase === "pick" && !busy && (
+            <section className="card p-4" aria-label={t(lang, "beards")}>
+              <p className="mb-3 text-sm leading-6">{t(lang, "beardHint")}</p>
+              <label className="mb-3 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={quality === "hd"} onChange={(event) => setQuality(event.target.checked ? "hd" : "standard")} />
+                {t(lang, "generateHd")}
+                <span className="text-xs text-muted">{t(lang, "hdNote")}</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {config.beards.map((beard) => (
+                  <button
+                    key={beard.id}
+                    type="button"
+                    aria-pressed={beard.id === styleId}
+                    className={`overflow-hidden rounded-2xl border bg-white text-left ${beard.id === styleId ? "border-[var(--brand)]" : "border-line"}`}
+                    onClick={() => void preview({ id: beard.id, name: beard.name, serviceKeys: beard.serviceKeys, tool: "beard" })}
+                  >
+                    <div className="aspect-[4/3]"><BeardThumb name={beard.name} /></div>
+                    <span className="block px-2 py-2 text-sm font-medium">{beard.name}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {tool === "nails" && photoBlob && stylePhase === "pick" && !busy && (
+            <section className="card p-4" aria-label={t(lang, "nails")}>
+              <p className="mb-3 text-sm leading-6">{t(lang, "nailHint")}</p>
+              <label className="mb-3 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={quality === "hd"} onChange={(event) => setQuality(event.target.checked ? "hd" : "standard")} />
+                {t(lang, "generateHd")}
+                <span className="text-xs text-muted">{t(lang, "hdNote")}</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {config.nails.map((nail) => (
+                  <button
+                    key={nail.id}
+                    type="button"
+                    aria-pressed={nail.id === styleId}
+                    className={`overflow-hidden rounded-2xl border bg-white text-left ${nail.id === styleId ? "border-[var(--brand)]" : "border-line"}`}
+                    onClick={() => void preview({ id: nail.id, name: nail.name, serviceKeys: nail.serviceKeys, tool: "nails" })}
+                  >
+                    <div className="aspect-[4/3]"><NailThumb name={nail.name} /></div>
+                    <span className="block px-2 py-2 text-sm font-medium">{nail.name}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           {showResult && active && (
             <section className="space-y-3">
               <h3 className="text-center font-serif text-2xl">{active.styleName}{active.shadeName ? ` · ${active.shadeName}` : ""}</h3>
-              <p className="text-center text-sm leading-6 text-muted">{t(lang, active.tool === "brows" ? "browDisclaimer" : "disclaimer")}</p>
-              <button className="btn w-full" type="button" onClick={() => void book(false)}>{t(lang, active.tool === "brows" ? "bookBrow" : "book")}</button>
+              <p className="text-center text-sm leading-6 text-muted">{t(lang, resultKey(active.tool, "disclaimer"))}</p>
+              <button className="btn w-full" type="button" onClick={() => void book(false)}>{t(lang, resultKey(active.tool, "book"))}</button>
               <div className="grid grid-cols-2 gap-2">
                 <button className="btn secondary" type="button" onClick={() => void downloadLook()}>{t(lang, "download")}</button>
-                <button className="btn secondary" type="button" onClick={() => { setStylePhase("pick"); setError(""); }}>{t(lang, active.tool === "brows" ? "tryAnotherBrow" : "tryAnother")}</button>
+                <button className="btn secondary" type="button" onClick={() => { setStylePhase("pick"); setError(""); }}>{t(lang, resultKey(active.tool, "again"))}</button>
               </div>
               <div className="grid gap-2">
                 <input className="field" placeholder={t(lang, "nameOptional")} value={name} onChange={(event) => setName(event.target.value)} aria-label={t(lang, "nameOptional")} />

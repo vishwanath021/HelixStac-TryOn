@@ -8,7 +8,7 @@ export type GenerateInput = {
   colour?: string | null;
   tenantId: string;
   quality: PreviewQuality;
-  kind?: "style" | "brows";
+  kind?: "style" | "brows" | "beard" | "nails";
 };
 
 export type GenerateOutput = {

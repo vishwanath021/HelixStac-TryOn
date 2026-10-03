@@ -19,6 +19,11 @@ export function SettingsForm({
     toolColour: boolean;
     toolStyle: boolean;
     toolBrows: boolean;
+    toolBeard: boolean;
+    toolNails: boolean;
+    anonDailyCap: number;
+    memberDailyCap: number;
+    requireLoginToBook: boolean;
   };
   canRemoveBranding: boolean;
 }) {
@@ -83,8 +88,22 @@ export function SettingsForm({
           <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolColour} onChange={(event) => set("toolColour", event.target.checked)} /> Live colour</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolStyle} onChange={(event) => set("toolStyle", event.target.checked)} /> Hairstyle preview</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolBrows} onChange={(event) => set("toolBrows", event.target.checked)} /> Eyebrow mapping</label>
-          <label className="flex items-center gap-2 text-muted"><input type="checkbox" checked={false} disabled /> Nail art (coming soon)</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolBeard} onChange={(event) => set("toolBeard", event.target.checked)} /> Beard try-on</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolNails} onChange={(event) => set("toolNails", event.target.checked)} /> Nail try-on</label>
         </fieldset>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="text-sm">Anonymous daily previews
+            <input className="field mt-1" type="number" min={0} max={500} value={form.anonDailyCap} onChange={(event) => set("anonDailyCap", Number(event.target.value))} />
+          </label>
+          <label className="text-sm">Logged-in daily previews
+            <input className="field mt-1" type="number" min={0} max={500} value={form.memberDailyCap} onChange={(event) => set("memberDailyCap", Number(event.target.value))} />
+          </label>
+        </div>
+        <p className="text-xs text-muted">0 means no AI previews for that group. Salon-mode links are unlimited. Live colour stays free.</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={form.requireLoginToBook} onChange={(event) => set("requireLoginToBook", event.target.checked)} />
+          Require a phone login before an online booking request. When this is off, Book opens WhatsApp.
+        </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.removeBranding} disabled={!canRemoveBranding} onChange={(event) => set("removeBranding", event.target.checked)} />
           Remove “Powered by HelixStac” {canRemoveBranding ? "" : "(Pro or Chain)"}

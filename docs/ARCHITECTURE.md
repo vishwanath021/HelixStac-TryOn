@@ -1,6 +1,6 @@
 # Architecture
 
-HelixStac TryOn is a multi-tenant Next.js app. A salon gets a branded page, a QR standee, and (on Pro and Chain) a one-line embed. Guests recolour hair on their own phone and can request an AI hairstyle or eyebrow preview that spends the salon's credits. A salon turns Colour, Style, and Brows on or off. Nail art is a disabled slot.
+HelixStac TryOn is a multi-tenant Next.js app. A salon gets a branded page, a QR standee, and (on Pro and Chain) a one-line embed. Guests recolour hair on their own phone and can request an AI hairstyle, eyebrow, beard, or nail preview that spends the salon's credits. Each tool is a tenant flag. Try-on does not require an account. A separate guest cookie (not Auth.js) is only for the booking hub.
 
 ```mermaid
 flowchart LR

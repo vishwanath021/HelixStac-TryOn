@@ -27,6 +27,11 @@ export default async function SettingsPage() {
           toolColour: tenant.toolColour,
           toolStyle: tenant.toolStyle,
           toolBrows: tenant.toolBrows,
+          toolBeard: tenant.toolBeard,
+          toolNails: tenant.toolNails,
+          anonDailyCap: tenant.anonDailyCap,
+          memberDailyCap: tenant.memberDailyCap,
+          requireLoginToBook: tenant.requireLoginToBook,
         }}
       />
     </main>

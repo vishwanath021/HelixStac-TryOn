@@ -1,15 +1,18 @@
 import Link from "next/link";
+import { SalonModeCard } from "@/components/admin/SalonModeCard";
 import { planById } from "@/data/plans";
 import { appBaseUrl } from "@/lib/env";
+import { signSalonToken } from "@/lib/preview-access";
 import { pageTenant } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function QrAdminPage() {
-  const { tenant } = await pageTenant();
+  const { tenant, membership } = await pageTenant();
   const plan = planById(tenant.plan);
   const base = appBaseUrl();
   const pageUrl = `${base}/s/${tenant.slug}`;
+  const salonUrl = tenant.salonNonce ? `${pageUrl}?salon=${signSalonToken(tenant.id, tenant.salonNonce)}` : "";
   const snippet = `<script src="${base}/embed.js" data-salon="${tenant.slug}" data-lang="${tenant.defaultLang}" defer></script>`;
   return (
     <main>
@@ -37,6 +40,7 @@ export default async function QrAdminPage() {
             <p className="mt-2 text-sm">The embed widget is on Pro and Chain. Starter uses the hosted page and QR.</p>
           )}
         </article>
+        <SalonModeCard initialUrl={salonUrl} canRotate={membership.role === "OWNER"} />
       </div>
     </main>
   );

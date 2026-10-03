@@ -22,6 +22,10 @@ Exit to aim for, not claimed as done: 10 pilot salons, 40 try-ons each in 14 day
 
 Exit: 25 paying salons, pilot-to-paid near 25%, second-month retention near 90%, COGS per standard preview at or under ₹4.
 
+## Not in this build (P2)
+
+Wallet balances, loyalty points, referral codes, creator pages, and membership cards are listed on the reference site. They are not implemented. The guest profile says so in plain text. Do not treat the booking hub as a loyalty product.
+
 ## v2
 
 - Per-outlet catalogues, not just per-outlet WhatsApp.

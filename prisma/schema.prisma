@@ -39,7 +39,12 @@ model Tenant {
   toolColour          Boolean   @default(true)
   toolStyle           Boolean   @default(true)
   toolBrows           Boolean   @default(true)
-  toolNails           Boolean   @default(false)
+  toolBeard           Boolean   @default(true)
+  toolNails           Boolean   @default(true)
+  anonDailyCap        Int       @default(8)
+  memberDailyCap      Int       @default(30)
+  requireLoginToBook  Boolean   @default(false)
+  salonNonce          String    @default("")
   onboardingDone      Boolean   @default(false)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -57,6 +62,8 @@ model Tenant {
   dataRequests        DataRequest[]
   outlets             Outlet[]
   invoices            Invoice[]
+  customers           Customer[]
+  bookings            Booking[]
 }
 
 model Domain {
@@ -171,6 +178,8 @@ model TryOn {
   styleId      String?
   shadeId      String?
   kind         String
+  tier         String   @default("anon")
+  actorKey     String   @default("")
   quality      String   @default("standard")
   provider     String?
   status       String
@@ -182,6 +191,7 @@ model TryOn {
 
   @@index([tenantId, createdAt])
   @@index([tenantId, status])
+  @@index([tenantId, actorKey, createdAt])
 }
 
 model CreditLedger {
@@ -297,4 +307,79 @@ model AuditLog {
 model PlatformSetting {
   key   String @id
   value String
+}
+
+model Customer {
+  id           String        @id @default(cuid())
+  tenantId     String
+  phone        String
+  name         String        @default("")
+  dob          String        @default("")
+  audience     String        @default("")
+  hairLength   String        @default("")
+  onboarded    Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  people       GuestPerson[]
+  bookings     Booking[]
+  looks        SavedLook[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+model GuestPerson {
+  id         String   @id @default(cuid())
+  customerId String
+  label      String
+  audience   String
+  hairLength String   @default("")
+  isPrimary  Boolean  @default(false)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+}
+
+model OtpChallenge {
+  id        String   @id @default(cuid())
+  tenantId  String
+  phone     String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, phone])
+}
+
+model Booking {
+  id          String   @id @default(cuid())
+  tenantId    String
+  customerId  String
+  lookName    String   @default("")
+  lookId      String   @default("")
+  tool        String   @default("")
+  services    String   @default("[]")
+  preferredAt String   @default("")
+  note        String   @default("")
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([customerId])
+}
+
+model SavedLook {
+  id         String   @id @default(cuid())
+  customerId String
+  tenantId   String
+  tool       String
+  lookId     String
+  lookName   String
+  createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
 }

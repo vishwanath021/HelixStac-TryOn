@@ -1,16 +1,22 @@
 import { randomUUID } from "node:crypto";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { browById } from "@/data/brows";
 import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
 import { shadeById } from "@/data/shades";
-import { styleById } from "@/data/styles";
 import { generateWithFailover } from "@/lib/ai/router";
+import type { GenerateInput } from "@/lib/ai/types";
 import { CreditError, refundStaleReserves, reserveCredits, settleCredits } from "@/lib/credits";
 import { numberEnv } from "@/lib/env";
+import { resolveLook } from "@/lib/guidance";
 import { sanitizeSelfie, ImageError } from "@/lib/images";
 import { logError } from "@/lib/logger";
+import { AI_PREVIEW_KINDS, actorKeyFor, capForTier, hashIp, readGuestToken, verifySalonToken, type PreviewTier } from "@/lib/preview-access";
 import { prisma } from "@/lib/prisma";
-import { buildBrowPrompt, buildStylePrompt } from "@/lib/prompts";
+import { buildBeardPrompt, buildBrowPrompt, buildNailPrompt, buildStylePrompt } from "@/lib/prompts";
+import { beardById } from "@/data/beards";
+import { browById } from "@/data/brows";
+import { nailById } from "@/data/nails";
+import { styleById } from "@/data/styles";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
@@ -31,7 +37,8 @@ export async function POST(req: Request) {
   const sessionId = String(form.get("sessionId") || "");
   const consentId = String(form.get("consentId") || "");
   const quality = form.get("quality") === "hd" ? "hd" : "standard";
-  const tool = form.get("tool") === "brows" ? "brows" : "style";
+  const rawTool = String(form.get("tool") || "style");
+  const tool = rawTool === "brows" || rawTool === "beard" || rawTool === "nails" ? rawTool : "style";
   const shadeId = form.get("shadeId") ? String(form.get("shadeId")) : null;
   const photo = form.get("photo");
   if (!slug || !styleId || sessionId.length < 8 || !(photo instanceof File)) {
@@ -63,26 +70,40 @@ export async function POST(req: Request) {
   }
 
   const usedToday = await prisma.tryOn.count({
-    where: { tenantId: tenant.id, kind: { in: ["STYLE", "BROWS"] }, status: "SUCCEEDED", createdAt: { gte: startOfToday() } },
+    where: { tenantId: tenant.id, kind: { in: [...AI_PREVIEW_KINDS] }, status: "SUCCEEDED", createdAt: { gte: startOfToday() } },
   });
   if (usedToday >= tenant.dailyCap) {
     return NextResponse.json({ error: "DAILY_CAP", message: "This salon has reached today's preview limit. Live colour is still free." }, { status: 429 });
   }
 
-  const brow = tool === "brows" ? browById(styleId) : null;
-  const style = tool === "style" ? styleById(styleId) : null;
-  if (tool === "brows") {
-    if (!tenant.toolBrows) {
-      return NextResponse.json({ error: "TOOL", message: "Eyebrow mapping is turned off for this salon." }, { status: 403 });
-    }
-    if (!brow) return NextResponse.json({ error: "STYLE", message: "That brow shape is not on this salon's menu." }, { status: 400 });
-  } else {
-    if (!tenant.toolStyle) {
-      return NextResponse.json({ error: "TOOL", message: "Style previews are turned off for this salon." }, { status: 403 });
-    }
+  const look = resolveLook(tool, styleId);
+  const toolOn =
+    tool === "brows" ? tenant.toolBrows : tool === "beard" ? tenant.toolBeard : tool === "nails" ? tenant.toolNails : tenant.toolStyle;
+  if (!toolOn) return NextResponse.json({ error: "TOOL", message: "That try-on is turned off for this salon." }, { status: 403 });
+  if (!look) return NextResponse.json({ error: "STYLE", message: "That look is not on this salon's menu." }, { status: 400 });
+  if (tool === "style") {
     const enabled = await prisma.tenantStyle.findUnique({ where: { tenantId_styleId: { tenantId: tenant.id, styleId } } });
-    if (!style || !enabled?.enabled) {
-      return NextResponse.json({ error: "STYLE", message: "That style is not on this salon's menu." }, { status: 400 });
+    if (!enabled?.enabled) return NextResponse.json({ error: "STYLE", message: "That style is not on this salon's menu." }, { status: 400 });
+  }
+
+  const salonToken = String(form.get("salonToken") || "");
+  const salonOk = verifySalonToken(salonToken, tenant.id, tenant.salonNonce);
+  const jar = await cookies();
+  const guest = readGuestToken(jar.get("helix_guest")?.value);
+  const member = guest && guest.tenantId === tenant.id ? guest : null;
+  const tier: PreviewTier = salonOk ? "salon" : member ? "member" : "anon";
+  const ipHash = hashIp(ip);
+  const actorKey = actorKeyFor(tier, ipHash, member?.customerId);
+  const limit = capForTier(tier, tenant.anonDailyCap, tenant.memberDailyCap);
+  if (limit !== null) {
+    const personal = await prisma.tryOn.count({
+      where: { tenantId: tenant.id, actorKey, status: "SUCCEEDED", kind: { in: [...AI_PREVIEW_KINDS] }, createdAt: { gte: startOfToday() } },
+    });
+    if (personal >= limit) {
+      const message = tier === "member"
+        ? "You've used today's previews on this account. Live colour is still free. Come back tomorrow, or ask the salon to try it with you."
+        : "That's today's previews used up. Log in for a higher limit, or visit the salon. Live colour is still free.";
+      return NextResponse.json({ error: "CAP", tier, message }, { status: 429 });
     }
   }
 
@@ -110,13 +131,22 @@ export async function POST(req: Request) {
   }
 
   const shade = tool === "style" ? shadeById(shadeId) : null;
+  const kind = tool === "brows" ? "BROWS" : tool === "beard" ? "BEARD" : tool === "nails" ? "NAILS" : "STYLE";
+  const style = tool === "style" ? styleById(styleId) : null;
+  const prompt =
+    tool === "brows" ? buildBrowPrompt(browById(styleId)!) :
+    tool === "beard" ? buildBeardPrompt(beardById(styleId)!) :
+    tool === "nails" ? buildNailPrompt(nailById(styleId)!) :
+    buildStylePrompt(style!, shade?.name);
   const tryOn = await prisma.tryOn.create({
     data: {
       tenantId: tenant.id,
       sessionId,
       styleId,
       shadeId: shade?.id,
-      kind: tool === "brows" ? "BROWS" : "STYLE",
+      kind,
+      tier,
+      actorKey,
       quality,
       status: "PENDING",
       credits,
@@ -124,16 +154,17 @@ export async function POST(req: Request) {
   });
 
   try {
-    const result = await generateWithFailover({
+    const input: GenerateInput = {
       image: jpeg,
       styleId,
       gender: style?.gender ?? "women",
-      prompt: brow ? buildBrowPrompt(brow) : buildStylePrompt(style!, shade?.name),
+      prompt,
       colour: shade?.name,
       tenantId: tenant.id,
       quality,
-      kind: tool === "brows" ? "brows" : "style",
-    });
+      kind: tool,
+    };
+    const result = await generateWithFailover(input);
     await settleCredits(tenant.id, refId, "COMMIT");
     const balance = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { creditBalance: true } });
     await prisma.tryOn.update({

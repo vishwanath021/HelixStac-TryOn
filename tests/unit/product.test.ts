@@ -1,7 +1,9 @@
 import { createHmac } from "node:crypto";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { BEARDS } from "@/data/beards";
 import { BROWS } from "@/data/brows";
+import { NAILS } from "@/data/nails";
 import { CONSENT_HASH, CONSENT_VERSION } from "@/data/consent";
 import { SHADES } from "@/data/shades";
 import { stylesForGender, STYLES } from "@/data/styles";
@@ -12,7 +14,9 @@ import { parseHost } from "@/lib/host";
 import { sanitizeSelfie } from "@/lib/images";
 import { redact } from "@/lib/logger";
 import { annualExGst, assumedInr, breakEvenAccounts, previewCogsInr, withGst } from "@/lib/pricing";
-import { buildBrowPrompt, buildStylePrompt } from "@/lib/prompts";
+import { ageYears, capForTier, signSalonToken, verifySalonToken } from "@/lib/preview-access";
+import { buildBeardPrompt, buildBrowPrompt, buildNailPrompt, buildStylePrompt } from "@/lib/prompts";
+import { colourGuidance, faceGuidance, quizGuidance } from "@/lib/guidance";
 import { rateLimit, resetRateLimits } from "@/lib/ratelimit";
 import { recommendStyles } from "@/lib/recommendations";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
@@ -131,6 +135,57 @@ describe("eyebrow catalogue", () => {
       expect(prompt.toLowerCase()).toContain("skin tone");
       expect(brow.serviceKeys).toEqual(["eyebrow-threading", "eyebrow-shaping"]);
     }
+  });
+});
+
+describe("beard and nail catalogues", () => {
+  it("keeps facial hair and nails in their own prompts", () => {
+    expect(BEARDS).toHaveLength(10);
+    expect(NAILS).toHaveLength(10);
+    expect(BEARDS.map((item) => item.id)).toEqual(expect.arrayContaining(["light-stubble", "short-boxed", "full-beard", "goatee", "french-beard", "clean-shave"]));
+    for (const beard of BEARDS) {
+      const prompt = buildBeardPrompt(beard);
+      expect(prompt.toLowerCase()).toContain("facial hair only");
+      expect(prompt.toLowerCase()).toContain("identity");
+      expect(prompt.toLowerCase()).toContain("skin tone");
+    }
+    for (const nail of NAILS) {
+      const prompt = buildNailPrompt(nail);
+      expect(prompt.toLowerCase()).toContain("fingernails only");
+      expect(prompt.toLowerCase()).toContain("identity");
+      expect(prompt.toLowerCase()).toContain("skin tone");
+    }
+  });
+});
+
+describe("preview caps and guidance", () => {
+  it("gives salon mode no cap and keeps member above anonymous", () => {
+    expect(capForTier("anon", 8, 30)).toBe(8);
+    expect(capForTier("member", 8, 30)).toBe(30);
+    expect(capForTier("salon", 8, 30)).toBeNull();
+    expect(capForTier("anon", 0, 30)).toBe(0);
+  });
+
+  it("signs a salon token that fails when the nonce rotates", () => {
+    process.env.AUTH_SECRET = "test-secret-not-for-production-use-32";
+    const token = signSalonToken("tenant-1", "nonce-a", 1);
+    expect(verifySalonToken(token, "tenant-1", "nonce-a")).toBe(true);
+    expect(verifySalonToken(token, "tenant-1", "nonce-b")).toBe(false);
+    expect(verifySalonToken("nope", "tenant-1", "nonce-a")).toBe(false);
+  });
+
+  it("rejects a hub profile under 13 and returns catalogue style ids", () => {
+    expect(ageYears("2016-01-01", new Date("2026-10-03"))).toBe(10);
+    expect(ageYears("2000-10-04", new Date("2026-10-03"))).toBe(25);
+    const face = faceGuidance("oval", "women");
+    expect(face.label.toLowerCase()).toContain("not a measurement");
+    expect(face.styles.length).toBeGreaterThan(0);
+    const colour = colourGuidance({ grey: false, undertone: "warm" });
+    expect(colour.label.toLowerCase()).toContain("not a colour analysis");
+    expect(colour.shades.every((shade) => shade.id.length > 0)).toBe(true);
+    const quiz = quizGuidance({ who: "kids", length: "short", texture: "curly", occasion: "daily" });
+    expect(quiz.styles.map((style) => style.id)).toEqual(expect.arrayContaining(["kids-soft-bob"]));
+    expect(quiz.label.toLowerCase()).toContain("quiz");
   });
 });
 

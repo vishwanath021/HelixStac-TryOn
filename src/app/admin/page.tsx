@@ -7,7 +7,7 @@ export default async function AdminHome() {
   const { tenant } = await pageTenant();
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const [styleCount, leads, whatsapp, colours] = await Promise.all([
-    prisma.tryOn.count({ where: { tenantId: tenant.id, kind: { in: ["STYLE", "BROWS"] }, status: "SUCCEEDED", createdAt: { gte: since } } }),
+    prisma.tryOn.count({ where: { tenantId: tenant.id, kind: { in: ["STYLE", "BROWS", "BEARD", "NAILS"] }, status: "SUCCEEDED", createdAt: { gte: since } } }),
     prisma.lead.count({ where: { tenantId: tenant.id, createdAt: { gte: since } } }),
     prisma.usageEvent.count({ where: { tenantId: tenant.id, name: "whatsapp_clicked", createdAt: { gte: since } } }),
     prisma.usageEvent.findMany({ where: { tenantId: tenant.id, name: "colour_selected", createdAt: { gte: since } }, take: 200 }),
