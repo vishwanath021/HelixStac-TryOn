@@ -1,6 +1,7 @@
 import { numberEnv } from "@/lib/env";
 import { logInfo } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { costUsdFromUsage, exactInr, isModelTier, tierRequest, type UsageNumbers } from "@/lib/ai/tiers";
 
 const DEFAULTS: Record<string, number> = {
   GEMINI_STANDARD: 3.5,
@@ -32,6 +33,7 @@ export function costPerCallInr(provider: string, quality: string) {
   const key = `AI_COST_PER_CALL_INR_${provider.toUpperCase()}_${quality.toUpperCase()}`;
   const specific = process.env[key];
   if (specific !== undefined && specific !== "" && Number.isFinite(Number(specific))) return Math.max(0, Number(specific));
+  if ((provider === "openai" || provider === "gemini") && isModelTier(quality)) return tierRequest(provider, quality).estimateInr;
   if (provider === "gemini" && quality === "standard") return numberEnv("AI_COST_INR_STANDARD", DEFAULTS.GEMINI_STANDARD);
   if (provider === "gemini" && quality === "hd") return numberEnv("AI_COST_INR_HD", DEFAULTS.GEMINI_HD);
   return DEFAULTS[`${provider.toUpperCase()}_${quality.toUpperCase()}`] ?? numberEnv("AI_COST_INR_STANDARD", 3.5);
@@ -39,7 +41,43 @@ export function costPerCallInr(provider: string, quality: string) {
 
 export async function releasePaidCall(id: string) {
   if (!id) return;
-  await prisma.aiCall.updateMany({ where: { id, status: "CHARGED" }, data: { status: "REFUNDED" } });
+  await prisma.aiCall.updateMany({ where: { id, status: "CHARGED" }, data: { status: "REFUNDED", charged: false } });
+}
+
+export async function finalizePaidCall(
+  id: string,
+  args: {
+    model: string;
+    billed: boolean;
+    charged: boolean;
+    costUsd: number;
+    estimateInr?: number;
+    usage?: UsageNumbers;
+    latencyMs?: number;
+    imageSize?: string;
+  },
+) {
+  if (!id) return;
+  const fromUsage = args.billed ? costUsdFromUsage(args.model, args.usage) : null;
+  const usd = !args.billed ? 0 : fromUsage ?? args.costUsd;
+  const inr = !args.billed ? 0 : fromUsage != null ? exactInr(fromUsage) : (args.estimateInr ?? exactInr(args.costUsd));
+  const source = fromUsage != null ? "usage" : "estimate";
+  await prisma.aiCall.updateMany({
+    where: { id },
+    data: {
+      billed: args.billed,
+      charged: args.charged,
+      costUsdMicros: Math.round(usd * 1_000_000),
+      costInrPaise: Math.round(inr * 100),
+      costSource: source,
+      inputTokens: args.usage?.inputTokens ?? 0,
+      outputTokens: args.usage?.outputTokens ?? 0,
+      totalTokens: args.usage?.totalTokens ?? 0,
+      usageJson: args.usage ? JSON.stringify(args.usage) : "",
+      latencyMs: args.latencyMs ?? 0,
+      ...(args.imageSize ? { imageSize: args.imageSize } : {}),
+    },
+  });
 }
 
 export async function spendSummary() {
@@ -55,8 +93,18 @@ export async function spendSummary() {
   };
 }
 
-export async function beginPaidCall(args: { provider: string; quality: string; model: string; tenantId: string }) {
-  const estimateInr = costPerCallInr(args.provider, args.quality);
+export async function beginPaidCall(args: {
+  provider: string;
+  quality: string;
+  model: string;
+  tenantId: string;
+  tool?: string;
+  tier?: string;
+  imageSize?: string;
+  estimateInr?: number;
+  estimateUsd?: number;
+}) {
+  const estimateInr = args.estimateInr ?? costPerCallInr(args.provider, args.quality);
   const estimatePaise = Math.round(estimateInr * 100);
   const capPaise = Math.round(spendCapInr() * 100);
   return exclusive(() =>
@@ -65,7 +113,19 @@ export async function beginPaidCall(args: { provider: string; quality: string; m
       const spent = agg._sum.estimatePaise || 0;
       if (spent + estimatePaise > capPaise) {
         await tx.aiCall.create({
-          data: { provider: args.provider, quality: args.quality, model: args.model, estimatePaise: 0, tenantId: args.tenantId, status: "REFUSED" },
+          data: {
+            provider: args.provider,
+            quality: args.quality,
+            model: args.model,
+            estimatePaise: 0,
+            tenantId: args.tenantId,
+            status: "REFUSED",
+            tool: args.tool || "",
+            tier: args.tier || args.quality,
+            imageSize: args.imageSize || "",
+            charged: false,
+            billed: false,
+          },
         });
         logInfo("ai spend refused", {
           provider: args.provider,
@@ -85,6 +145,14 @@ export async function beginPaidCall(args: { provider: string; quality: string; m
           estimatePaise,
           tenantId: args.tenantId,
           status: "CHARGED",
+          tool: args.tool || "",
+          tier: args.tier || args.quality,
+          imageSize: args.imageSize || "",
+          costUsdMicros: Math.round((args.estimateUsd || 0) * 1_000_000),
+          costInrPaise: estimatePaise,
+          charged: true,
+          billed: false,
+          costSource: "estimate",
         },
       });
       logInfo("ai call estimate", {

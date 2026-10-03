@@ -6,6 +6,7 @@ import { requireOwner } from "@/lib/session";
 const schema = z.object({
   provider: z.enum(["openai", "gemini"]),
   apiKey: z.string().max(300).optional().default(""),
+  tier: z.enum(["test", "medium", "high"]).optional().default("test"),
 });
 
 export async function GET() {

@@ -1,9 +1,8 @@
 import { GoogleGenAI, Modality } from "@google/genai";
+import { BilledProviderError, UnknownModelError } from "@/lib/ai/errors";
 import { styleReferenceFor } from "@/lib/ai/style-reference";
+import { prepareTierInput, tierRequest, type UsageNumbers } from "@/lib/ai/tiers";
 import type { GenerateInput, GenerateOutput, ImageStyleProvider } from "@/lib/ai/types";
-
-const STANDARD_USD = 0.0336;
-const HD_USD = 0.067;
 
 export class GeminiProvider implements ImageStyleProvider {
   name = "gemini";
@@ -17,31 +16,50 @@ export class GeminiProvider implements ImageStyleProvider {
   async generate(input: GenerateInput): Promise<GenerateOutput> {
     const apiKey = this.apiKey;
     if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
-    const model =
-      input.quality === "hd"
-        ? process.env.GEMINI_MODEL_HD || "gemini-3.1-flash-image"
-        : process.env.GEMINI_MODEL_STANDARD || "gemini-3.1-flash-lite-image";
+    const spec = tierRequest("gemini", input.tier || "test");
+    const prepared = await prepareTierInput(input.image, undefined, spec);
     const started = Date.now();
     const ai = new GoogleGenAI({ apiKey });
     const parts: Array<{ inlineData: { mimeType: string; data: string } } | { text: string }> = [
-      { inlineData: { mimeType: "image/jpeg", data: input.image.toString("base64") } },
+      { inlineData: { mimeType: "image/jpeg", data: prepared.image.toString("base64") } },
     ];
     const reference = styleReferenceFor(input, "gemini");
     if (reference) parts.push({ inlineData: { mimeType: "image/jpeg", data: reference.toString("base64") } });
     parts.push({ text: input.prompt });
     const response = await ai.models.generateContent({
-      model,
+      model: spec.model,
       contents: [{ role: "user", parts }],
       config: { responseModalities: [Modality.IMAGE, Modality.TEXT] },
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "";
+      if (/not found|NOT_FOUND|unknown model|is not supported|invalid model|model_not_found/i.test(message)) {
+        throw new UnknownModelError();
+      }
+      throw new Error("Gemini image edit failed");
     });
+    const usageMeta = response.usageMetadata;
+    const usage: UsageNumbers | undefined = usageMeta
+      ? {
+          inputTokens: usageMeta.promptTokenCount,
+          outputTokens: usageMeta.candidatesTokenCount,
+          totalTokens: usageMeta.totalTokenCount,
+          thoughtTokens: usageMeta.thoughtsTokenCount,
+        }
+      : undefined;
     const data = response.data;
-    if (!data) throw new Error("Gemini returned no image");
+    if (!data) throw new BilledProviderError(spec.estimateUsd, usage);
     return {
       image: Buffer.from(data, "base64"),
       mime: "image/jpeg",
-      provider: `${this.name}:${model}`,
-      providerCostUsd: input.quality === "hd" ? HD_USD : STANDARD_USD,
+      provider: `${this.name}:${spec.model}:${spec.quality}`,
+      providerCostUsd: spec.estimateUsd,
       latencyMs: Date.now() - started,
+      estimateInr: spec.estimateInr,
+      model: spec.model,
+      qualityTier: spec.quality,
+      imageSize: spec.size,
+      usage,
+      costSource: usage ? "usage" : "estimate",
     };
   }
 }

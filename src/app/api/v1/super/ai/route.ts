@@ -7,6 +7,8 @@ const schema = z.object({
   provider: z.enum(["openai", "gemini"]),
   apiKey: z.string().max(300).optional().default(""),
   allowByo: z.boolean(),
+  tier: z.enum(["test", "medium", "high"]).optional().default("test"),
+  highEnabled: z.boolean().optional().default(false),
 });
 
 export async function GET() {

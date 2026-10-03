@@ -48,6 +48,7 @@ model Tenant {
   aiProvider          String    @default("")
   aiKeyCipher         String    @default("")
   aiKeyHint           String    @default("")
+  aiTier              String    @default("")
   onboardingDone      Boolean   @default(false)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -320,9 +321,23 @@ model AiCall {
   estimatePaise Int      @default(0)
   tenantId      String   @default("")
   status        String   @default("CHARGED")
+  tool          String   @default("")
+  tier          String   @default("")
+  imageSize     String   @default("")
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  totalTokens   Int      @default(0)
+  usageJson     String   @default("")
+  costUsdMicros Int      @default(0)
+  costInrPaise  Int      @default(0)
+  charged       Boolean  @default(false)
+  billed        Boolean  @default(false)
+  latencyMs     Int      @default(0)
+  costSource    String   @default("estimate")
   createdAt     DateTime @default(now())
 
   @@index([status, createdAt])
+  @@index([createdAt])
 }
 
 model Customer {

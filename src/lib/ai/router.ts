@@ -1,22 +1,15 @@
+import { BilledProviderError, SpendCapError, UnknownModelError } from "@/lib/ai/errors";
 import { GeminiProvider } from "@/lib/ai/gemini";
 import { MockProvider } from "@/lib/ai/mock";
-import { OpenAIProvider, openAIImageModel, openAIQuality } from "@/lib/ai/openai";
+import { OpenAIProvider } from "@/lib/ai/openai";
 import { ReplicateStubProvider } from "@/lib/ai/replicate";
-import { beginPaidCall, releasePaidCall } from "@/lib/ai/spend";
-import type { GenerateInput, GenerateOutput, ImageStyleProvider, PreviewQuality } from "@/lib/ai/types";
+import { readTierFlags } from "@/lib/ai/settings-store";
+import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
+import { ledgerTool, resolveGuestTier, tierRequest, type ImageProviderName, type ModelTier } from "@/lib/ai/tiers";
+import type { GenerateInput, GenerateOutput, ImageStyleProvider } from "@/lib/ai/types";
 import { runLockedEdit } from "@/lib/face/pipeline";
 import { preflightPhoto, type RegionTool } from "@/lib/face/region";
 import { aiProviderName } from "@/lib/env";
-
-function modelFor(provider: string, quality: PreviewQuality) {
-  if (provider === "openai") return openAIImageModel();
-  if (provider === "gemini") {
-    return quality === "hd"
-      ? process.env.GEMINI_MODEL_HD || "gemini-3.1-flash-image"
-      : process.env.GEMINI_MODEL_STANDARD || "gemini-3.1-flash-lite-image";
-  }
-  return provider;
-}
 
 export type ProviderChoice = {
   name: string;
@@ -36,9 +29,30 @@ function regionOf(input: GenerateInput): RegionTool {
   return input.colour ? "colour" : "style";
 }
 
+function isImageProvider(name: string): name is ImageProviderName {
+  return name === "openai" || name === "gemini";
+}
+
 async function demoFallback(input: GenerateInput, provider: string, demoReason: NonNullable<GenerateOutput["demoReason"]>) {
   const result = await new MockProvider().generate(input);
   return { ...result, provider, demoReason, estimateInr: 0 };
+}
+
+async function settleFailure(id: string, error: unknown, model: string, estimateInr: number, imageSize: string) {
+  if (error instanceof BilledProviderError) {
+    await finalizePaidCall(id, {
+      model,
+      billed: true,
+      charged: false,
+      costUsd: error.costUsd,
+      estimateInr,
+      usage: error.usage,
+      imageSize,
+    });
+  } else {
+    await finalizePaidCall(id, { model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize });
+  }
+  await releasePaidCall(id);
 }
 
 export async function generateWithFailover(input: GenerateInput, choice?: ProviderChoice): Promise<GenerateOutput> {
@@ -47,23 +61,64 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
   const tool = regionOf(input);
   const pre = await preflightPhoto(input.image, tool);
   if (!pre.ok) return demoFallback(input, "mock:placement", "placement");
-  const quality = primary.name === "openai" ? openAIQuality(input.quality) : input.quality;
-  const gate = await beginPaidCall({
-    provider: primary.name,
-    quality,
-    model: modelFor(primary.name, input.quality),
-    tenantId: input.tenantId,
-  });
-  if (!gate.ok) return demoFallback(input, "mock:spend-cap", "spend-cap");
+
+  const flags = await readTierFlags(input.tenantId);
+  const tier: ModelTier = resolveGuestTier({ ...flags, purpose: "guest" });
+  const spec = isImageProvider(primary.name) ? tierRequest(primary.name, tier) : null;
+  const quality = spec ? spec.tier : input.quality;
+  const model = spec?.model || primary.name;
+  const imageSize = spec?.size || "";
+  const estimateInr = spec?.estimateInr;
+  const estimateUsd = spec?.estimateUsd;
+
   const locked = await runLockedEdit({
     image: input.image,
     tool,
-    edit: (attempt) => primary.generate({ ...input, maskPng: attempt === 1 ? pre.maskFile ?? undefined : undefined }),
+    edit: async (attempt) => {
+      const gate = await beginPaidCall({
+        provider: primary.name,
+        quality,
+        model,
+        tenantId: input.tenantId,
+        tool: ledgerTool(input.kind, input.colour),
+        tier: spec?.tier || "",
+        imageSize,
+        estimateInr,
+        estimateUsd,
+      });
+      if (!gate.ok) throw new SpendCapError();
+      try {
+        const output = await primary.generate({
+          ...input,
+          tier,
+          quality: tier === "high" ? "hd" : "standard",
+          maskPng: attempt === 1 ? pre.maskFile ?? undefined : undefined,
+        });
+        await finalizePaidCall(gate.id, {
+          model: output.model || model,
+          billed: true,
+          charged: true,
+          costUsd: output.providerCostUsd,
+          estimateInr: gate.estimateInr,
+          usage: output.usage,
+          latencyMs: output.latencyMs,
+          imageSize: output.imageSize || imageSize,
+        });
+        return { ...output, callId: gate.id, estimateInr: gate.estimateInr };
+      } catch (error) {
+        await settleFailure(gate.id, error, model, gate.estimateInr, imageSize);
+        if (error instanceof UnknownModelError || error instanceof SpendCapError) throw error;
+        throw error;
+      }
+    },
   });
   if (!locked.ok) {
-    if (gate.id) await releasePaidCall(gate.id);
-    if (locked.reason === "provider") return demoFallback(input, `mock:failover-from-${primary.name}`, "failover");
+    if (locked.callId) await releasePaidCall(locked.callId);
+    if (locked.reason === "spend-cap") return demoFallback(input, "mock:spend-cap", "spend-cap");
+    if (locked.reason === "provider" || locked.reason === "unknown-model") {
+      return demoFallback(input, `mock:failover-from-${primary.name}`, "failover");
+    }
     return demoFallback(input, "mock:placement", "placement");
   }
-  return { ...locked.output, image: locked.image, estimateInr: gate.estimateInr };
+  return { ...locked.output, image: locked.image, estimateInr: locked.output.estimateInr };
 }

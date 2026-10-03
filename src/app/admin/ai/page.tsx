@@ -1,4 +1,4 @@
-import { AiSettingsForm } from "@/components/admin/AiSettingsForm";
+import { SalonAiForm } from "@/components/admin/SalonAiForm";
 import { salonAiView } from "@/lib/ai/settings-store";
 import { pageTenant } from "@/lib/session";
 
@@ -10,7 +10,7 @@ export default async function AdminAiPage() {
     return (
       <main>
         <h1 className="font-serif text-4xl">AI settings</h1>
-        <p className="mt-2">Only the salon owner can manage the AI key.</p>
+        <p className="mt-2">Only the salon owner can change guest preview quality.</p>
       </main>
     );
   }
@@ -18,18 +18,10 @@ export default async function AdminAiPage() {
   return (
     <main>
       <h1 className="mb-2 font-serif text-4xl">AI settings</h1>
-      {initial.allowByo ? (
-        <>
-          <p className="mb-4 max-w-xl text-sm leading-6">
-            Paste this salon&apos;s OpenAI or Gemini key. Guests still try a look without an account. Without a key, they see their photo beside the style reference.
-          </p>
-          <AiSettingsForm scope="salon" initial={initial} />
-        </>
-      ) : (
-        <p className="max-w-xl text-sm leading-6">
-          HelixStac manages the platform key for this salon. Paid previews use that key. The testing spend cap is ₹{initial.spend.capInr.toFixed(0)}.
-        </p>
-      )}
+      <p className="mb-4 max-w-xl text-sm leading-6">
+        Guests use Test until you select Medium or High. Medium and High stay unavailable until HelixStac turns them on.
+      </p>
+      <SalonAiForm initial={initial} showKey={initial.allowByo} />
     </main>
   );
 }

@@ -16,6 +16,9 @@ export type CalibrationPanel = {
   message: string;
   calls: number;
   chargedInr: number;
+  model: string;
+  quality: string;
+  estimateInr: number;
   before: Buffer;
   overlay: Buffer;
   after: Buffer;
@@ -48,6 +51,7 @@ export async function runCalibration(args: {
   capInr?: number;
   maxImages?: number;
   estimateInr?: number;
+  listing?: { model: string; quality: string; estimateInr: number };
   pay?: (estimate: number) => Promise<{ ok: boolean; id?: string }>;
   release?: (id: string) => Promise<void>;
   edit?: (image: Buffer, tool: RegionTool, attempt: number) => Promise<Buffer>;
@@ -55,6 +59,7 @@ export async function runCalibration(args: {
   const cap = args.capInr ?? CALIBRATION_CAP_INR;
   const maxImages = Math.min(args.maxImages ?? CALIBRATION_MAX_IMAGES, CALIBRATION_MAX_IMAGES);
   const estimate = Math.max(0, args.estimateInr ?? 0);
+  const listing = args.listing ?? { model: "", quality: "", estimateInr: estimate };
   const fixtures = args.fixtures ?? (await calibrationFixtures());
   const edit = args.edit ?? (async (image: Buffer) => (await paintFlat(image)).image);
   let spentInr = 0;
@@ -76,6 +81,9 @@ export async function runCalibration(args: {
         message: pre.message || TRY_ANOTHER_PHOTO,
         calls: 0,
         chargedInr: 0,
+        model: listing.model,
+        quality: listing.quality,
+        estimateInr: listing.estimateInr,
         before: fixture.image,
         overlay,
         after: fixture.image,
@@ -111,6 +119,9 @@ export async function runCalibration(args: {
         message: locked.message,
         calls: locked.calls,
         chargedInr: 0,
+        model: listing.model,
+        quality: listing.quality,
+        estimateInr: listing.estimateInr,
         before: fixture.image,
         overlay,
         after: fixture.image,
@@ -122,9 +133,14 @@ export async function runCalibration(args: {
       name: fixture.name,
       tool: fixture.tool,
       ok: true,
-      message: estimate > 0 ? "Paid calibration image." : "Offline check. No provider call. This does not measure blending quality.",
+      message: estimate > 0
+        ? `Paid calibration image. ${listing.model} · ${listing.quality} · ₹${estimate.toFixed(2)} charged.`
+        : `Offline check. No provider call. ${listing.model ? `${listing.model} · ${listing.quality} · about ₹${listing.estimateInr.toFixed(2)} / image. ` : ""}This does not measure blending quality.`,
       calls: locked.calls,
       chargedInr: estimate,
+      model: listing.model,
+      quality: listing.quality,
+      estimateInr: listing.estimateInr,
       before: fixture.image,
       overlay,
       after: locked.image,

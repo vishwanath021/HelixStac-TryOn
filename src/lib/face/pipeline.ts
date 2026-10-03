@@ -8,6 +8,7 @@ import {
   TRY_ANOTHER_PHOTO,
   type RegionTool,
 } from "@/lib/face/region";
+import { SpendCapError, UnknownModelError } from "@/lib/ai/errors";
 import type { GenerateOutput } from "@/lib/ai/types";
 
 export const MAX_PROVIDER_ATTEMPTS = 2;
@@ -22,8 +23,9 @@ export type LockedEdit =
   | {
       ok: false;
       calls: number;
-      reason: "placement" | "provider" | "postcheck";
+      reason: "placement" | "provider" | "postcheck" | "unknown-model" | "spend-cap";
       message: string;
+      callId?: string;
     };
 
 function changedPixels(original: Buffer, next: Buffer, width: number, height: number) {
@@ -68,9 +70,16 @@ export async function runLockedEdit(args: {
       calls += 1;
       last = await args.edit(calls);
       break;
-    } catch {
+    } catch (error) {
+      const callId = last?.callId;
       last = null;
-      if (calls >= MAX_PROVIDER_ATTEMPTS) return { ok: false, calls, reason: "provider", message: TRY_ANOTHER_PHOTO };
+      if (error instanceof UnknownModelError) {
+        return { ok: false, calls, reason: "unknown-model", message: "That model is not available. No further call was made.", callId };
+      }
+      if (error instanceof SpendCapError) {
+        return { ok: false, calls, reason: "spend-cap", message: TRY_ANOTHER_PHOTO, callId };
+      }
+      if (calls >= MAX_PROVIDER_ATTEMPTS) return { ok: false, calls, reason: "provider", message: TRY_ANOTHER_PHOTO, callId };
     }
   }
   if (!last) return { ok: false, calls, reason: "provider", message: TRY_ANOTHER_PHOTO };
@@ -84,7 +93,7 @@ export async function runLockedEdit(args: {
   const locked = args.skipLock ? edited : compositeLocked(decoded.data, edited, report.feather);
   const outside = await outsideMaskDelta(decoded.data, locked, report.feather);
   const spill = disallowedChange(args.tool, report.face, changedPixels(decoded.data, locked, decoded.width, decoded.height), decoded.width, decoded.height);
-  if (outside !== 0 || spill > 0.02) return { ok: false, calls, reason: "postcheck", message: TRY_ANOTHER_PHOTO };
+  if (outside !== 0 || spill > 0.02) return { ok: false, calls, reason: "postcheck", message: TRY_ANOTHER_PHOTO, callId: last.callId };
 
   const image = await sharp(locked, { raw: { width: decoded.width, height: decoded.height, channels: 3 } }).jpeg({ quality: 90 }).toBuffer();
   return { ok: true, image, calls, output: last };

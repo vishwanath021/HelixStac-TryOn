@@ -360,7 +360,7 @@ export function TryOnApp({
     }
     const out = await res.blob();
     const reason = res.headers.get("x-demo-reason") || "";
-    const sample = reason === "no-key" || reason === "spend-cap" || reason === "failover" || (res.headers.get("x-provider") || "").includes("mock");
+    const sample = reason === "no-key" || reason === "spend-cap" || reason === "failover" || reason === "placement";
     setNotice(reason === "spend-cap" ? t(lang, "spendCapNote") : "");
     setActive({
       id: res.headers.get("x-tryon-id") || crypto.randomUUID(),

@@ -2,17 +2,29 @@ import { z } from "zod";
 import { decryptSecret, encryptSecret, keyHint } from "@/lib/crypto/secret";
 import { allowByoKey } from "@/lib/ai/credentials";
 import { spendSummary } from "@/lib/ai/spend";
+import { parseTier, tierCatalog, type ImageProviderName, type ModelTier, type TierRequest } from "@/lib/ai/tiers";
 import { prisma } from "@/lib/prisma";
 
 const providerSchema = z.enum(["openai", "gemini"]);
 
-export type AiSettingsView = {
-  provider: "openai" | "gemini";
+export type SalonAiSettings = {
+  provider: ImageProviderName;
   hasKey: boolean;
   hint: string;
   allowByo: boolean;
+  tier: ModelTier;
+  mediumApproved: boolean;
+  highEnabled: boolean;
+};
+
+export type PlatformAiSettings = SalonAiSettings & {
+  calibrationOk: boolean;
+  choices: Record<ImageProviderName, TierRequest[]>;
   spend: { spentInr: number; capInr: number; calls: number };
 };
+
+/** @deprecated Salon pages use SalonAiSettings. Super pages use PlatformAiSettings. */
+export type AiSettingsView = PlatformAiSettings;
 
 async function setting(key: string) {
   const row = await prisma.platformSetting.findUnique({ where: { key } });
@@ -23,30 +35,58 @@ async function putSetting(key: string, value: string) {
   await prisma.platformSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
 }
 
-export async function platformAiView(): Promise<AiSettingsView> {
+export async function tierGate() {
+  return {
+    highEnabled: (await setting("platform_ai_high_enabled")) === "true",
+    mediumApproved: (await setting("platform_ai_medium_approved")) === "true",
+    calibrationOk: (await setting("platform_ai_calibration_ok")) === "true",
+    platformTier: parseTier(await setting("platform_ai_tier")),
+  };
+}
+
+export async function readTierFlags(tenantId: string) {
+  const gate = await tierGate();
+  let stored = gate.platformTier;
+  if (tenantId && tenantId !== "platform" && tenantId !== "calibration" && tenantId !== "ai-smoke") {
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { aiTier: true } });
+    if (tenant?.aiTier) stored = parseTier(tenant.aiTier);
+  }
+  return { stored, highEnabled: gate.highEnabled, mediumApproved: gate.mediumApproved };
+}
+
+export async function platformAiView(): Promise<PlatformAiSettings> {
   const provider = providerSchema.safeParse(await setting("platform_ai_provider"));
   const cipher = await setting("platform_ai_key_cipher");
+  const gate = await tierGate();
   return {
     provider: provider.success ? provider.data : "openai",
     hasKey: Boolean(cipher),
     hint: await setting("platform_ai_key_hint"),
     allowByo: await allowByoKey(),
+    tier: gate.platformTier,
+    mediumApproved: gate.mediumApproved,
+    highEnabled: gate.highEnabled,
+    calibrationOk: gate.calibrationOk,
+    choices: { openai: tierCatalog("openai"), gemini: tierCatalog("gemini") },
     spend: await spendSummary(),
   };
 }
 
-export async function salonAiView(tenantId: string): Promise<AiSettingsView> {
+export async function salonAiView(tenantId: string): Promise<SalonAiSettings> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
-    select: { aiProvider: true, aiKeyCipher: true, aiKeyHint: true },
+    select: { aiProvider: true, aiKeyCipher: true, aiKeyHint: true, aiTier: true },
   });
   const provider = providerSchema.safeParse(tenant?.aiProvider);
+  const gate = await tierGate();
   return {
     provider: provider.success ? provider.data : "openai",
     hasKey: Boolean(tenant?.aiKeyCipher),
     hint: tenant?.aiKeyHint || "",
     allowByo: await allowByoKey(),
-    spend: await spendSummary(),
+    tier: tenant?.aiTier ? parseTier(tenant.aiTier) : "test",
+    mediumApproved: gate.mediumApproved,
+    highEnabled: gate.highEnabled,
   };
 }
 
@@ -59,13 +99,26 @@ function freshKey(raw: string) {
   return trimmed;
 }
 
-export async function savePlatformAi(input: { provider: "openai" | "gemini"; apiKey: string; allowByo: boolean }, actorId: string) {
+export async function savePlatformAi(
+  input: { provider: "openai" | "gemini"; apiKey: string; allowByo: boolean; tier: ModelTier; highEnabled: boolean },
+  actorId: string,
+) {
   const next = freshKey(input.apiKey);
+  const gate = await tierGate();
   await putSetting("platform_ai_provider", input.provider);
   await putSetting("allow_byo_key", input.allowByo ? "true" : "false");
+  await putSetting("platform_ai_high_enabled", input.highEnabled ? "true" : "false");
   if (next) {
     await putSetting("platform_ai_key_cipher", encryptSecret(next));
     await putSetting("platform_ai_key_hint", keyHint(next));
+    await putSetting("platform_ai_tier", "test");
+    await putSetting("platform_ai_medium_approved", "false");
+    await putSetting("platform_ai_calibration_ok", "false");
+  } else {
+    let tier = input.tier;
+    if (tier === "high" && !input.highEnabled) tier = "test";
+    if (tier === "medium" && !gate.mediumApproved) tier = "test";
+    await putSetting("platform_ai_tier", tier);
   }
   await prisma.auditLog.create({
     data: {
@@ -77,16 +130,25 @@ export async function savePlatformAi(input: { provider: "openai" | "gemini"; api
   });
 }
 
-export async function saveSalonAi(tenantId: string, input: { provider: "openai" | "gemini"; apiKey: string }, actorId: string) {
-  if (!(await allowByoKey())) throw new Error("BYO_OFF");
+export async function saveSalonAi(
+  tenantId: string,
+  input: { provider: "openai" | "gemini"; apiKey: string; tier: ModelTier },
+  actorId: string,
+) {
+  const gate = await tierGate();
   const next = freshKey(input.apiKey);
   const current = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { aiKeyCipher: true } });
-  if (!next && !current?.aiKeyCipher) throw new Error("INVALID_KEY");
+  const byo = await allowByoKey();
+  if (!byo && next) throw new Error("BYO_OFF");
+  if (byo && !next && !current?.aiKeyCipher && input.apiKey.trim()) throw new Error("INVALID_KEY");
+  let tier: ModelTier = next ? "test" : input.tier;
+  if (tier === "high" && !gate.highEnabled) tier = "test";
+  if (tier === "medium" && !gate.mediumApproved) tier = "test";
   await prisma.tenant.update({
     where: { id: tenantId },
     data: {
-      aiProvider: input.provider,
-      ...(next ? { aiKeyCipher: encryptSecret(next), aiKeyHint: keyHint(next) } : {}),
+      aiTier: tier,
+      ...(byo ? { aiProvider: input.provider, ...(next ? { aiKeyCipher: encryptSecret(next), aiKeyHint: keyHint(next) } : {}) } : {}),
     },
   });
   await prisma.auditLog.create({
@@ -113,6 +175,15 @@ export async function storedKey(scope: "platform" | { tenantId: string }) {
   const provider = providerSchema.safeParse(tenant?.aiProvider);
   if (!tenant?.aiKeyCipher || !provider.success) return null;
   return { provider: provider.data, apiKey: decryptSecret(tenant.aiKeyCipher) };
+}
+
+export async function approveMediumQuality() {
+  if ((await setting("platform_ai_calibration_ok")) !== "true") throw new Error("CALIBRATION_REQUIRED");
+  await putSetting("platform_ai_medium_approved", "true");
+}
+
+export async function markCalibration(ok: boolean) {
+  await putSetting("platform_ai_calibration_ok", ok ? "true" : "false");
 }
 
 /** Auth check only. This does not call an image model and does not charge the spend cap. */

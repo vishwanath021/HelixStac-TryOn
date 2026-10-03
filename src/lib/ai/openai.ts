@@ -1,15 +1,10 @@
 import sharp from "sharp";
+import { BilledProviderError, isUnknownModelResponse, UnknownModelError } from "@/lib/ai/errors";
 import { styleReferenceFor } from "@/lib/ai/style-reference";
-import { numberEnv } from "@/lib/env";
+import { prepareTierInput, tierRequest, type UsageNumbers } from "@/lib/ai/tiers";
 import type { GenerateInput, GenerateOutput, ImageStyleProvider, PreviewQuality } from "@/lib/ai/types";
 
 export type OpenAIImageQuality = "low" | "medium" | "high";
-
-const USD: Record<OpenAIImageQuality, number> = {
-  low: 0.016,
-  medium: 0.063,
-  high: 0.25,
-};
 
 export function openAIImageModel() {
   return process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
@@ -27,6 +22,33 @@ function inputFidelity(model: string) {
   return "";
 }
 
+function scrub(body: string) {
+  return body
+    .slice(0, 180)
+    .replace(/sk-[A-Za-z0-9_\-]{8,}/g, "[redacted]")
+    .replace(/AIza[0-9A-Za-z\-_]{8,}/g, "[redacted]")
+    .replace(/[A-Za-z0-9+/=]{40,}/g, "[redacted]");
+}
+
+function usageFromPayload(payload: {
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    total_tokens?: number;
+    input_tokens_details?: { text_tokens?: number; image_tokens?: number };
+  };
+}): UsageNumbers | undefined {
+  const usage = payload.usage;
+  if (!usage) return undefined;
+  return {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    totalTokens: usage.total_tokens,
+    textTokens: usage.input_tokens_details?.text_tokens,
+    imageTokens: usage.input_tokens_details?.image_tokens,
+  };
+}
+
 export class OpenAIProvider implements ImageStyleProvider {
   name = "openai";
 
@@ -39,25 +61,25 @@ export class OpenAIProvider implements ImageStyleProvider {
   async generate(input: GenerateInput): Promise<GenerateOutput> {
     const apiKey = this.apiKey;
     if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
-    const model = openAIImageModel();
-    const quality = openAIQuality(input.quality);
+    const spec = tierRequest("openai", input.tier || "test");
+    const prepared = await prepareTierInput(input.image, input.maskPng, spec);
     const started = Date.now();
     const form = new FormData();
-    form.set("model", model);
+    form.set("model", spec.model);
     form.set("prompt", input.prompt.slice(0, 32000));
-    form.set("quality", quality);
-    form.set("size", process.env.OPENAI_IMAGE_SIZE || "1024x1536");
+    form.set("quality", spec.openaiQuality);
+    form.set("size", spec.size);
     form.set("output_format", "jpeg");
     form.set("n", "1");
-    const fidelity = inputFidelity(model);
+    const fidelity = inputFidelity(spec.model);
     if (fidelity) form.set("input_fidelity", fidelity);
-    form.append("image[]", new Blob([new Uint8Array(input.image)], { type: "image/jpeg" }), "selfie.jpg");
+    form.append("image[]", new Blob([new Uint8Array(prepared.image)], { type: "image/jpeg" }), "selfie.jpg");
     const reference = styleReferenceFor(input, "openai");
     if (reference) {
       form.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
     }
-    if (input.maskPng) {
-      form.append("mask", new Blob([new Uint8Array(input.maskPng)], { type: "image/png" }), "mask.png");
+    if (prepared.mask) {
+      form.append("mask", new Blob([new Uint8Array(prepared.mask)], { type: "image/png" }), "mask.png");
     }
     const response = await fetch("https://api.openai.com/v1/images/edits", {
       method: "POST",
@@ -66,21 +88,35 @@ export class OpenAIProvider implements ImageStyleProvider {
       signal: AbortSignal.timeout(55_000),
     });
     if (!response.ok) {
-      const brief = (await response.text()).slice(0, 180).replace(/[A-Za-z0-9+/=]{40,}/g, "[redacted]");
-      throw new Error(`OpenAI image edit failed (${response.status}) ${brief}`);
+      const body = await response.text();
+      if (isUnknownModelResponse(response.status, body)) throw new UnknownModelError();
+      throw new Error(`OpenAI image edit failed (${response.status}) ${scrub(body)}`);
     }
-    const payload = (await response.json()) as { data?: { b64_json?: string }[] };
+    const payload = (await response.json()) as {
+      data?: { b64_json?: string }[];
+      usage?: {
+        input_tokens?: number;
+        output_tokens?: number;
+        total_tokens?: number;
+        input_tokens_details?: { text_tokens?: number; image_tokens?: number };
+      };
+    };
+    const usage = usageFromPayload(payload);
     const b64 = payload.data?.[0]?.b64_json;
-    if (!b64) throw new Error("OpenAI returned no image");
+    if (!b64) throw new BilledProviderError(spec.estimateUsd, usage);
     const image = await sharp(Buffer.from(b64, "base64")).rotate().jpeg({ quality: 86 }).toBuffer();
-    const fx = numberEnv("FX_INR_PER_USD", 96);
     return {
       image,
       mime: "image/jpeg",
-      provider: `${this.name}:${model}:${quality}`,
-      providerCostUsd: USD[quality],
+      provider: `${this.name}:${spec.model}:${spec.quality}`,
+      providerCostUsd: spec.estimateUsd,
       latencyMs: Date.now() - started,
-      estimateInr: Math.round(USD[quality] * fx * 1.08 * 10) / 10,
+      estimateInr: spec.estimateInr,
+      model: spec.model,
+      qualityTier: spec.quality,
+      imageSize: spec.size,
+      usage,
+      costSource: usage ? "usage" : "estimate",
     };
   }
 }

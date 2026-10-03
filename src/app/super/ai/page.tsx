@@ -1,6 +1,8 @@
 import Link from "next/link";
-import { AiSettingsForm } from "@/components/admin/AiSettingsForm";
+import { SuperAiForm } from "@/components/admin/SuperAiForm";
+import { SuperCostPanel } from "@/components/admin/SuperCostPanel";
 import { SignOutButton } from "@/components/admin/SignOutButton";
+import { costReport } from "@/lib/ai/cost-report";
 import { platformAiView } from "@/lib/ai/settings-store";
 import { pageSuper } from "@/lib/session";
 
@@ -9,6 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function SuperAiPage() {
   await pageSuper();
   const initial = await platformAiView();
+  const costs = await costReport({ provider: initial.provider, tier: initial.tier, imagesPerMonth: 100 });
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -22,9 +25,10 @@ export default async function SuperAiPage() {
         <Link className="underline" href="/super">Back to salons</Link>
       </p>
       <p className="mb-4 max-w-xl text-sm leading-6">
-        Paste an OpenAI or Gemini key for paid style previews. Leave this empty to keep the demo, which shows the guest photo with the style reference. Calibration run checks mask placement on five pictures and will not spend more than about ₹30.
+        Test is the default for a new key and for every calibration run. Medium turns on only after you approve it. High stays off until you enable it. Guests use Test until a salon or this page selects a higher tier that is allowed.
       </p>
-      <AiSettingsForm scope="platform" initial={initial} canToggleByo />
+      <SuperAiForm initial={initial} />
+      <SuperCostPanel initial={costs} />
     </main>
   );
 }

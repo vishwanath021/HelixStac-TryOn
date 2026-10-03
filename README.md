@@ -93,13 +93,15 @@ Put keys only in `.env` on your machine. That file is gitignored. On a host, put
 | `AI_PROVIDER` | `mock` (default), `gemini`, `openai`, `replicate`, or `fal` |
 | `GEMINI_API_KEY` | Paid-tier key. Leave empty to stay on the mock. |
 | `OPENAI_API_KEY` | OpenAI key for `AI_PROVIDER=openai`. Leave empty to stay on the mock. |
-| `OPENAI_IMAGE_MODEL` | gpt-image model id. Default `gpt-image-1`. |
-| `OPENAI_IMAGE_QUALITY` | `low`, `medium`, or `high` for a standard preview. Default `medium`. |
-| `OPENAI_IMAGE_QUALITY_HD` | Quality when the guest picks HD. Default `high`. |
+| `OPENAI_IMAGE_MODEL_TEST` | Test tier model. Default `gpt-image-1-mini`. |
+| `OPENAI_IMAGE_MODEL_MEDIUM` | Medium tier model. Default `gpt-image-1-mini`. Set `gpt-image-1` to use that model at medium quality. |
+| `OPENAI_IMAGE_MODEL_HIGH` | High tier model. Default `gpt-image-1`. |
 | `AI_SPEND_CAP_INR` | Hard testing cap for paid image calls. Default `500`. |
-| `AI_COST_PER_CALL_INR_{PROVIDER}_{QUALITY}` | Estimated rupees for one call, for example `AI_COST_PER_CALL_INR_OPENAI_MEDIUM`. |
-| `GEMINI_MODEL_STANDARD` | Default `gemini-3.1-flash-lite-image` (~$0.0336 / 1K image) |
-| `GEMINI_MODEL_HD` | Default `gemini-3.1-flash-image` (~$0.067 / 1K image) |
+| `AI_COST_PER_CALL_INR_{PROVIDER}_{TIER}` | Optional INR override for `TEST`, `MEDIUM`, or `HIGH`. |
+| `FX_INR_PER_USD` | Rupees per dollar for the cost ledger. Default `96`. |
+| `GEMINI_MODEL_STANDARD` | Test tier. Default `gemini-3.1-flash-lite-image` ($0.0336 / 1K image). |
+| `GEMINI_MODEL_MEDIUM` | Medium tier. Default `gemini-3.1-flash-image` ($0.067 / 1K image). |
+| `GEMINI_MODEL_HD` | High tier. Default `gemini-3.1-flash-image`. |
 | `GEMINI_TEXT_MODEL` | Optional concierge text model, default `gemini-3.1-flash-lite` |
 | `CONCIERGE_LLM` | `rules` (default) or `gemini` |
 | `REPLICATE_API_TOKEN`, `FAL_KEY` | Optional failover adapters |
@@ -139,15 +141,37 @@ Add a key in `.env` (`OPENAI_API_KEY` or `GEMINI_API_KEY` plus `AI_PROVIDER`) or
 
 If a paid call fails, or the testing spend cap is already used, the app returns the same demo composite so the salon page does not die. A failed call releases its estimate, and a failed placement check is not retried and is not charged. With no key, the try-on also shows: “Demo mode – connect an AI key for real hairstyle previews”.
 
+### Quality tiers
+
+Guests, calibration, and any new or unproven key use **Test**. Medium is used only after a super-admin runs calibration (every zone placed) and clicks **Approve medium quality**. High is off until a super-admin checks **Enable high quality**, and guests still do not use it unless that tier is selected. The provider is called with the model id from this config. If the provider says the model does not exist, that call is not retried.
+
+Output size is `1024x1024` for every tier. That is the smallest size the OpenAI image edit API accepts. Test also shrinks the input photo to 768px on the long side before it is sent. Gemini image models are requested at their default 1K output. The SDK used here has no separate image-size field on `generateContent`.
+
+Estimates use list price × `FX_INR_PER_USD` (default 96) × 1.08, rounded up to ₹0.1. They are not a provider invoice. When the API returns token usage, the super-admin ledger stores that exact USD cost and the same FX rate with no 1.08 buffer. Otherwise it stores the tier estimate.
+
+Prices checked 3 Oct 2026 against the [gpt-image-1-mini](https://developers.openai.com/api/docs/models/gpt-image-1-mini) and [gpt-image-1](https://developers.openai.com/api/docs/models/gpt-image-1) model pages, and [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing).
+
+| Tier | When it runs | OpenAI request | Gemini request | Estimate |
+|---|---|---|---|---|
+| Test | Default. Calibration. New key. Guests until promoted. | `gpt-image-1-mini`, quality `low`, size `1024x1024`, input long side 768 | `gemini-3.1-flash-lite-image` (`GEMINI_MODEL_STANDARD`) | OpenAI ₹0.60 ($0.005). Gemini ₹3.50 ($0.0336). |
+| Medium | After **Approve medium quality**. | `gpt-image-1-mini`, quality `medium`, size `1024x1024`. Override with `OPENAI_IMAGE_MODEL_MEDIUM` ( `gpt-image-1` medium is ₹4.40 / $0.042). | `gemini-3.1-flash-image` (`GEMINI_MODEL_MEDIUM`), 1K | OpenAI ₹1.20 ($0.011). Gemini ₹7.00 ($0.067). |
+| High | Off until enabled. Guests only if enabled and selected. | `gpt-image-1`, quality `high`, size `1024x1024` | `gemini-3.1-flash-image` (`GEMINI_MODEL_HD`) | OpenAI ₹17.40 ($0.167). Gemini ₹7.00 ($0.067). |
+
+Token rates used when usage is present: gpt-image-1-mini text input $2 / image input $2.50 / image output $8 per 1M tokens. gpt-image-1 text input $5 / image input $10 / image output $40 per 1M. Gemini flash-lite input $0.25, image output $30 per 1M (1120 tokens per 1K image). Gemini flash image input $0.50, image output $60 per 1M.
+
+`/super/ai` shows the model, quality, size, and INR estimate next to each tier. The calibration result card shows the same, plus the rupees charged for that image and a total. The cost panel on that page (super-admin only) shows the last image, session / day / month totals against `AI_SPEND_CAP_INR`, average cost by tool and tier, the last 50 calls, and projected monthly cost (`average × images per month`) beside Starter ₹799, Pro ₹1999, and Chain ₹4999.
+
+Salon owner pages and the guest try-on do not receive model ids, provider cost, or those totals.
+
 ### OpenAI
 
 1. Set `AI_PROVIDER=openai` and `OPENAI_API_KEY` in `.env` or the host secret store.
-2. `OPENAI_IMAGE_MODEL` is the gpt-image model id. `OPENAI_IMAGE_QUALITY` is `low`, `medium`, or `high` for a standard preview. HD uses `OPENAI_IMAGE_QUALITY_HD`.
+2. Leave the tier model ids unless you have re-checked the docs. Pasting a new key on `/super/ai` returns the tier to Test.
 3. The photo is sent once, in memory, to `POST /v1/images/edits`. It is not written to the database.
 
 ### Spend cap
 
-`AI_SPEND_CAP_INR` defaults to 500. Each paid attempt adds `AI_COST_PER_CALL_INR_{PROVIDER}_{QUALITY}` (an estimate, not a provider invoice) to `AiCall`. The super-admin page shows the total against the cap. The next paid call after the cap returns the labelled sample and a short explanation. `npm run ai:smoke` uses the same guard.
+`AI_SPEND_CAP_INR` defaults to 500. Each paid attempt adds the tier estimate (`AI_COST_PER_CALL_INR_{PROVIDER}_{TIER}` when set, otherwise the table above) to `AiCall`. A failed placement check is ₹0. A provider call that was billed is still recorded, including when the charge is released. The next paid call after the cap returns the labelled sample. `npm run ai:smoke` uses the same guard. Cost figures are shown only on `/super/ai`.
 
 ### What the offline tests prove
 
@@ -165,7 +189,7 @@ The unit suite proves this without a provider key:
 - A mock edit that paints the whole frame one colour leaves every pixel outside the mask byte-for-byte identical to the original
 - Masks sit in the expected zone on frontal, off-centre, mirrored, EXIF-rotated, wide, and camera-shaped fixtures
 - No face, two faces, a tilt, a side profile, a tiny face, and a hand sent to the beard tool are rejected before the edit function is called
-- A provider error is tried once more. A placement failure is not tried again and does not keep the rupee charge
+- A provider error is tried once more. An unknown model id is not tried again. A placement failure is not tried again and does not keep the rupee charge
 - Calibration stops at 5 images or about ₹30, whichever comes first
 
 `npm run calibrate` writes before / mask / after files under `docs/mask-overlays/` using the flat-colour edit. The same action is the **Calibration run** button on `/super/ai`. With no key it spends ₹0. With a key it uses the real model inside that cap.

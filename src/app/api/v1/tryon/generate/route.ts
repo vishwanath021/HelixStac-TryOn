@@ -5,7 +5,10 @@ import sharp from "sharp";
 import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
 import { shadeById } from "@/data/shades";
 import { resolveProviderChoice } from "@/lib/ai/credentials";
+import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { generateWithFailover, selectProvider } from "@/lib/ai/router";
+import { readTierFlags } from "@/lib/ai/settings-store";
+import { resolveGuestTier } from "@/lib/ai/tiers";
 import type { GenerateInput } from "@/lib/ai/types";
 import { CreditError, refundStaleReserves, reserveCredits, settleCredits } from "@/lib/credits";
 import { numberEnv } from "@/lib/env";
@@ -40,7 +43,6 @@ export async function POST(req: Request) {
   const styleId = String(form.get("styleId") || "");
   const sessionId = String(form.get("sessionId") || "");
   const consentId = String(form.get("consentId") || "");
-  const quality = form.get("quality") === "hd" ? "hd" : "standard";
   const rawTool = String(form.get("tool") || "style");
   const tool = rawTool === "brows" || rawTool === "beard" || rawTool === "nails" ? rawTool : "style";
   const shadeId = form.get("shadeId") ? String(form.get("shadeId")) : null;
@@ -134,7 +136,10 @@ export async function POST(req: Request) {
     if (!placement.ok) return NextResponse.json({ error: "PLACEMENT", message: TRY_ANOTHER_PHOTO }, { status: 422 });
   }
 
-  const credits = quality === "hd" ? HD_CREDIT_COST : STANDARD_CREDIT_COST;
+  const flags = await readTierFlags(tenant.id);
+  const modelTier = resolveGuestTier({ ...flags, purpose: "guest" });
+  const quality = modelTier === "high" ? "hd" : "standard";
+  const credits = modelTier === "high" ? HD_CREDIT_COST : STANDARD_CREDIT_COST;
   const refId = randomUUID();
   await refundStaleReserves(tenant.id);
   try {
@@ -180,6 +185,7 @@ export async function POST(req: Request) {
       colour: shade?.name,
       tenantId: tenant.id,
       quality,
+      tier: modelTier,
       kind: tool,
       styleName: look.name,
     };
@@ -195,9 +201,7 @@ export async function POST(req: Request) {
       where: { id: tryOn.id },
       data: {
         status: "SUCCEEDED",
-        provider: result.provider,
         latencyMs: result.latencyMs,
-        costMicroUsd: Math.round(result.providerCostUsd * 1_000_000),
       },
     });
     await prisma.usageEvent.create({
@@ -205,27 +209,16 @@ export async function POST(req: Request) {
         tenantId: tenant.id,
         sessionId,
         name: "generate_succeeded",
-        props: JSON.stringify({
-          styleId,
-          quality,
-          provider: result.provider,
-          latencyMs: result.latencyMs,
-          estimateInr: result.estimateInr ?? 0,
-          demoReason: result.demoReason || "",
-        }),
+        props: JSON.stringify({ styleId, demo: Boolean(result.demoReason) }),
       },
     });
     return new NextResponse(new Uint8Array(result.image), {
       status: 200,
-      headers: {
-        "content-type": "image/jpeg",
-        "cache-control": "no-store",
-        "x-tryon-id": tryOn.id,
-        "x-credits-left": String(balance?.creditBalance ?? 0),
-        "x-provider": result.provider,
-        "x-demo-reason": result.demoReason || "",
-        "x-estimate-inr": String(result.estimateInr ?? 0),
-      },
+      headers: guestPreviewHeaders({
+        tryOnId: tryOn.id,
+        creditsLeft: balance?.creditBalance ?? 0,
+        demoReason: result.demoReason || "",
+      }),
     });
   } catch (error) {
     await settleCredits(tenant.id, refId, "REFUND");
