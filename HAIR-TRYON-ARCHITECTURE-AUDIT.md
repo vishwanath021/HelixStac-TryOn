@@ -331,6 +331,18 @@ mask=(binary mask.png, image/png, same square size)
 
 `input_fidelity` is absent for this model. A second `image[]` named `style-reference.jpg` is absent unless the flag is on. If the first attempt throws, the second attempt omits `mask`.
 
+Fields the edit call does not set, because `OpenAIProvider.generate` never writes them (`src/lib/ai/openai.ts` lines 74–90): `seed`, `strength`, `guidance` / `guidance_scale`, `background`, `response_format`, `user`, and any moderation or partial-image flag. Gemini’s `generateContent` config is only `responseModalities: [IMAGE, TEXT]` (`src/lib/ai/gemini.ts` lines 31–34). It also sets no seed, strength, guidance, mask, or image size.
+
+Ordering and selection, from that same function:
+
+| Check | What the code does |
+|---|---|
+| Image order | Selfie is the first `image[]`. An optional style reference is second. The public guide says the mask applies to the first image, so the selfie is the masked input. |
+| Mask polarity | Alpha 0 = editable, alpha 255 = keep, including pad bars. That matches the code’s own tests. The provider still treats the mask as guidance (section 4). |
+| MIME | Selfie and reference are `image/jpeg`. Mask is `image/png`. Output is requested as JPEG and returned to the browser as `image/jpeg`. |
+| Aspect | The model is asked for a square `1024x1024`. A non-square selfie is padded, then cropped back. The API call itself does not send the original aspect as `size`. |
+| Response selection | Only `data[0].b64_json` is decoded. Extra images, a `url` field, and `revised_prompt` are ignored. |
+
 ```
 200 application/json
 {
