@@ -7,7 +7,7 @@ export default async function AdminHome() {
   const { tenant } = await pageTenant();
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const [styleCount, leads, whatsapp, colours] = await Promise.all([
-    prisma.tryOn.count({ where: { tenantId: tenant.id, kind: "STYLE", status: "SUCCEEDED", createdAt: { gte: since } } }),
+    prisma.tryOn.count({ where: { tenantId: tenant.id, kind: { in: ["STYLE", "BROWS"] }, status: "SUCCEEDED", createdAt: { gte: since } } }),
     prisma.lead.count({ where: { tenantId: tenant.id, createdAt: { gte: since } } }),
     prisma.usageEvent.count({ where: { tenantId: tenant.id, name: "whatsapp_clicked", createdAt: { gte: since } } }),
     prisma.usageEvent.findMany({ where: { tenantId: tenant.id, name: "colour_selected", createdAt: { gte: since } }, take: 200 }),
@@ -35,7 +35,7 @@ export default async function AdminHome() {
       <p className="mt-1 text-sm text-muted">Counts from the last 30 days. Photos are not in these numbers.</p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          ["Style previews", styleCount],
+          ["AI previews", styleCount],
           ["Leads", leads],
           ["WhatsApp taps", whatsapp],
           ["WhatsApp / preview", `${conversion}%`],

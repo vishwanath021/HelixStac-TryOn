@@ -15,6 +15,8 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.getByRole("button", { name: /i agree/i }).click();
   await expect(page.getByRole("tab", { name: "COLOUR" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "STYLE" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "BROWS" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "NAIL ART" })).toBeDisabled();
   await expect(page.getByText("Use your front camera for a live mirror, or upload a selfie")).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/03-start.png", fullPage: true });
 
@@ -36,6 +38,19 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   });
   await page.screenshot({ path: "docs/screenshots/03-camera.png", fullPage: true });
   await page.getByRole("button", { name: "Take photo" }).click();
+
+  await page.getByRole("tab", { name: "BROWS" }).click();
+  await expect(page.getByText("Now pick a brow shape below — it takes about 10 seconds")).toBeVisible();
+  const brows = page.getByRole("region", { name: "Brows" });
+  await brows.getByRole("button", { name: "Soft Arch" }).click();
+  await expect(page.getByText("AI preview — actual results vary by natural brow hair and growth. Consult your artist.")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("slider", { name: /BEFORE \/ AFTER/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: "BOOK THIS", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "DOWNLOAD" })).toBeVisible();
+  await page.screenshot({ path: "docs/screenshots/04-brows.png", fullPage: true });
+  await page.getByRole("button", { name: "TRY ANOTHER SHAPE" }).click();
+  await expect(brows.getByRole("button", { name: "Straight Brow" })).toBeVisible();
+  await expect(brows.getByRole("button", { name: "Feathered" })).toBeVisible();
 
   await page.getByRole("tab", { name: "STYLE" }).click();
   const gallery = page.getByRole("region", { name: "Styles" });

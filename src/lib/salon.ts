@@ -1,3 +1,4 @@
+import { BROWS, toPublicBrow, type PublicBrow } from "@/data/brows";
 import { planById } from "@/data/plans";
 import { SHADES } from "@/data/shades";
 import { STYLES, toPublicStyle, type PublicStyle } from "@/data/styles";
@@ -33,8 +34,13 @@ export type SalonConfig = {
   showMen: boolean;
   showWomen: boolean;
   showKids: boolean;
+  toolColour: boolean;
+  toolStyle: boolean;
+  toolBrows: boolean;
+  toolNails: boolean;
   services: SalonService[];
   styles: PublicStyle[];
+  brows: PublicBrow[];
   shades: { id: string; name: string; hex: string; lift: number; serviceKeys: string[] }[];
   outlets: { id: string; name: string; whatsapp: string; address: string; mapsUrl: string; isPrimary: boolean }[];
   poweredBy: boolean;
@@ -105,6 +111,10 @@ export function toSalonConfig(tenant: TenantWithRelations): SalonConfig {
     showMen: tenant.showMen,
     showWomen: tenant.showWomen,
     showKids: tenant.showKids,
+    toolColour: tenant.toolColour,
+    toolStyle: tenant.toolStyle,
+    toolBrows: tenant.toolBrows,
+    toolNails: false,
     services: tenant.services.map((service) => ({
       id: service.id,
       key: service.key,
@@ -114,6 +124,7 @@ export function toSalonConfig(tenant: TenantWithRelations): SalonConfig {
       durationMin: service.durationMin,
     })),
     styles,
+    brows: tenant.toolBrows ? BROWS.map(toPublicBrow) : [],
     shades,
     outlets: tenant.outlets.map((outlet) => ({
       id: outlet.id,

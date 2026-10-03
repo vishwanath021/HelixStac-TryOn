@@ -4,7 +4,7 @@ White-label hair try-on for small Indian salons. Figures are INR, exclusive of G
 
 ## Thesis
 
-Salons do not buy "AI". They buy a shorter colour consultation and a WhatsApp booking. Live colour is free and runs on the guest's phone. AI cut previews are credits, because an unlimited plan can lose money.
+Salons do not buy "AI". They buy a shorter colour consultation and a WhatsApp booking. Live colour is free and runs on the guest's phone. AI cut previews and eyebrow previews spend the same credits, because an unlimited plan can lose money.
 
 This is a small SaaS. A good year is tens of lakhs of ARR, not a venture outcome, unless a chain or a salon-software vendor bundles it. **[Assumption]**
 

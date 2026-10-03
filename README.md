@@ -160,11 +160,20 @@ More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 After the consent notice, the salon page is a phone-sized mirror.
 
-1. A **COLOUR | STYLE** pill sits under the hero.
+1. A tool switcher sits under the hero: **COLOUR**, **STYLE**, **BROWS**, and a disabled **NAIL ART** slot. A salon turns the first three on or off in Settings. Nail art is not a working tool yet.
 2. The dark stage asks for the front camera or an upload. **START CAMERA** opens the live mirror, with a round shutter and a small **Photo** upload. If the camera is blocked, the same stage keeps the upload path.
 3. Colour swatches (the 16 named shades) sit on the live feed and on a still photo. Live colour stays on the device.
 4. After a shutter tap or an upload, **STYLE** opens the Women / Men / Kids gallery. Illustrated thumbnails are original placeholders. Choosing a style runs the preview (about 10 seconds on a paid model; the demo mock is faster) and then a draggable **BEFORE / AFTER** slider.
 5. **BOOK THIS LOOK** opens the salon's WhatsApp with the look and mapped services, and records a lead. **DOWNLOAD** saves the after image in the browser. **TRY ANOTHER STYLE** returns to the gallery and keeps the same photo. Up to four looks stay in the compare strip.
+6. **BROWS** uses the same photo. The guest picks a shape (Soft Arch, Straight Brow, High Arch, Rounded, S-Shape, Feathered, Bold Natural). The preview spends a credit, keeps identity and skin unchanged in the prompt, and ends with **BOOK THIS**, **DOWNLOAD**, and **TRY ANOTHER SHAPE**. Booking maps Eyebrow Threading and Eyebrow Shaping.
+
+## Reference parity
+
+| Reference flow | In this app |
+|---|---|
+| Colour / style mirror, shutter, shades, style gallery, before/after, book | Yes, after the consent step. Thumbnails are original illustrations. |
+| Eyebrow mapping: capture, pick a shape, before/after, book | Yes, as the Brows tool. Seven shapes. Mock edits are watermarked DEMO. |
+| Nail art | Switcher slot only. It stays disabled. |
 
 A demo-only **Use sample portrait** link is under the empty stage for machines with no camera.
 
@@ -183,6 +192,8 @@ Taken from the mock-mode demo in a phone-sized browser. The camera shot uses Chr
 ![Colour on an uploaded portrait](docs/screenshots/03-colour.png)
 
 ![Style preview](docs/screenshots/04-preview.png)
+
+![Eyebrow mapping](docs/screenshots/04-brows.png)
 
 ![Admin](docs/screenshots/05-admin.png)
 

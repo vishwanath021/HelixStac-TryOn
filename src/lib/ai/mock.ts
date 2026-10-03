@@ -21,10 +21,15 @@ export class MockProvider implements ImageStyleProvider {
       .resize(768, 1024, { fit: "cover" })
       .jpeg()
       .toBuffer();
-    const tint = input.colour ? "#8d4b32" : "#6b3a2a";
+    const brows = input.kind === "brows";
+    const tint = brows ? "#4a3428" : input.colour ? "#8d4b32" : "#6b3a2a";
     const label = escapeXml(input.prompt.split(".").slice(0, 1).join("").slice(0, 72));
+    const mark = brows
+      ? `<path d="M210 340 C260 300 330 300 370 336" fill="none" stroke="${tint}" stroke-width="10" stroke-linecap="round"/>
+         <path d="M400 336 C440 300 510 300 560 340" fill="none" stroke="${tint}" stroke-width="10" stroke-linecap="round"/>`
+      : `<rect x="0" y="0" width="768" height="300" fill="${tint}" fill-opacity="0.38"/>`;
     const svg = Buffer.from(`<svg width="768" height="1024" xmlns="http://www.w3.org/2000/svg">
-      <rect x="0" y="0" width="768" height="300" fill="${tint}" fill-opacity="0.38"/>
+      ${mark}
       <rect x="48" y="860" width="672" height="120" rx="16" fill="#241c16" fill-opacity="0.88"/>
       <text x="384" y="915" text-anchor="middle" font-family="Georgia, serif" font-size="42" fill="#fffdfb">DEMO</text>
       <text x="384" y="952" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#f3ece3">${label}</text>

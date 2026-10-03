@@ -6,7 +6,20 @@ export function SettingsForm({
   initial,
   canRemoveBranding,
 }: {
-  initial: { name: string; primaryColor: string; accentColor: string; whatsapp: string; address: string; mapsUrl: string; city: string; gstin: string; removeBranding: boolean };
+  initial: {
+    name: string;
+    primaryColor: string;
+    accentColor: string;
+    whatsapp: string;
+    address: string;
+    mapsUrl: string;
+    city: string;
+    gstin: string;
+    removeBranding: boolean;
+    toolColour: boolean;
+    toolStyle: boolean;
+    toolBrows: boolean;
+  };
   canRemoveBranding: boolean;
 }) {
   const [form, setForm] = useState(initial);
@@ -65,6 +78,13 @@ export function SettingsForm({
         <label className="text-sm">Maps link<input className="field mt-1" value={form.mapsUrl} onChange={(event) => set("mapsUrl", event.target.value)} /></label>
         <label className="text-sm">City<input className="field mt-1" value={form.city} onChange={(event) => set("city", event.target.value)} /></label>
         <label className="text-sm">GSTIN<input className="field mt-1" value={form.gstin} onChange={(event) => set("gstin", event.target.value)} /></label>
+        <fieldset className="grid gap-2 text-sm">
+          <legend className="font-medium">Tools on the try-on page</legend>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolColour} onChange={(event) => set("toolColour", event.target.checked)} /> Live colour</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolStyle} onChange={(event) => set("toolStyle", event.target.checked)} /> Hairstyle preview</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolBrows} onChange={(event) => set("toolBrows", event.target.checked)} /> Eyebrow mapping</label>
+          <label className="flex items-center gap-2 text-muted"><input type="checkbox" checked={false} disabled /> Nail art (coming soon)</label>
+        </fieldset>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.removeBranding} disabled={!canRemoveBranding} onChange={(event) => set("removeBranding", event.target.checked)} />
           Remove “Powered by HelixStac” {canRemoveBranding ? "" : "(Pro or Chain)"}

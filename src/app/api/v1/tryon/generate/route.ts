@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { browById } from "@/data/brows";
 import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
 import { shadeById } from "@/data/shades";
 import { styleById } from "@/data/styles";
@@ -9,7 +10,7 @@ import { numberEnv } from "@/lib/env";
 import { sanitizeSelfie, ImageError } from "@/lib/images";
 import { logError } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
-import { buildStylePrompt } from "@/lib/prompts";
+import { buildBrowPrompt, buildStylePrompt } from "@/lib/prompts";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
@@ -30,6 +31,7 @@ export async function POST(req: Request) {
   const sessionId = String(form.get("sessionId") || "");
   const consentId = String(form.get("consentId") || "");
   const quality = form.get("quality") === "hd" ? "hd" : "standard";
+  const tool = form.get("tool") === "brows" ? "brows" : "style";
   const shadeId = form.get("shadeId") ? String(form.get("shadeId")) : null;
   const photo = form.get("photo");
   if (!slug || !styleId || sessionId.length < 8 || !(photo instanceof File)) {
@@ -61,16 +63,27 @@ export async function POST(req: Request) {
   }
 
   const usedToday = await prisma.tryOn.count({
-    where: { tenantId: tenant.id, kind: "STYLE", status: "SUCCEEDED", createdAt: { gte: startOfToday() } },
+    where: { tenantId: tenant.id, kind: { in: ["STYLE", "BROWS"] }, status: "SUCCEEDED", createdAt: { gte: startOfToday() } },
   });
   if (usedToday >= tenant.dailyCap) {
     return NextResponse.json({ error: "DAILY_CAP", message: "This salon has reached today's preview limit. Live colour is still free." }, { status: 429 });
   }
 
-  const style = styleById(styleId);
-  const enabled = await prisma.tenantStyle.findUnique({ where: { tenantId_styleId: { tenantId: tenant.id, styleId } } });
-  if (!style || !enabled?.enabled) {
-    return NextResponse.json({ error: "STYLE", message: "That style is not on this salon's menu." }, { status: 400 });
+  const brow = tool === "brows" ? browById(styleId) : null;
+  const style = tool === "style" ? styleById(styleId) : null;
+  if (tool === "brows") {
+    if (!tenant.toolBrows) {
+      return NextResponse.json({ error: "TOOL", message: "Eyebrow mapping is turned off for this salon." }, { status: 403 });
+    }
+    if (!brow) return NextResponse.json({ error: "STYLE", message: "That brow shape is not on this salon's menu." }, { status: 400 });
+  } else {
+    if (!tenant.toolStyle) {
+      return NextResponse.json({ error: "TOOL", message: "Style previews are turned off for this salon." }, { status: 403 });
+    }
+    const enabled = await prisma.tenantStyle.findUnique({ where: { tenantId_styleId: { tenantId: tenant.id, styleId } } });
+    if (!style || !enabled?.enabled) {
+      return NextResponse.json({ error: "STYLE", message: "That style is not on this salon's menu." }, { status: 400 });
+    }
   }
 
   let jpeg: Buffer;
@@ -96,14 +109,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "SUSPENDED", message: "This salon's try-on is paused." }, { status: 403 });
   }
 
-  const shade = shadeById(shadeId);
+  const shade = tool === "style" ? shadeById(shadeId) : null;
   const tryOn = await prisma.tryOn.create({
     data: {
       tenantId: tenant.id,
       sessionId,
       styleId,
       shadeId: shade?.id,
-      kind: "STYLE",
+      kind: tool === "brows" ? "BROWS" : "STYLE",
       quality,
       status: "PENDING",
       credits,
@@ -114,11 +127,12 @@ export async function POST(req: Request) {
     const result = await generateWithFailover({
       image: jpeg,
       styleId,
-      gender: style.gender,
-      prompt: buildStylePrompt(style, shade?.name),
+      gender: style?.gender ?? "women",
+      prompt: brow ? buildBrowPrompt(brow) : buildStylePrompt(style!, shade?.name),
       colour: shade?.name,
       tenantId: tenant.id,
       quality,
+      kind: tool === "brows" ? "brows" : "style",
     });
     await settleCredits(tenant.id, refId, "COMMIT");
     const balance = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { creditBalance: true } });

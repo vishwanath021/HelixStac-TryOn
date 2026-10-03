@@ -24,6 +24,9 @@ export default async function SettingsPage() {
           city: tenant.city,
           gstin: tenant.gstin || "",
           removeBranding: tenant.removeBranding,
+          toolColour: tenant.toolColour,
+          toolStyle: tenant.toolStyle,
+          toolBrows: tenant.toolBrows,
         }}
       />
     </main>

@@ -21,6 +21,9 @@ const schema = z.object({
   showMen: z.boolean().optional(),
   showWomen: z.boolean().optional(),
   showKids: z.boolean().optional(),
+  toolColour: z.boolean().optional(),
+  toolStyle: z.boolean().optional(),
+  toolBrows: z.boolean().optional(),
   gstin: z.string().max(20).optional().nullable(),
 });
 

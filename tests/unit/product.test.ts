@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { BROWS } from "@/data/brows";
 import { CONSENT_HASH, CONSENT_VERSION } from "@/data/consent";
 import { SHADES } from "@/data/shades";
 import { stylesForGender, STYLES } from "@/data/styles";
@@ -11,7 +12,7 @@ import { parseHost } from "@/lib/host";
 import { sanitizeSelfie } from "@/lib/images";
 import { redact } from "@/lib/logger";
 import { annualExGst, assumedInr, breakEvenAccounts, previewCogsInr, withGst } from "@/lib/pricing";
-import { buildStylePrompt } from "@/lib/prompts";
+import { buildBrowPrompt, buildStylePrompt } from "@/lib/prompts";
 import { rateLimit, resetRateLimits } from "@/lib/ratelimit";
 import { recommendStyles } from "@/lib/recommendations";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
@@ -112,6 +113,27 @@ describe("recommendations and concierge", () => {
   });
 });
 
+describe("eyebrow catalogue", () => {
+  it("ships seven shapes and prompts that edit brows only", () => {
+    expect(BROWS.map((brow) => brow.name)).toEqual([
+      "Soft Arch",
+      "Straight Brow",
+      "High Arch",
+      "Rounded",
+      "S-Shape",
+      "Feathered",
+      "Bold Natural",
+    ]);
+    for (const brow of BROWS) {
+      const prompt = buildBrowPrompt(brow);
+      expect(prompt.toLowerCase()).toContain("eyebrows only");
+      expect(prompt.toLowerCase()).toContain("identity");
+      expect(prompt.toLowerCase()).toContain("skin tone");
+      expect(brow.serviceKeys).toEqual(["eyebrow-threading", "eyebrow-shaping"]);
+    }
+  });
+});
+
 describe("privacy helpers", () => {
   it("redacts photo fields and keeps a stable consent hash", () => {
     expect(redact({ photo: "abc", note: "ok" })).toEqual({ photo: "[redacted]", note: "ok" });
@@ -149,5 +171,23 @@ describe("mock provider", () => {
     expect(result.providerCostUsd).toBe(0);
     expect(result.image[0]).toBe(0xff);
     expect(result.image.length).toBeGreaterThan(1000);
+  });
+
+  it("watermarks a brow edit the same way", async () => {
+    process.env.MOCK_DELAY_MS = "0";
+    const input = await sharp({ create: { width: 64, height: 80, channels: 3, background: "#e7c2a4" } }).jpeg().toBuffer();
+    const brow = BROWS[0];
+    const result = await new MockProvider().generate({
+      image: input,
+      styleId: brow.id,
+      gender: "women",
+      prompt: buildBrowPrompt(brow),
+      tenantId: "t1",
+      quality: "standard",
+      kind: "brows",
+    });
+    expect(result.mime).toBe("image/jpeg");
+    expect(result.image[0]).toBe(0xff);
+    expect(result.providerCostUsd).toBe(0);
   });
 });

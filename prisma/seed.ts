@@ -21,6 +21,10 @@ async function main() {
       status: "TRIAL",
       plan: "PRO",
       trialEndsAt: trialEnds,
+      toolColour: true,
+      toolStyle: true,
+      toolBrows: true,
+      toolNails: false,
     },
     create: {
       slug: "demo-salon",
@@ -44,6 +48,10 @@ async function main() {
       showMen: true,
       showWomen: true,
       showKids: true,
+      toolColour: true,
+      toolStyle: true,
+      toolBrows: true,
+      toolNails: false,
     },
   });
 
@@ -56,6 +64,8 @@ async function main() {
     { key: "keratin", name: "Keratin", priceInr: 5999, durationMin: 180 },
     { key: "beard", name: "Beard Trim", priceInr: 299, durationMin: 20 },
     { key: "kids", name: "Kids Cut", priceInr: 349, durationMin: 30 },
+    { key: "eyebrow-threading", name: "Eyebrow Threading", priceInr: 149, durationMin: 15 },
+    { key: "eyebrow-shaping", name: "Eyebrow Shaping", priceInr: 249, durationMin: 20 },
   ];
   for (const service of services) {
     await prisma.service.upsert({

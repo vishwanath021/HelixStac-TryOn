@@ -12,6 +12,7 @@ The salon decides why a guest's data is processed. In DPDP terms that is the dat
 |---|---|---|
 | Live colour | No. MediaPipe runs in the browser on files we host. | No |
 | Style preview | Yes. JPEG bytes go to the app server, then to the configured image provider. | No. Memory only. Response is `Cache-Control: no-store`. |
+| Eyebrow mapping | Same path as a style preview. The server sends a brow-only prompt. | No. The try-on row stores the shape id, not the photo. |
 | Sample portrait | The illustration in `/samples` is not a guest. | It is a static file, not a photo of a person. |
 
 The generate route checks magic bytes, rejects files over 2 MB, and re-encodes with `sharp`, which drops EXIF. Logs go through `redact()` so photo fields and long strings are not printed. Analytics events reject keys that look like images.

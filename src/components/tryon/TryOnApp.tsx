@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
+import { BrowThumb } from "@/components/tryon/BrowThumb";
 import { ColourStage } from "@/components/tryon/ColourStage";
 import { StyleThumb } from "@/components/tryon/StyleThumb";
 import { isLocale, LOCALE_LABELS, t, type Locale } from "@/data/i18n";
-import type { PublicStyle } from "@/data/styles";
 import { recommendStyles } from "@/lib/recommendations";
 import type { SalonConfig } from "@/lib/salon";
 
@@ -17,6 +17,7 @@ type Look = {
   before: string;
   after: string;
   serviceKeys: string[];
+  tool: "style" | "brows";
 };
 
 const FACES = ["oval", "round", "square", "heart", "oblong", "diamond"] as const;
@@ -49,7 +50,8 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [shadeId, setShadeId] = useState(config.shades[0]?.id ?? "");
   const [intensity, setIntensity] = useState(72);
-  const [tab, setTab] = useState<"colour" | "style">("colour");
+  const initialTool = config.toolColour ? "colour" : config.toolStyle ? "style" : "brows";
+  const [tool, setTool] = useState<"colour" | "style" | "brows">(initialTool);
   const [gender, setGender] = useState<"women" | "men" | "kids">(config.showWomen ? "women" : config.showMen ? "men" : "kids");
   const [styleId, setStyleId] = useState("");
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
@@ -97,10 +99,9 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
 
   const shade = config.shades.find((item) => item.id === shadeId) ?? null;
   const styles = config.styles.filter((style) => style.gender === gender);
-  const selected = config.styles.find((style) => style.id === styleId) ?? null;
   const active = looks.find((look) => look.id === activeId) ?? looks[0];
   const suggestions = useMemo(() => recommendStyles(styles, face, hair, 4), [styles, face, hair]);
-  const showResult = tab === "style" && stylePhase === "result" && Boolean(active) && !busy;
+  const showResult = (tool === "style" || tool === "brows") && stylePhase === "result" && active?.tool === tool && !busy;
   const showStudio = (cameraOn || Boolean(photoEl)) && !showResult;
 
   function track(eventName: string, props?: Record<string, string | number | boolean | null>) {
@@ -238,9 +239,14 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
     await applyBlob(blob);
   }
 
-  async function preview(style?: PublicStyle) {
-    const chosen = style ?? selected;
-    if (!chosen || !consentId) {
+  function selectTool(next: "colour" | "style" | "brows") {
+    setTool(next);
+    setStylePhase(active?.tool === next ? "result" : "pick");
+    setError("");
+  }
+
+  async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: "style" | "brows" }) {
+    if (!consentId) {
       setError(t(lang, "consentRequired"));
       return;
     }
@@ -260,22 +266,23 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
     }
     if (!blob) {
       setError(t(lang, "captureFirst"));
-      setTab("style");
+      setTool(chosen.tool);
       return;
     }
     const before = URL.createObjectURL(blob);
     setPendingName(chosen.name);
     setBusy(true);
-    setTab("style");
-    track("generate_requested", { styleId: chosen.id, quality });
+    setTool(chosen.tool);
+    track("generate_requested", { styleId: chosen.id, quality, tool: chosen.tool });
     const body = new FormData();
     body.set("photo", blob, "selfie.jpg");
     body.set("slug", config.slug);
     body.set("styleId", chosen.id);
+    body.set("tool", chosen.tool);
     body.set("quality", quality);
     body.set("consentId", consentId);
     body.set("sessionId", sid);
-    if (shadeId) body.set("shadeId", shadeId);
+    if (chosen.tool === "style" && shadeId) body.set("shadeId", shadeId);
     const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
     if (!res.ok) {
       const data = await res.json().catch(() => ({ message: t(lang, "creditsEmpty") }));
@@ -291,10 +298,11 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
       id: res.headers.get("x-tryon-id") || crypto.randomUUID(),
       styleId: chosen.id,
       styleName: chosen.name,
-      shadeName: shade?.name ?? null,
+      shadeName: chosen.tool === "style" ? shade?.name ?? null : null,
       before,
       after,
       serviceKeys: chosen.serviceKeys,
+      tool: chosen.tool,
     };
     setLooks((current) => [look, ...current.filter((item) => item.styleId !== look.styleId)].slice(0, 4));
     setActiveId(look.id);
@@ -313,7 +321,8 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
         slug: config.slug,
         sessionId: sid,
         styleId: active.styleId,
-        shadeId: shadeId || null,
+        tool: active.tool,
+        shadeId: active.tool === "style" ? shadeId || null : null,
         lang,
         name: name || null,
         phone: phone || null,
@@ -416,25 +425,17 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
           <section className="text-center">
             <h2 className="font-serif text-3xl leading-tight">{t(lang, "heroTitle")}</h2>
             <p className="mt-2 text-sm leading-6 text-muted">{t(lang, "heroBody")}</p>
-            <div className="mt-4 inline-flex rounded-full bg-[#241c16] p-1" role="tablist" aria-label={t(lang, "heroTitle")}>
-              <button
-                className={`rounded-full px-5 py-2 text-xs font-semibold tracking-[0.14em] ${tab === "colour" ? "bg-white text-[#241c16]" : "text-white"}`}
-                type="button"
-                role="tab"
-                aria-selected={tab === "colour"}
-                onClick={() => setTab("colour")}
-              >
-                {t(lang, "colourTab")}
-              </button>
-              <button
-                className={`rounded-full px-5 py-2 text-xs font-semibold tracking-[0.14em] ${tab === "style" ? "bg-white text-[#241c16]" : "text-white"}`}
-                type="button"
-                role="tab"
-                aria-selected={tab === "style"}
-                onClick={() => setTab("style")}
-              >
-                {t(lang, "styleTab")}
-              </button>
+            <div className="mx-auto mt-4 inline-flex max-w-full flex-wrap justify-center gap-1 rounded-full bg-[#241c16] p-1" role="tablist" aria-label={t(lang, "toolsLabel")}>
+              {config.toolColour && (
+                <button className={`rounded-full px-4 py-2 text-xs font-semibold tracking-[0.14em] ${tool === "colour" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" role="tab" aria-selected={tool === "colour"} onClick={() => selectTool("colour")}>{t(lang, "colourTab")}</button>
+              )}
+              {config.toolStyle && (
+                <button className={`rounded-full px-4 py-2 text-xs font-semibold tracking-[0.14em] ${tool === "style" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" role="tab" aria-selected={tool === "style"} onClick={() => selectTool("style")}>{t(lang, "styleTab")}</button>
+              )}
+              {config.toolBrows && (
+                <button className={`rounded-full px-4 py-2 text-xs font-semibold tracking-[0.14em] ${tool === "brows" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" role="tab" aria-selected={tool === "brows"} onClick={() => selectTool("brows")}>{t(lang, "browsTab")}</button>
+              )}
+              <button className="rounded-full px-4 py-2 text-xs font-semibold tracking-[0.14em] text-white/45" type="button" role="tab" aria-disabled="true" disabled title={t(lang, "nailsSoon")}>{t(lang, "nailsTab")}</button>
             </div>
           </section>
 
@@ -460,7 +461,7 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
                     <ColourStage
                       video={cameraOn ? videoEl : null}
                       image={!cameraOn ? photoEl : null}
-                      shade={tab === "colour" ? shade : null}
+                      shade={tool === "colour" ? shade : null}
                       intensity={intensity}
                       mirror={cameraOn && facing === "user"}
                       onStatus={setModelStatus}
@@ -502,7 +503,7 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
                         <button className="rounded-full bg-white/15 px-3 py-1 font-medium" type="button" onClick={() => void startCamera(facing === "user" ? "environment" : "user")}>{t(lang, "flipCamera")}</button>
                       )}
                     </div>
-                    {tab === "colour" && (
+                    {tool === "colour" && (
                       <div className="flex gap-3 overflow-x-auto pb-1">
                         {config.shades.map((item) => (
                           <button
@@ -555,7 +556,7 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
             }}
           />
 
-          {tab === "colour" && (cameraOn || photoUrl) && (
+          {tool === "colour" && (cameraOn || photoUrl) && (
             <label className="block px-1 text-sm">
               {t(lang, "intensity")} · {intensity}
               <input className="mt-1 w-full" type="range" min={20} max={100} value={intensity} onChange={(event) => setIntensity(Number(event.target.value))} />
@@ -571,11 +572,11 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
             </p>
           )}
 
-          {tab === "style" && !photoBlob && !cameraOn && (
+          {tool === "style" && !photoBlob && !cameraOn && (
             <p className="text-center text-sm text-muted">{t(lang, "captureFirst")}</p>
           )}
 
-          {tab === "style" && photoBlob && stylePhase === "pick" && !busy && (
+          {tool === "style" && photoBlob && stylePhase === "pick" && !busy && (
             <section className="card p-4" aria-label={t(lang, "styles")}>
               <div className="mb-3 flex flex-wrap gap-2">
                 {config.showWomen && <button className={gender === "women" ? "btn" : "btn secondary"} type="button" onClick={() => setGender("women")}>{t(lang, "women")}</button>}
@@ -595,7 +596,7 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
                     type="button"
                     aria-pressed={style.id === styleId}
                     className={`overflow-hidden rounded-2xl border bg-white text-left ${style.id === styleId ? "border-[var(--brand)]" : "border-line"}`}
-                    onClick={() => void preview(style)}
+                    onClick={() => void preview({ id: style.id, name: style.name, serviceKeys: style.serviceKeys, tool: "style" })}
                   >
                     <div className="aspect-[4/5]"><StyleThumb category={style.category} gender={style.gender} name={style.name} /></div>
                     <span className="block px-2 py-2 text-sm font-medium">{style.name}</span>
@@ -605,14 +606,43 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
             </section>
           )}
 
+          {tool === "brows" && !photoBlob && !cameraOn && (
+            <p className="text-center text-sm text-muted">{t(lang, "captureFirst")}</p>
+          )}
+
+          {tool === "brows" && photoBlob && stylePhase === "pick" && !busy && (
+            <section className="card p-4" aria-label={t(lang, "brows")}>
+              <p className="mb-3 text-sm leading-6">{t(lang, "browHint")}</p>
+              <label className="mb-3 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={quality === "hd"} onChange={(event) => setQuality(event.target.checked ? "hd" : "standard")} />
+                {t(lang, "generateHd")}
+                <span className="text-xs text-muted">{t(lang, "hdNote")}</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {config.brows.map((brow) => (
+                  <button
+                    key={brow.id}
+                    type="button"
+                    aria-pressed={brow.id === styleId}
+                    className={`overflow-hidden rounded-2xl border bg-white text-left ${brow.id === styleId ? "border-[var(--brand)]" : "border-line"}`}
+                    onClick={() => void preview({ id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" })}
+                  >
+                    <div className="aspect-[4/3]"><BrowThumb name={brow.name} /></div>
+                    <span className="block px-2 py-2 text-sm font-medium">{brow.name}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           {showResult && active && (
             <section className="space-y-3">
               <h3 className="text-center font-serif text-2xl">{active.styleName}{active.shadeName ? ` · ${active.shadeName}` : ""}</h3>
-              <p className="text-center text-sm leading-6 text-muted">{t(lang, "disclaimer")}</p>
-              <button className="btn w-full" type="button" onClick={() => void book(false)}>{t(lang, "book")}</button>
+              <p className="text-center text-sm leading-6 text-muted">{t(lang, active.tool === "brows" ? "browDisclaimer" : "disclaimer")}</p>
+              <button className="btn w-full" type="button" onClick={() => void book(false)}>{t(lang, active.tool === "brows" ? "bookBrow" : "book")}</button>
               <div className="grid grid-cols-2 gap-2">
                 <button className="btn secondary" type="button" onClick={() => void downloadLook()}>{t(lang, "download")}</button>
-                <button className="btn secondary" type="button" onClick={() => { setStylePhase("pick"); setError(""); }}>{t(lang, "tryAnother")}</button>
+                <button className="btn secondary" type="button" onClick={() => { setStylePhase("pick"); setError(""); }}>{t(lang, active.tool === "brows" ? "tryAnotherBrow" : "tryAnother")}</button>
               </div>
               <div className="grid gap-2">
                 <input className="field" placeholder={t(lang, "nameOptional")} value={name} onChange={(event) => setName(event.target.value)} aria-label={t(lang, "nameOptional")} />
@@ -640,7 +670,7 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
               <p className="text-xs text-muted">{t(lang, "compareHint")}</p>
               <div className="mt-3 grid grid-cols-4 gap-2">
                 {looks.map((look) => (
-                  <button key={look.id} type="button" className={`overflow-hidden rounded-2xl border ${look.id === active?.id ? "border-[var(--brand)]" : "border-line"}`} onClick={() => { setActiveId(look.id); setStylePhase("result"); setTab("style"); }}>
+                  <button key={look.id} type="button" className={`overflow-hidden rounded-2xl border ${look.id === active?.id ? "border-[var(--brand)]" : "border-line"}`} onClick={() => { setActiveId(look.id); setTool(look.tool); setStylePhase("result"); }}>
                     <img src={look.after} alt={look.styleName} className="aspect-[3/4] w-full object-cover" />
                     <span className="block px-1 py-1 text-left text-[10px] leading-tight">{look.styleName}</span>
                   </button>
@@ -666,7 +696,7 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {suggestions.map((style) => (
-                <button key={style.id} className="btn secondary" type="button" onClick={() => { setGender(style.gender); setTab("style"); void preview(style); }}>{style.name}</button>
+                <button key={style.id} className="btn secondary" type="button" onClick={() => { setGender(style.gender); void preview({ id: style.id, name: style.name, serviceKeys: style.serviceKeys, tool: "style" }); }}>{style.name}</button>
               ))}
             </div>
           </section>
