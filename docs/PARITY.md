@@ -6,8 +6,8 @@ The inventory describes a single-salon site. HelixStac TryOn is a white-label pr
 
 | Inventory item | Status |
 |---|---|
-| Live colour, 16 named shades, on-device, no login, not counted as a preview | Shipped. Consent still comes first. |
-| Style gallery, shutter, before/after, book, download, try another, compare up to 4 | Shipped. Women, men, and kids. Gallery cards are realistic portraits. Demo mode shows the guest photo with a style-preview card. |
+| Live colour, 16 named shades, on-device, no login, not counted as a preview | Shipped. The colour grid is a chip on the same page. |
+| Style gallery, shutter, before/after, book, download, try another | Shipped. Women, men, and kids. The full portrait grid is visible before a photo. Demo mode shows the guest photo with a style-preview card. |
 | Eyebrow mapping on the same capture → pick → ~10s → before/after path | Shipped. Seven original shapes. The reference names eight; this set is not that list. |
 | Nail try-on, about 10 designs, rear camera when the stage is empty | Shipped and tenant-togglable. |
 | Beard try-on, about 10 styles, men | Shipped. The reference has no AI beard preview. This one is ours. |

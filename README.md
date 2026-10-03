@@ -212,17 +212,15 @@ More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Guest try-on
 
-After the consent notice, the salon page is a phone-sized mirror.
+`/` opens the demo salon try-on. The salon page is one screen. There is no consent wall, no wizard, and no login.
 
-1. A tool switcher sits under the hero: **COLOUR**, **STYLE**, **BROWS**, **BEARD**, and **NAILS**. Each one can be turned off in Settings. Try-on does not ask for a login.
-2. The dark stage asks for the front camera or an upload. **START CAMERA** opens the live mirror, with a round shutter and a small **Photo** upload. If the camera is blocked, the same stage keeps the upload path.
-3. Colour swatches (the 16 named shades) sit on the live feed and on a still photo. Live colour stays on the device.
-4. After a shutter tap or an upload, **STYLE** opens the Women / Men / Kids gallery. Illustrated thumbnails are original placeholders. Choosing a style runs the preview (about 10 seconds on a paid model; the demo mock is faster) and then a draggable **BEFORE / AFTER** slider.
-5. **BOOK THIS LOOK** opens the salon's WhatsApp with the look and mapped services, and records a lead. **DOWNLOAD** saves the after image in the browser. **TRY ANOTHER STYLE** returns to the gallery and keeps the same photo. Up to four looks stay in the compare strip.
-6. **BROWS** uses the same photo. The guest picks a shape (Soft Arch, Straight Brow, High Arch, Rounded, S-Shape, Feathered, Bold Natural). The preview spends a credit, keeps identity and skin unchanged in the prompt, and ends with **BOOK THIS**, **DOWNLOAD**, and **TRY ANOTHER SHAPE**. Booking maps Eyebrow Threading and Eyebrow Shaping.
-7. **BEARD** is men's facial hair (stubble, short boxed, full, goatee, French, clean shave, and four more). **NAILS** is ten original designs and prefers the rear camera for a hand photo. Kids' cuts stay on the Style gallery's Kids tab. **Style ideas** (`/s/{slug}/guide`) is a short rule-based quiz plus face-shape and colour questions. It links into the try-on with a style or shade preselected and does not spend a credit by itself.
-8. Anonymous guests get a daily AI preview cap (default 8, owner-configurable). A logged-in guest gets a higher cap (default 30). A **salon-mode** link from the admin QR page is unlimited for the chair and is not printed on the public standee. Live colour does not count.
-9. **Book** opens WhatsApp and records a lead, unless the owner turns on "require a phone login". Then Book goes to `/s/{slug}/me`: mobile number, 4–6 digit code (mock OTP in dev), a 13+ profile, and a booking request the salon confirms from the Bookings inbox. Wallet, loyalty, and referrals are not built.
+1. Header: salon logo and name, **Book Now**, and **WhatsApp**. Title: **Virtual Try-On**.
+2. The photo frame has **Take a selfie** and **Upload photo**. One line sits under it: “Your photo is used only for this preview”, with a checkbox. The full notice stays on `/privacy`.
+3. The Women / Men grid (Kids when the salon enables it) is on the page before a photo. Every enabled style for that gender is shown, with the portrait in `public/styles`. Tapping a style before a photo scrolls up and says **Add your photo first**, and the style stays selected.
+4. After a photo, the frame shows it with **Retake** and the line “Now pick a style below - it takes about 10 seconds.” A style runs in the same frame (**Styling your look...**), then a before/after slider, **Download**, **Book this look** (WhatsApp), and **Try another** (scrolls back to the grid).
+5. **Hair colour**, **Brows**, **Nails**, and **Beard** are chips under the title. They swap the grid on the same page. A chip the salon turns off is hidden.
+6. With no AI key, a small **Demo mode** note is on the page. The result is still the guest photo plus a labelled Style preview card.
+7. Anonymous guests get a daily AI preview cap (default 8). A **salon-mode** link from the admin QR page is unlimited. The phone hub at `/s/{slug}/me` is still there for a booking request; the try-on itself does not send guests to log in.
 
 ## Reference parity
 
@@ -230,7 +228,7 @@ The full checklist is [docs/PARITY.md](docs/PARITY.md). Short version:
 
 | Reference flow | In this app |
 |---|---|
-| Colour / style mirror, shutter, shades, style gallery, before/after, book | Yes, after the consent step. Thumbnails are original illustrations. |
+| Colour / style mirror, shutter, shades, style gallery, before/after, book | Yes, on one page. The full portrait grid is visible before a photo. |
 | Eyebrow mapping | Yes. Seven original shapes. The reference lists eight names; we did not copy that set. |
 | Nail try-on | Yes. Ten original designs. Rear camera on an empty stage. |
 | Beard AI try-on | Ours. The reference has beard services, not an AI beard preview. |
