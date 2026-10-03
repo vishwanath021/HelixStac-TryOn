@@ -15,6 +15,14 @@ test("customer can consent, preview a demo cut, and an owner can open the dashbo
   await page.getByRole("button", { name: /use sample portrait/i }).click();
   await expect(page.getByRole("button", { name: "Burgundy" })).toBeVisible();
   await page.getByRole("button", { name: "Cherry Red" }).click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector("canvas");
+    if (!canvas || canvas.width < 10) return false;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    const pixel = ctx.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 5), 1, 1).data;
+    return pixel[0] + pixel[1] + pixel[2] > 30;
+  });
   await page.screenshot({ path: "docs/screenshots/03-colour.png", fullPage: true });
 
   await page.getByRole("tab", { name: /styles/i }).click();

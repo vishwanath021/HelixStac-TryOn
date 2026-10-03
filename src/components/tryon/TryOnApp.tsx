@@ -349,7 +349,10 @@ export function TryOnApp({ config, embed = false }: { config: SalonConfig; embed
         <div className="space-y-4">
           <section className="card overflow-hidden">
             <div className="relative aspect-[3/4] bg-[#1c1612]">
-              <video ref={videoRef} playsInline muted autoPlay className={cameraOn && modelStatus !== "ready" ? "h-full w-full object-cover" : "hidden"} style={facing === "user" ? { transform: "scaleX(-1)" } : undefined} />
+              <video ref={videoRef} playsInline muted autoPlay className={cameraOn && modelStatus !== "ready" ? "absolute inset-0 h-full w-full object-cover" : "hidden"} style={facing === "user" ? { transform: "scaleX(-1)" } : undefined} />
+              {photoUrl && !cameraOn && (
+                <img src={photoUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+              )}
               {showStudio && modelStatus !== "error" && (
                 <div className="absolute inset-0">
                   <ColourStage

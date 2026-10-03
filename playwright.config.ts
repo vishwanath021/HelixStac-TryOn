@@ -20,7 +20,7 @@ export default defineConfig({
         timeout: 120_000,
         env: {
           ...process.env,
-          DATABASE_URL: "file:./prisma/dev.db",
+          DATABASE_URL: "file:./dev.db",
           AUTH_SECRET: "test-secret-not-for-production-use-32",
           AUTH_TRUST_HOST: "true",
           AI_PROVIDER: "mock",

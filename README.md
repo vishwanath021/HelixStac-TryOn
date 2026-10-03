@@ -76,7 +76,7 @@ Copy `.env.example`. Real keys are optional.
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | `file:./prisma/dev.db` or `postgresql://…` |
+| `DATABASE_URL` | `file:./dev.db` (SQLite, path is relative to `prisma/schema.prisma`) or `postgresql://…` |
 | `AUTH_SECRET` | Auth.js secret. Change it before any shared deploy. |
 | `AUTH_URL` | Public URL of this app |
 | `APP_BASE_URL` | Used in QR codes and magic links |

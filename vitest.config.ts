@@ -7,7 +7,7 @@ export default defineConfig({
     include: ["tests/unit/**/*.ts"],
     globalSetup: ["./tests/global-setup.ts"],
     env: {
-      DATABASE_URL: "file:./prisma/test.db",
+      DATABASE_URL: "file:./test.db",
       AUTH_SECRET: "test-secret",
       AI_PROVIDER: "mock",
       BILLING_PROVIDER: "mock",

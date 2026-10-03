@@ -5,12 +5,8 @@ dist
 .env
 .env.local
 .env.*.local
-prisma/dev.db
-prisma/dev.db-journal
-prisma/test.db
-prisma/test.db-journal
-prisma/build.db
-prisma/build.db-journal
+*.db
+*.db-journal
 test-results
 playwright-report
 blob-report
