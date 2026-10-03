@@ -56,6 +56,9 @@ export class OpenAIProvider implements ImageStyleProvider {
     if (reference) {
       form.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
     }
+    if (input.maskPng) {
+      form.append("mask", new Blob([new Uint8Array(input.maskPng)], { type: "image/png" }), "mask.png");
+    }
     const response = await fetch("https://api.openai.com/v1/images/edits", {
       method: "POST",
       headers: { authorization: `Bearer ${apiKey}` },

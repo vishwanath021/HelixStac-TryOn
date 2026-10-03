@@ -125,8 +125,8 @@ The try-on works before any key exists. Demo mode is the default.
 Works with no key:
 
 - Guest consent, camera, upload, and on-device live colour
-- The style gallery: realistic portraits for Women, Men, and Kids
-- A style result on the guest's own photo, with a labelled Style preview card of the look they picked and the banner “Demo mode: connect an AI key to see this style on your own face”
+- The style gallery: realistic portraits for Women, Men, and Kids, plus photo cards for brows, beard, and nails
+- A result on the guest's own photo, with a labelled Style preview card of the look they picked. Hair, brows, and beard say “on your own face”. Nails say “on your own hand” and ask for a hand photo
 - Booking on WhatsApp, the salon admin, and the preview caps
 
 Needs a key (OpenAI or Gemini):
@@ -137,7 +137,7 @@ Needs a key (OpenAI or Gemini):
 
 Add a key in `.env` (`OPENAI_API_KEY` or `GEMINI_API_KEY` plus `AI_PROVIDER`) or paste it on `/super/ai` (platform) or `/admin/ai` (salon owner, when bring-your-own is allowed). The pasted key is encrypted on the server. The page shows a mask, not the key. The style thumbnail is not sent to the provider unless `OPENAI_SEND_STYLE_REFERENCE` or `GEMINI_SEND_STYLE_REFERENCE` is `true`.
 
-If a paid call fails, or the testing spend cap is already used, the app returns the same demo composite so the salon page does not die. With no key, the try-on also shows: “Demo mode – connect an AI key for real hairstyle previews”.
+If a paid call fails, or the testing spend cap is already used, the app returns the same demo composite so the salon page does not die. A failed call releases its estimate, and a failed placement check is not retried and is not charged. With no key, the try-on also shows: “Demo mode – connect an AI key for real hairstyle previews”.
 
 ### OpenAI
 
@@ -148,6 +148,29 @@ If a paid call fails, or the testing spend cap is already used, the app returns 
 ### Spend cap
 
 `AI_SPEND_CAP_INR` defaults to 500. Each paid attempt adds `AI_COST_PER_CALL_INR_{PROVIDER}_{QUALITY}` (an estimate, not a provider invoice) to `AiCall`. The super-admin page shows the total against the cap. The next paid call after the cap returns the labelled sample and a short explanation. `npm run ai:smoke` uses the same guard.
+
+### What the offline tests prove
+
+Before a paid edit, the server builds a region mask from a frontal-face check (one face, upright, not a profile, large enough to place) and facial proportions:
+
+- Hair and colour: the hair and top of the head only
+- Brows: the brow band, above the eyes
+- Beard: the jaw and chin below the nose, with the mouth left out
+- Nails: fingertip regions on a hand photo. A picture that looks like a face is refused
+
+OpenAI receives that mask on the image edit. Gemini does not take a mask; the same server-side composite still runs. After the provider responds, pixels outside the feathered mask are copied back from the original photo. A provider cannot leave a beard on the forehead or change the background, because those pixels are restored.
+
+The unit suite proves this without a provider key:
+
+- A mock edit that paints the whole frame one colour leaves every pixel outside the mask byte-for-byte identical to the original
+- Masks sit in the expected zone on frontal, off-centre, mirrored, EXIF-rotated, wide, and camera-shaped fixtures
+- No face, two faces, a tilt, a side profile, a tiny face, and a hand sent to the beard tool are rejected before the edit function is called
+- A provider error is tried once more. A placement failure is not tried again and does not keep the rupee charge
+- Calibration stops at 5 images or about ₹30, whichever comes first
+
+`npm run calibrate` writes before / mask / after files under `docs/mask-overlays/` using the flat-colour edit. The same action is the **Calibration run** button on `/super/ai`. With no key it spends ₹0. With a key it uses the real model inside that cap.
+
+These tests do **not** prove that a real model blends hair, brows, beard, or polish convincingly. That still has to be judged by looking at a paid calibration result. The offline proof is the lock, the placement checks, and the spend cap.
 
 ### Smoke a provider locally
 

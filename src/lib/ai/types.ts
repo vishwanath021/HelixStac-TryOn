@@ -11,6 +11,8 @@ export type GenerateInput = {
   kind?: "style" | "brows" | "beard" | "nails";
   /** Display name for a demo card. Not sent to a paid provider. */
   styleName?: string;
+  /** PNG mask. Transparent pixels are the only area a provider may edit. */
+  maskPng?: Buffer;
 };
 
 export type GenerateOutput = {
@@ -20,7 +22,7 @@ export type GenerateOutput = {
   providerCostUsd: number;
   latencyMs: number;
   /** Set when the bytes are a labelled sample, not a paid edit of the guest photo. */
-  demoReason?: "no-key" | "spend-cap" | "failover";
+  demoReason?: "no-key" | "spend-cap" | "failover" | "placement";
   estimateInr?: number;
 };
 

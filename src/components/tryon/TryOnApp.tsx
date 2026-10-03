@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BeardThumb } from "@/components/tryon/BeardThumb";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
-import { BrowThumb } from "@/components/tryon/BrowThumb";
 import { ColourStage } from "@/components/tryon/ColourStage";
-import { NailThumb } from "@/components/tryon/NailThumb";
 import { StyleCard } from "@/components/tryon/StyleCard";
 import { t } from "@/data/i18n";
+import { classifySkinPhoto } from "@/lib/hand-photo";
 import type { SalonConfig } from "@/lib/salon";
 import { normalizeWhatsAppPhone } from "@/lib/whatsapp";
 
@@ -25,6 +23,7 @@ type Look = {
 
 type TryTool = "colour" | "style" | "brows" | "beard" | "nails";
 type Audience = "women" | "men" | "kids";
+type Shot = { blob: Blob; url: string; el: HTMLImageElement };
 
 function firstTool(config: SalonConfig, requested?: string): TryTool {
   const allowed: TryTool[] = [];
@@ -72,9 +71,8 @@ export function TryOnApp({
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [facing, setFacing] = useState<"user" | "environment">("user");
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
-  const [photoEl, setPhotoEl] = useState<HTMLImageElement | null>(null);
+  const [faceShot, setFaceShot] = useState<Shot | null>(null);
+  const [handShot, setHandShot] = useState<Shot | null>(null);
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [shadeId, setShadeId] = useState(config.shades[0]?.id ?? "");
   const [intensity, setIntensity] = useState(72);
@@ -142,6 +140,7 @@ export function TryOnApp({
   }, []);
 
   const shade = config.shades.find((item) => item.id === shadeId) ?? null;
+  const activeShot = tool === "nails" ? handShot : faceShot;
   const styles = config.styles.filter((style) => style.gender === gender);
   const showResult = tool !== "colour" && stylePhase === "result" && active?.tool === tool && !busy;
   const phone = normalizeWhatsAppPhone(config.whatsapp);
@@ -246,16 +245,39 @@ export function TryOnApp({
     }
   }
 
+  async function classifyHand(blob: Blob) {
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement("canvas");
+    canvas.width = 48;
+    canvas.height = 48;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) {
+      bitmap.close();
+      return "unclear" as const;
+    }
+    ctx.drawImage(bitmap, 0, 0, 48, 48);
+    bitmap.close();
+    return classifySkinPhoto(ctx.getImageData(0, 0, 48, 48).data, 48, 48, 4);
+  }
+
   async function applyBlob(blob: Blob) {
-    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    const slot = tool === "nails" ? "hand" : "face";
+    if (slot === "hand" && (await classifyHand(blob)) === "face") {
+      stopCamera();
+      setError(t(lang, "faceNotHand"));
+      return;
+    }
+    const previous = slot === "hand" ? handShot : faceShot;
+    if (previous) URL.revokeObjectURL(previous.url);
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.src = url;
     await img.decode();
     stopCamera();
-    setPhotoBlob(blob);
-    setPhotoUrl(url);
-    setPhotoEl(img);
+    const shot = { blob, url, el: img };
+    if (slot === "hand") setHandShot(shot);
+    else setFaceShot(shot);
+    setError("");
     setStylePhase("pick");
     track("photo_captured", {});
   }
@@ -301,8 +323,10 @@ export function TryOnApp({
   async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }) {
     setStyleId(chosen.id);
     setTool(chosen.tool);
-    if (!photoBlob) {
-      needPhoto();
+    const shot = chosen.tool === "nails" ? handShot : faceShot;
+    if (!shot) {
+      setError(t(lang, chosen.tool === "nails" ? "uploadHand" : "addPhotoFirst"));
+      frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
     const consent = consentRef.current || (await consenting.current) || "";
@@ -316,7 +340,7 @@ export function TryOnApp({
     setBusy(true);
     track("generate_requested", { styleId: chosen.id, tool: chosen.tool });
     const body = new FormData();
-    body.set("photo", photoBlob, "selfie.jpg");
+    body.set("photo", shot.blob, "selfie.jpg");
     body.set("slug", config.slug);
     body.set("styleId", chosen.id);
     body.set("tool", chosen.tool);
@@ -337,19 +361,17 @@ export function TryOnApp({
     const out = await res.blob();
     const reason = res.headers.get("x-demo-reason") || "";
     const sample = reason === "no-key" || reason === "spend-cap" || reason === "failover" || (res.headers.get("x-provider") || "").includes("mock");
-    const styleDemo = sample && chosen.tool === "style";
-    const userUrl = URL.createObjectURL(photoBlob);
     setNotice(reason === "spend-cap" ? t(lang, "spendCapNote") : "");
     setActive({
       id: res.headers.get("x-tryon-id") || crypto.randomUUID(),
       styleId: chosen.id,
       styleName: chosen.name,
       shadeName: chosen.tool === "style" ? shade?.name ?? null : null,
-      before: styleDemo ? userUrl : sample ? "/samples/demo-before.jpg" : userUrl,
+      before: URL.createObjectURL(shot.blob),
       after: URL.createObjectURL(out),
       serviceKeys: chosen.serviceKeys,
       tool: chosen.tool,
-      demo: styleDemo,
+      demo: sample,
     });
     setBusy(false);
     setProgress(100);
@@ -362,7 +384,7 @@ export function TryOnApp({
     setShadeId(id);
     setTool("colour");
     track("colour_selected", { shade: id });
-    if (!photoBlob && !cameraOn) needPhoto();
+    if (!faceShot && !cameraOn) needPhoto();
   }
 
   async function book() {
@@ -457,7 +479,7 @@ export function TryOnApp({
         {showResult && active ? (
           <div>
             <BeforeAfter before={active.before} after={active.after} beforeLabel={t(lang, "before")} afterLabel={t(lang, "after")} />
-            {active.demo && <p className="bg-[#241c16] px-4 py-3 text-center text-sm leading-6 text-white" role="status">{t(lang, "demoStyleBanner")}</p>}
+            {active.demo && <p className="bg-[#241c16] px-4 py-3 text-center text-sm leading-6 text-white" role="status">{t(lang, active.tool === "nails" ? "demoNailBanner" : "demoStyleBanner")}</p>}
           </div>
         ) : (
           <div className="relative aspect-[3/4]">
@@ -470,12 +492,12 @@ export function TryOnApp({
               className={cameraOn ? "absolute inset-0 h-full w-full object-cover" : "hidden"}
               style={facing === "user" ? { transform: "scaleX(-1)" } : undefined}
             />
-            {photoUrl && !cameraOn && <img src={photoUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />}
-            {tool === "colour" && (cameraOn || photoEl) && modelStatus !== "error" && (
+            {activeShot && !cameraOn && <img src={activeShot.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
+            {tool === "colour" && (cameraOn || faceShot) && modelStatus !== "error" && (
               <div className="absolute inset-0">
                 <ColourStage
                   video={cameraOn ? videoEl : null}
-                  image={!cameraOn ? photoEl : null}
+                  image={!cameraOn ? faceShot?.el ?? null : null}
                   shade={shade}
                   intensity={intensity}
                   mirror={cameraOn && facing === "user"}
@@ -483,10 +505,11 @@ export function TryOnApp({
                 />
               </div>
             )}
-            {!cameraOn && !photoUrl && (
+            {!cameraOn && !activeShot && (
               <div className="absolute inset-0 grid content-center justify-items-center gap-3 px-6">
+                {tool === "nails" && <p className="text-center text-lg text-white">{t(lang, "uploadHand")}</p>}
                 <button className="btn min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "takeSelfie")}</button>
-                <button className="btn secondary min-w-44 bg-white" type="button" onClick={() => fileRef.current?.click()}>{t(lang, "uploadPhoto")}</button>
+                <button className="btn secondary min-w-44 bg-white" type="button" onClick={() => fileRef.current?.click()}>{tool === "nails" ? t(lang, "uploadHand") : t(lang, "uploadPhoto")}</button>
                 {cameraError && <p className="text-center text-sm text-[#f0c7b0]" role="alert">{cameraError}</p>}
               </div>
             )}
@@ -495,9 +518,9 @@ export function TryOnApp({
                 <button className="h-[4.5rem] w-[4.5rem] rounded-full border-[5px] border-white/50 bg-white disabled:opacity-50" type="button" aria-label={t(lang, "takePhoto")} disabled={!cameraReady} onClick={() => void shutter()} />
               </div>
             )}
-            {photoUrl && !cameraOn && (
+            {activeShot && !cameraOn && (
               <div className="absolute inset-x-0 bottom-4 z-10 flex justify-center gap-2">
-                <button className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#241c16]" type="button" onClick={() => void startCamera(facing)}>{t(lang, "retake")}</button>
+                <button className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#241c16]" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "retake")}</button>
               </div>
             )}
             {busy && (
@@ -533,10 +556,10 @@ export function TryOnApp({
         }}
       />
 
-      {photoBlob && !showResult && (
+      {activeShot && !showResult && (
         <p className="mt-3 text-center text-sm">{tool === "colour" ? t(lang, "pickColour") : t(lang, "pickBelow")}</p>
       )}
-      {tool === "colour" && photoBlob && (
+      {tool === "colour" && faceShot && (
         <label className="mt-3 block px-1 text-sm">
           {t(lang, "intensity")} · {intensity}
           <input className="mt-1 w-full" type="range" min={20} max={100} value={intensity} onChange={(event) => setIntensity(Number(event.target.value))} />
@@ -601,7 +624,7 @@ export function TryOnApp({
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
             {config.brows.map((brow) => (
               <button key={brow.id} type="button" aria-pressed={brow.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${brow.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => void preview({ id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" })}>
-                <div className="aspect-square"><BrowThumb name={brow.name} /></div>
+                <StyleCard id={brow.id} name={brow.name} folder="brows" />
                 <span className="block px-2 py-2 text-center text-sm font-medium">{brow.name}</span>
               </button>
             ))}
@@ -612,7 +635,7 @@ export function TryOnApp({
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
             {config.beards.map((beard) => (
               <button key={beard.id} type="button" aria-pressed={beard.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${beard.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => void preview({ id: beard.id, name: beard.name, serviceKeys: beard.serviceKeys, tool: "beard" })}>
-                <div className="aspect-square"><BeardThumb name={beard.name} /></div>
+                <StyleCard id={beard.id} name={beard.name} folder="beards" />
                 <span className="block px-2 py-2 text-center text-sm font-medium">{beard.name}</span>
               </button>
             ))}
@@ -623,7 +646,7 @@ export function TryOnApp({
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
             {config.nails.map((nail) => (
               <button key={nail.id} type="button" aria-pressed={nail.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${nail.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => void preview({ id: nail.id, name: nail.name, serviceKeys: nail.serviceKeys, tool: "nails" })}>
-                <div className="aspect-square"><NailThumb name={nail.name} /></div>
+                <StyleCard id={nail.id} name={nail.name} folder="nails" />
                 <span className="block px-2 py-2 text-center text-sm font-medium">{nail.name}</span>
               </button>
             ))}

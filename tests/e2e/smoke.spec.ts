@@ -111,8 +111,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.screenshot({ path: "docs/screenshots/04-beard.png", fullPage: true });
 
   await page.getByRole("tab", { name: "Nails" }).click();
-  await page.getByRole("region", { name: "Nails" }).getByRole("button", { name: "Classic French" }).click();
-  await expect(page.getByText("AI preview — actual results vary by nail shape and the polish used in the salon. Consult your artist.")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("Upload your hand photo").first()).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/04-nails.png", fullPage: true });
 
   await page.getByRole("tab", { name: "Hair style" }).click();
@@ -166,6 +165,66 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.goto("/admin/qr");
   await expect(page.getByRole("heading", { name: /qr and embed/i })).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/08-qr.png", fullPage: true });
+});
+
+test("brows, beard, and nails use photo cards and the same demo result", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("/s/demo-salon");
+  await expect(page.getByRole("tab", { name: "Hair style" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Brows" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Nails" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Beard" })).toBeVisible();
+
+  async function expectPhotos(region: string, count: number, folder: string) {
+    await page.getByRole("tab", { name: region === "Beards" ? "Beard" : region }).click();
+    const grid = page.getByRole("region", { name: region });
+    const imgs = grid.locator("img");
+    await expect(imgs).toHaveCount(count);
+    await expect(imgs.first()).toHaveAttribute("src", new RegExp(`/${folder}/.+\\.jpg`));
+    await expect.poll(() => imgs.evaluateAll((nodes) => nodes.every((node) => {
+      const img = node as HTMLImageElement;
+      return img.complete && img.naturalWidth > 0;
+    }))).toBe(true);
+    return grid;
+  }
+
+  const brows = await expectPhotos("Brows", 7, "brows");
+  await expect(brows.getByRole("button", { name: "Women", exact: true })).toHaveCount(0);
+  await page.screenshot({ path: "docs/screenshots/18-brows-grid.png", fullPage: true });
+  const beards = await expectPhotos("Beards", 10, "beards");
+  await expect(beards.getByRole("button", { name: "Women", exact: true })).toHaveCount(0);
+  await page.screenshot({ path: "docs/screenshots/19-beard-grid.png", fullPage: true });
+  const nails = await expectPhotos("Nails", 10, "nails");
+  await expect(nails.getByRole("button", { name: "Women", exact: true })).toHaveCount(0);
+  await expect(page.getByText("Upload your hand photo").first()).toBeVisible();
+  await page.screenshot({ path: "docs/screenshots/20-nails-grid.png", fullPage: true });
+
+  await page.locator('input[type="file"]').setInputFiles("tests/fixtures/faces/frontal.jpg");
+  await expect(page.getByText("That looks like a face. Upload a photo of your hand.")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Brows" }).click();
+  await page.locator('input[type="file"]').setInputFiles("tests/fixtures/faces/frontal.jpg");
+  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("region", { name: "Brows" }).getByRole("button", { name: "Soft Arch" }).click();
+  await expect(page.getByText("Demo mode: connect an AI key to see this style on your own face")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "Book this look" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try another" })).toBeVisible();
+  await page.screenshot({ path: "docs/screenshots/21-brows-result.png", fullPage: true });
+
+  await page.getByRole("tab", { name: "Beard" }).click();
+  await page.getByRole("region", { name: "Beards" }).getByRole("button", { name: "Short Boxed" }).click();
+  await expect(page.getByText("Demo mode: connect an AI key to see this style on your own face")).toBeVisible({ timeout: 20_000 });
+  await page.screenshot({ path: "docs/screenshots/22-beard-result.png", fullPage: true });
+
+  await page.getByRole("tab", { name: "Nails" }).click();
+  await expect(page.getByText("Upload your hand photo").first()).toBeVisible();
+  await page.locator('input[type="file"]').setInputFiles("tests/fixtures/hand.jpg");
+  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await page.getByRole("region", { name: "Nails" }).getByRole("button", { name: "Classic French" }).click();
+  await expect(page.getByText("Demo mode: connect an AI key to see this style on your own hand")).toBeVisible({ timeout: 20_000 });
+  await page.screenshot({ path: "docs/screenshots/23-nails-result.png", fullPage: true });
 });
 
 test("denied camera offers an upload fallback", async ({ page }) => {
@@ -313,4 +372,9 @@ test("super admin sees assumed COGS", async ({ page }) => {
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByText(/assumption/i)).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/09-super.png", fullPage: true });
+  await page.goto("/super/ai");
+  await page.getByRole("button", { name: "Calibration run" }).click();
+  await expect(page.getByText(/Offline calibration/i)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("img", { name: /mask/i })).toHaveCount(5);
+  await page.screenshot({ path: "docs/screenshots/24-calibration.png", fullPage: true });
 });

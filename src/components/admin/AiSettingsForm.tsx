@@ -19,6 +19,7 @@ export function AiSettingsForm({
   const [hasKey, setHasKey] = useState(initial.hasKey);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [panels, setPanels] = useState<{ name: string; tool: string; ok: boolean; message: string; before: string; overlay: string; after: string }[]>([]);
   const endpoint = scope === "platform" ? "/api/v1/super/ai" : "/api/v1/admin/ai";
 
   async function save() {
@@ -39,6 +40,20 @@ export function AiSettingsForm({
     setHasKey(Boolean(data.hasKey));
     setApiKey("");
     setMessage(hasKey && !apiKey ? "Provider saved. The stored key was kept." : "Saved. The key stays on the server.");
+  }
+
+  async function calibrate() {
+    setBusy(true);
+    setMessage("");
+    const res = await fetch("/api/v1/super/ai/calibrate", { method: "POST" });
+    const data = await res.json().catch(() => ({ message: "Calibration did not run." }));
+    setBusy(false);
+    if (!res.ok) {
+      setMessage(data.message || "Calibration did not run.");
+      return;
+    }
+    setPanels(data.panels || []);
+    setMessage(data.summary || "Calibration finished.");
   }
 
   async function testConnection() {
@@ -99,8 +114,26 @@ export function AiSettingsForm({
       <div className="flex flex-wrap gap-2">
         <button className="btn" type="submit" disabled={busy}>Save</button>
         <button className="btn secondary" type="button" disabled={busy} onClick={() => void testConnection()}>Test connection</button>
+        {scope === "platform" && (
+          <button className="btn secondary" type="button" disabled={busy} onClick={() => void calibrate()}>Calibration run</button>
+        )}
       </div>
       {message && <p role="status">{message}</p>}
+      {panels.length > 0 && (
+        <div className="grid gap-4">
+          {panels.map((panel) => (
+            <figure key={`${panel.tool}-${panel.name}`} className="grid gap-2">
+              <figcaption className="text-sm font-medium">{panel.name} · {panel.tool} · {panel.ok ? "placed" : "rejected"}</figcaption>
+              <div className="grid grid-cols-3 gap-2">
+                <img src={panel.before} alt={`${panel.name} before`} className="w-full rounded-xl" />
+                <img src={panel.overlay} alt={`${panel.name} mask`} className="w-full rounded-xl" />
+                <img src={panel.after} alt={`${panel.name} after`} className="w-full rounded-xl" />
+              </div>
+              <p className="text-xs text-muted">{panel.message}</p>
+            </figure>
+          ))}
+        </div>
+      )}
     </form>
   );
 }

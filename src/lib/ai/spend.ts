@@ -37,6 +37,11 @@ export function costPerCallInr(provider: string, quality: string) {
   return DEFAULTS[`${provider.toUpperCase()}_${quality.toUpperCase()}`] ?? numberEnv("AI_COST_INR_STANDARD", 3.5);
 }
 
+export async function releasePaidCall(id: string) {
+  if (!id) return;
+  await prisma.aiCall.updateMany({ where: { id, status: "CHARGED" }, data: { status: "REFUNDED" } });
+}
+
 export async function spendSummary() {
   const agg = await prisma.aiCall.aggregate({
     where: { status: "CHARGED" },
@@ -70,9 +75,9 @@ export async function beginPaidCall(args: { provider: string; quality: string; m
           spentInr: spent / 100,
           capInr: capPaise / 100,
         });
-        return { ok: false as const, estimateInr, spentInr: spent / 100, capInr: capPaise / 100 };
+        return { ok: false as const, id: "", estimateInr, spentInr: spent / 100, capInr: capPaise / 100 };
       }
-      await tx.aiCall.create({
+      const row = await tx.aiCall.create({
         data: {
           provider: args.provider,
           quality: args.quality,
@@ -90,7 +95,7 @@ export async function beginPaidCall(args: { provider: string; quality: string; m
         spentInr: (spent + estimatePaise) / 100,
         capInr: capPaise / 100,
       });
-      return { ok: true as const, estimateInr, spentInr: (spent + estimatePaise) / 100, capInr: capPaise / 100 };
+      return { ok: true as const, id: row.id, estimateInr, spentInr: (spent + estimatePaise) / 100, capInr: capPaise / 100 };
     }),
   );
 }

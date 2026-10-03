@@ -1,15 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import sharp from "sharp";
 import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
 import { shadeById } from "@/data/shades";
 import { resolveProviderChoice } from "@/lib/ai/credentials";
-import { generateWithFailover } from "@/lib/ai/router";
+import { generateWithFailover, selectProvider } from "@/lib/ai/router";
 import type { GenerateInput } from "@/lib/ai/types";
 import { CreditError, refundStaleReserves, reserveCredits, settleCredits } from "@/lib/credits";
 import { numberEnv } from "@/lib/env";
 import { resolveLook } from "@/lib/guidance";
+import { classifySkinPhoto } from "@/lib/hand-photo";
 import { sanitizeSelfie, ImageError } from "@/lib/images";
+import { preflightPhoto, TRY_ANOTHER_PHOTO, type RegionTool } from "@/lib/face/region";
 import { logError } from "@/lib/logger";
 import { AI_PREVIEW_KINDS, actorKeyFor, capForTier, hashIp, readGuestToken, verifySalonToken, type PreviewTier } from "@/lib/preview-access";
 import { prisma } from "@/lib/prisma";
@@ -116,6 +119,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: code, message: "Use a JPEG, PNG, or WebP selfie under 2 MB." }, { status: 400 });
   }
 
+  if (tool === "nails") {
+    const small = await sharp(jpeg).resize(48, 48, { fit: "fill" }).removeAlpha().raw().toBuffer();
+    if (classifySkinPhoto(small, 48, 48, 3) === "face") {
+      return NextResponse.json({ error: "HAND", message: "That looks like a face. Upload a photo of your hand." }, { status: 400 });
+    }
+  }
+
+  const shade = tool === "style" ? shadeById(shadeId) : null;
+  const region: RegionTool = tool === "nails" ? "nails" : tool === "brows" ? "brows" : tool === "beard" ? "beard" : shade ? "colour" : "style";
+  const choice = await resolveProviderChoice(tenant.id);
+  if (selectProvider(choice.name, choice.apiKey).name !== "mock") {
+    const placement = await preflightPhoto(jpeg, region);
+    if (!placement.ok) return NextResponse.json({ error: "PLACEMENT", message: TRY_ANOTHER_PHOTO }, { status: 422 });
+  }
+
   const credits = quality === "hd" ? HD_CREDIT_COST : STANDARD_CREDIT_COST;
   const refId = randomUUID();
   await refundStaleReserves(tenant.id);
@@ -131,7 +149,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "SUSPENDED", message: "This salon's try-on is paused." }, { status: 403 });
   }
 
-  const shade = tool === "style" ? shadeById(shadeId) : null;
   const kind = tool === "brows" ? "BROWS" : tool === "beard" ? "BEARD" : tool === "nails" ? "NAILS" : "STYLE";
   const style = tool === "style" ? styleById(styleId) : null;
   const prompt =
@@ -166,7 +183,12 @@ export async function POST(req: Request) {
       kind: tool,
       styleName: look.name,
     };
-    const result = await generateWithFailover(input, await resolveProviderChoice(tenant.id));
+    const result = await generateWithFailover(input, choice);
+    if (result.demoReason === "placement") {
+      await settleCredits(tenant.id, refId, "REFUND");
+      await prisma.tryOn.update({ where: { id: tryOn.id }, data: { status: "FAILED" } });
+      return NextResponse.json({ error: "PLACEMENT", message: TRY_ANOTHER_PHOTO }, { status: 422 });
+    }
     await settleCredits(tenant.id, refId, "COMMIT");
     const balance = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { creditBalance: true } });
     await prisma.tryOn.update({

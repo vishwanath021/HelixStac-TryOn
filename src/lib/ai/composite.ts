@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { readStyleThumbnail } from "@/lib/ai/style-reference";
+import { readStyleThumbnail, type ThumbFolder } from "@/lib/ai/style-reference";
 
 export const DEMO_STYLE_BANNER = "Demo mode: connect an AI key to see this style on your own face";
 
@@ -7,10 +7,10 @@ function escapeXml(value: string) {
   return value.replace(/[<>&'"]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[char] ?? char);
 }
 
-async function referenceCard(styleId: string, styleName: string) {
+async function referenceCard(styleId: string, styleName: string, folder: ThumbFolder) {
   const cardW = 236;
   const cardH = 292;
-  const thumb = readStyleThumbnail(styleId);
+  const thumb = readStyleThumbnail(styleId, folder);
   const photo = thumb
     ? await sharp(thumb).resize(204, 204, { fit: "cover" }).jpeg().toBuffer()
     : null;
@@ -30,15 +30,16 @@ async function referenceCard(styleId: string, styleName: string) {
 }
 
 /** Guest photo, with the chosen style's portrait in a labelled card. Not a flat colour block. */
-export async function demoStyleComposite(userJpeg: Buffer, styleId: string, styleName: string) {
+export async function demoStyleComposite(userJpeg: Buffer, styleId: string, styleName: string, folder: ThumbFolder = "styles") {
   const width = 768;
   const height = 1024;
   const base = await sharp(userJpeg).rotate().resize(width, height, { fit: "cover" }).jpeg({ quality: 86 }).toBuffer();
-  const card = await referenceCard(styleId, styleName);
+  const card = await referenceCard(styleId, styleName, folder);
+  const place = folder === "nails" ? "hand" : "face";
   const banner = Buffer.from(`<svg width="${width}" height="96" xmlns="http://www.w3.org/2000/svg">
     <rect width="${width}" height="96" fill="#241c16"/>
     <text x="28" y="40" font-family="sans-serif" font-size="20" fill="#fffdfb">Demo mode: connect an AI key</text>
-    <text x="28" y="70" font-family="sans-serif" font-size="20" fill="#fffdfb">to see this style on your own face</text>
+    <text x="28" y="70" font-family="sans-serif" font-size="20" fill="#fffdfb">to see this style on your own ${place}</text>
   </svg>`);
   return sharp(base)
     .composite([

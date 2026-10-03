@@ -17,6 +17,7 @@
     "screenshots": "playwright test tests/e2e/screenshots.spec.ts",
     "placeholders": "tsx scripts/generate-placeholders.ts",
     "ai:smoke": "node --env-file=.env --import tsx scripts/ai-smoke.ts",
+    "calibrate": "tsx scripts/calibrate.ts",
     "scan:secrets": "tsx scripts/scan-secrets.ts",
     "prepare": "git config core.hooksPath .githooks || true"
   },

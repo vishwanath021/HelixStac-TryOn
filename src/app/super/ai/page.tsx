@@ -22,7 +22,7 @@ export default async function SuperAiPage() {
         <Link className="underline" href="/super">Back to salons</Link>
       </p>
       <p className="mb-4 max-w-xl text-sm leading-6">
-        Paste an OpenAI or Gemini key for paid style previews. Leave this empty to keep the demo, which shows the guest photo with the style reference.
+        Paste an OpenAI or Gemini key for paid style previews. Leave this empty to keep the demo, which shows the guest photo with the style reference. Calibration run checks mask placement on five pictures and will not spend more than about ₹30.
       </p>
       <AiSettingsForm scope="platform" initial={initial} canToggleByo />
     </main>
