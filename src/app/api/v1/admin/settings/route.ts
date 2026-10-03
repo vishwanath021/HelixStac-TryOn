@@ -36,7 +36,9 @@ export async function GET() {
   const access = await requireMembership();
   if ("error" in access && access.error) return access.error;
   if (!("tenant" in access)) return NextResponse.json({ error: "NO_TENANT" }, { status: 403 });
-  return NextResponse.json({ tenant: access.tenant, role: access.membership.role });
+  const { aiKeyCipher: storedCipher, ...tenant } = access.tenant;
+  void storedCipher;
+  return NextResponse.json({ tenant, role: access.membership.role });
 }
 
 export async function PUT(req: Request) {

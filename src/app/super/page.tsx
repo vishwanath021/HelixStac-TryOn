@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { SuperPanel } from "@/components/admin/SuperPanel";
 import { spendSummary } from "@/lib/ai/spend";
 import { numberEnv } from "@/lib/env";
@@ -39,7 +40,10 @@ export default async function SuperPage() {
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="font-serif text-4xl">HelixStac</h1>
+        <div>
+          <h1 className="font-serif text-4xl">HelixStac</h1>
+          <Link className="text-sm underline" href="/super/ai">AI settings</Link>
+        </div>
         <SignOutButton />
       </div>
       <SuperPanel rows={rows} mrr={mrr} assumption={assumption} spend={spend} />

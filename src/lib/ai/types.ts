@@ -9,6 +9,8 @@ export type GenerateInput = {
   tenantId: string;
   quality: PreviewQuality;
   kind?: "style" | "brows" | "beard" | "nails";
+  /** Display name for a demo card. Not sent to a paid provider. */
+  styleName?: string;
 };
 
 export type GenerateOutput = {

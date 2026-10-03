@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { existsSync, readdirSync } from "node:fs";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { BEARDS } from "@/data/beards";
@@ -7,7 +8,10 @@ import { NAILS } from "@/data/nails";
 import { CONSENT_HASH, CONSENT_VERSION } from "@/data/consent";
 import { SHADES } from "@/data/shades";
 import { stylesForGender, STYLES } from "@/data/styles";
+import { demoStyleComposite } from "@/lib/ai/composite";
 import { MockProvider } from "@/lib/ai/mock";
+import { styleReferenceFor } from "@/lib/ai/style-reference";
+import { decryptSecret, encryptSecret, keyHint } from "@/lib/crypto/secret";
 import { razorpaySignature, verifyRazorpaySignature } from "@/lib/billing/signature";
 import { answerConcierge } from "@/lib/concierge";
 import { parseHost } from "@/lib/host";
@@ -27,6 +31,10 @@ import { buildWhatsAppLink } from "@/lib/whatsapp";
 
 describe("catalogue", () => {
   it("ships 26 women's styles, 29 men's styles, kids styles, and 16 shades", () => {
+    const files = new Set(readdirSync("public/styles").filter((name) => name.endsWith(".jpg")).map((name) => name.replace(/\.jpg$/, "")));
+    const ids = STYLES.map((style) => style.id);
+    expect(ids.filter((id) => !files.has(id))).toEqual([]);
+    expect([...files].filter((id) => !ids.includes(id))).toEqual([]);
     expect(stylesForGender("women")).toHaveLength(26);
     expect(stylesForGender("men")).toHaveLength(29);
     expect(stylesForGender("kids").length).toBeGreaterThanOrEqual(3);
@@ -230,8 +238,9 @@ describe("secret scan", () => {
 
 describe("privacy helpers", () => {
   it("redacts photo fields and keeps a stable consent hash", () => {
-    expect(redact({ photo: "abc", note: "ok" })).toEqual({ photo: "[redacted]", note: "ok" });
+    expect(redact({ photo: "abc", note: "ok", apiKey: "sk-abcdefghij" })).toEqual({ photo: "[redacted]", note: "ok", apiKey: "[redacted]" });
     expect(redact("data:image/jpeg;base64,aaaa")).toBe("[redacted-string]");
+    expect(redact("sk-abcdefghij")).toBe("[redacted-string]");
     expect(CONSENT_VERSION).toBe("2026-10-03");
     expect(CONSENT_HASH).toHaveLength(64);
   });
@@ -246,6 +255,37 @@ describe("privacy helpers", () => {
     const meta = await sharp(clean).metadata();
     expect(meta.width).toBeLessThanOrEqual(1024);
     expect(meta.exif).toBeUndefined();
+  });
+});
+
+describe("style portraits and demo composite", () => {
+  it("does not attach a style thumbnail unless the provider flag is on", () => {
+    delete process.env.OPENAI_SEND_STYLE_REFERENCE;
+    delete process.env.GEMINI_SEND_STYLE_REFERENCE;
+    expect(styleReferenceFor({ styleId: "soft-bob", kind: "style" }, "openai")).toBeNull();
+    expect(styleReferenceFor({ styleId: "soft-bob" }, "gemini")).toBeNull();
+    process.env.OPENAI_SEND_STYLE_REFERENCE = "true";
+    expect(styleReferenceFor({ styleId: "soft-bob", kind: "style" }, "openai")?.[0]).toBe(0xff);
+    expect(styleReferenceFor({ styleId: "soft-bob", kind: "brows" }, "openai")).toBeNull();
+    delete process.env.OPENAI_SEND_STYLE_REFERENCE;
+  });
+
+  it("keeps the guest photo and a neutral card when the portrait file is missing", async () => {
+    expect(existsSync("public/styles/soft-bob.jpg")).toBe(true);
+    const input = await sharp({ create: { width: 240, height: 320, channels: 3, background: "#2244ee" } }).jpeg().toBuffer();
+    const image = await demoStyleComposite(input, "missing-style-id", "Missing");
+    const { data, info } = await sharp(image).raw().toBuffer({ resolveWithObject: true });
+    const x = Math.floor(info.width * 0.25);
+    const y = Math.floor(info.height * 0.45);
+    const i = (y * info.width + x) * info.channels;
+    expect(data[i + 2]).toBeGreaterThan(data[i] + 40);
+  });
+
+  it("stores an AI key as ciphertext and a four-character hint", () => {
+    const cipher = encryptSecret("unit-test-key-value");
+    expect(cipher).not.toContain("unit-test-key-value");
+    expect(decryptSecret(cipher)).toBe("unit-test-key-value");
+    expect(keyHint("unit-test-key-value")).toBe("••••alue");
   });
 });
 

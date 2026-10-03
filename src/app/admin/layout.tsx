@@ -26,6 +26,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           {LINKS.map(([href, label]) => (
             <Link key={href} className="rounded-xl px-2 py-1 hover:bg-sand" href={href}>{label}</Link>
           ))}
+          {membership.role === "OWNER" && (
+            <Link className="rounded-xl px-2 py-1 hover:bg-sand" href="/admin/ai">AI settings</Link>
+          )}
           <Link className="rounded-xl px-2 py-1 hover:bg-sand" href={`/s/${tenant.slug}`}>View try-on</Link>
         </nav>
         <SignOutButton />

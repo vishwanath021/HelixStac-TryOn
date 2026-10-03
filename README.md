@@ -118,7 +118,26 @@ Put keys only in `.env` on your machine. That file is gitignored. On a host, put
 3. Leave the model ids unless you have re-checked the docs.
 4. Standard previews use 1 credit. HD uses 2 and the HD model.
 
-If the call fails, or the testing spend cap is already used, the app returns a labelled sample so the salon page does not die. With no key, the try-on shows: “Demo mode – connect an AI key for real hairstyle previews”. The before/after pair is a sample illustration, not a tint of the guest's photo.
+### Before you add your API key
+
+The try-on works before any key exists. Demo mode is the default.
+
+Works with no key:
+
+- Guest consent, camera, upload, and on-device live colour
+- The style gallery: realistic portraits for Women, Men, and Kids
+- A style result on the guest's own photo, with a labelled Style preview card of the look they picked and the banner “Demo mode: connect an AI key to see this style on your own face”
+- Booking on WhatsApp, the salon admin, and the preview caps
+
+Needs a key (OpenAI or Gemini):
+
+- An after image that is an edit of the guest's face in the selected style
+- The prompt for that style, with the guest photo as the only input image
+- Test connection on AI settings, and spend counted against `AI_SPEND_CAP_INR`
+
+Add a key in `.env` (`OPENAI_API_KEY` or `GEMINI_API_KEY` plus `AI_PROVIDER`) or paste it on `/super/ai` (platform) or `/admin/ai` (salon owner, when bring-your-own is allowed). The pasted key is encrypted on the server. The page shows a mask, not the key. The style thumbnail is not sent to the provider unless `OPENAI_SEND_STYLE_REFERENCE` or `GEMINI_SEND_STYLE_REFERENCE` is `true`.
+
+If a paid call fails, or the testing spend cap is already used, the app returns the same demo composite so the salon page does not die. With no key, the try-on also shows: “Demo mode – connect an AI key for real hairstyle previews”.
 
 ### OpenAI
 

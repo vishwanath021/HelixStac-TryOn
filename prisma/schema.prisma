@@ -45,6 +45,9 @@ model Tenant {
   memberDailyCap      Int       @default(30)
   requireLoginToBook  Boolean   @default(false)
   salonNonce          String    @default("")
+  aiProvider          String    @default("")
+  aiKeyCipher         String    @default("")
+  aiKeyHint           String    @default("")
   onboardingDone      Boolean   @default(false)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt

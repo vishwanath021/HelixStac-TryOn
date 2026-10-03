@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { styleReferenceFor } from "@/lib/ai/style-reference";
 import { numberEnv } from "@/lib/env";
 import type { GenerateInput, GenerateOutput, ImageStyleProvider, PreviewQuality } from "@/lib/ai/types";
 
@@ -29,12 +30,14 @@ function inputFidelity(model: string) {
 export class OpenAIProvider implements ImageStyleProvider {
   name = "openai";
 
+  constructor(private readonly apiKey = process.env.OPENAI_API_KEY || "") {}
+
   async health() {
-    return Boolean(process.env.OPENAI_API_KEY);
+    return Boolean(this.apiKey);
   }
 
   async generate(input: GenerateInput): Promise<GenerateOutput> {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = this.apiKey;
     if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
     const model = openAIImageModel();
     const quality = openAIQuality(input.quality);
@@ -49,6 +52,10 @@ export class OpenAIProvider implements ImageStyleProvider {
     const fidelity = inputFidelity(model);
     if (fidelity) form.set("input_fidelity", fidelity);
     form.append("image[]", new Blob([new Uint8Array(input.image)], { type: "image/jpeg" }), "selfie.jpg");
+    const reference = styleReferenceFor(input, "openai");
+    if (reference) {
+      form.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
+    }
     const response = await fetch("https://api.openai.com/v1/images/edits", {
       method: "POST",
       headers: { authorization: `Bearer ${apiKey}` },

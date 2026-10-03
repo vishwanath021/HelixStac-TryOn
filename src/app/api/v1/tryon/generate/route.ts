@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
 import { shadeById } from "@/data/shades";
+import { resolveProviderChoice } from "@/lib/ai/credentials";
 import { generateWithFailover } from "@/lib/ai/router";
 import type { GenerateInput } from "@/lib/ai/types";
 import { CreditError, refundStaleReserves, reserveCredits, settleCredits } from "@/lib/credits";
@@ -163,8 +164,9 @@ export async function POST(req: Request) {
       tenantId: tenant.id,
       quality,
       kind: tool,
+      styleName: look.name,
     };
-    const result = await generateWithFailover(input);
+    const result = await generateWithFailover(input, await resolveProviderChoice(tenant.id));
     await settleCredits(tenant.id, refId, "COMMIT");
     const balance = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { creditBalance: true } });
     await prisma.tryOn.update({

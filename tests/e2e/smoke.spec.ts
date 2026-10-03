@@ -287,6 +287,59 @@ test("booking asks for a phone code only when the salon requires it", async ({ p
   }
 });
 
+test("style gallery uses portraits and the demo result is not a flat placeholder", async ({ page }) => {
+  await page.goto("/s/demo-salon");
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: /i agree/i }).click();
+  await page.locator('input[type="file"]').setInputFiles("public/samples/portrait.jpg");
+  await page.getByRole("tab", { name: "STYLE" }).click();
+  const gallery = page.getByRole("region", { name: "Styles" });
+  await gallery.getByRole("button", { name: "Women", exact: true }).click();
+  const womenPhoto = gallery.locator("img").first();
+  await expect(womenPhoto).toHaveAttribute("src", /\/styles\/.+\.jpg/);
+  await expect(womenPhoto).toHaveAttribute("alt", /style reference/);
+  await expect(gallery.getByRole("button", { name: "Soft Bob" })).toBeVisible();
+  await page.screenshot({ path: "docs/screenshots/13-gallery-women.png", fullPage: true });
+  await gallery.getByRole("button", { name: "Men", exact: true }).click();
+  await expect(gallery.getByRole("button", { name: "Wolf Cut" })).toHaveCount(0);
+  await expect(gallery.getByRole("button", { name: "Mid Fade" })).toBeVisible();
+  await expect(gallery.locator("img").first()).toHaveAttribute("src", /\/styles\/.+\.jpg/);
+  await page.screenshot({ path: "docs/screenshots/14-gallery-men.png", fullPage: true });
+  await gallery.getByRole("button", { name: "Women", exact: true }).click();
+  await gallery.getByRole("button", { name: "Soft Bob" }).click();
+  await expect(page.getByText("Styling your look...")).toBeVisible();
+  await expect(page.getByText("Demo mode: connect an AI key to see this style on your own face")).toBeVisible({ timeout: 20_000 });
+  const slider = page.getByRole("slider", { name: /BEFORE \/ AFTER/i });
+  await expect(slider).toBeVisible();
+  await expect(page.locator('img[alt="BEFORE"]')).not.toHaveAttribute("src", /demo-before/);
+  await page.waitForFunction(() => {
+    const img = document.querySelector('img[alt="AFTER"]') as HTMLImageElement | null;
+    return Boolean(img && img.complete && img.naturalWidth > 10);
+  });
+  const stats = await page.locator('img[alt="AFTER"]').evaluate((node) => {
+    const img = node as HTMLImageElement;
+    const canvas = document.createElement("canvas");
+    canvas.width = 48;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return { variance: 0 };
+    ctx.drawImage(img, 0, 0, 48, 64);
+    const data = ctx.getImageData(0, 0, 48, 64).data;
+    let sum = 0;
+    let sum2 = 0;
+    const n = data.length / 4;
+    for (let i = 0; i < data.length; i += 4) {
+      const tone = data[i] + data[i + 1] + data[i + 2];
+      sum += tone;
+      sum2 += tone * tone;
+    }
+    const mean = sum / n;
+    return { variance: sum2 / n - mean * mean };
+  });
+  expect(stats.variance).toBeGreaterThan(200);
+  await page.screenshot({ path: "docs/screenshots/15-demo-result.png", fullPage: true });
+});
+
 test("super admin sees assumed COGS", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("Email").fill("super@helixstac.app");

@@ -16,16 +16,21 @@ function modelFor(provider: string, quality: PreviewQuality) {
   return provider;
 }
 
-export function selectProvider(requested = aiProviderName()): ImageStyleProvider {
-  if (requested === "gemini" && process.env.GEMINI_API_KEY) return new GeminiProvider();
-  if (requested === "openai" && process.env.OPENAI_API_KEY) return new OpenAIProvider();
+export type ProviderChoice = {
+  name: string;
+  apiKey?: string;
+};
+
+export function selectProvider(requested = aiProviderName(), apiKey?: string): ImageStyleProvider {
+  if (requested === "gemini" && (apiKey || process.env.GEMINI_API_KEY)) return new GeminiProvider(apiKey || process.env.GEMINI_API_KEY);
+  if (requested === "openai" && (apiKey || process.env.OPENAI_API_KEY)) return new OpenAIProvider(apiKey || process.env.OPENAI_API_KEY);
   if (requested === "replicate" && process.env.REPLICATE_API_TOKEN) return new ReplicateStubProvider("replicate");
   if (requested === "fal" && process.env.FAL_KEY) return new ReplicateStubProvider("fal");
   return new MockProvider();
 }
 
-export async function generateWithFailover(input: GenerateInput): Promise<GenerateOutput> {
-  const primary = selectProvider();
+export async function generateWithFailover(input: GenerateInput, choice?: ProviderChoice): Promise<GenerateOutput> {
+  const primary = choice ? selectProvider(choice.name, choice.apiKey) : selectProvider();
   if (primary.name === "mock") {
     const result = await primary.generate(input);
     return { ...result, demoReason: "no-key", estimateInr: 0 };

@@ -49,9 +49,9 @@ Reserved slugs (`admin`, `api`, `embed`, …) are not treated as salons.
 
 | Adapter | When |
 |---|---|
-| `MockProvider` | Default when no key is set. Returns a labelled sample illustration, not an edit of the guest photo. |
+| `MockProvider` | Default when no key is set. A style preview keeps the guest photo and overlays the chosen style portrait with a demo banner. Brows, beard, and nails stay on a labelled sample illustration. |
 | `GeminiProvider` | `AI_PROVIDER=gemini` and `GEMINI_API_KEY`. Standard model `gemini-3.1-flash-lite-image`, HD `gemini-3.1-flash-image`. Both env-overridable. Paid tier only. |
-| `OpenAIProvider` | `AI_PROVIDER=openai` and `OPENAI_API_KEY`. Image edit on the gpt-image family. Model id and quality (`low`, `medium`, `high`) come from env. |
+| `OpenAIProvider` | `AI_PROVIDER=openai` and `OPENAI_API_KEY`, or a key saved on AI settings. Image edit on the gpt-image family. The guest photo and the style prompt are the input. The style thumbnail is not sent unless `OPENAI_SEND_STYLE_REFERENCE=true`. |
 | `ReplicateStubProvider` | `replicate` or `fal` plus a token. Posts to that vendor's HTTP API. Inactive without a key. |
 
 If a paid call throws, the router falls back to the labelled sample and marks the provider `mock:failover-from-…`. A global estimate cap (`AI_SPEND_CAP_INR`, default ₹500) refuses further paid calls the same way. Each attempt is a row in `AiCall`. The photo is not in that row.

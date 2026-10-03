@@ -40,7 +40,7 @@ Default is the mock renderer. It does not call a network.
 
 If you set `AI_PROVIDER=gemini`, use a **paid** key. Google's pricing page states that paid-tier content is not used to improve Google's products, and free-tier content is. Do not point production at the free tier.
 
-`AI_PROVIDER=openai` sends the same in-memory JPEG to OpenAI's image-edit endpoint and does not store it. Keys belong in `.env` or the host secret store, never in git.
+`AI_PROVIDER=openai` sends the same in-memory JPEG to OpenAI's image-edit endpoint and does not store it. Keys belong in `.env`, the host secret store, or the AI settings page. A key pasted there is encrypted with AES-256-GCM (the key material comes from `AUTH_SECRET`), stored as ciphertext, and never returned to the browser or written to logs. The style thumbnail is not sent to OpenAI or Gemini unless `OPENAI_SEND_STYLE_REFERENCE` or `GEMINI_SEND_STYLE_REFERENCE` is true. Rotating `AUTH_SECRET` makes a stored key unreadable, so paste it again.
 
 The spend ledger stores provider, quality, model id, and an estimated rupee amount. It does not store the photo.
 

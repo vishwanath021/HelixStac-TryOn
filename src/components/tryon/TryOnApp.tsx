@@ -6,7 +6,7 @@ import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { BrowThumb } from "@/components/tryon/BrowThumb";
 import { ColourStage } from "@/components/tryon/ColourStage";
 import { NailThumb } from "@/components/tryon/NailThumb";
-import { StyleThumb } from "@/components/tryon/StyleThumb";
+import { StyleCard } from "@/components/tryon/StyleCard";
 import { isLocale, LOCALE_LABELS, t, type Locale } from "@/data/i18n";
 import { recommendStyles } from "@/lib/recommendations";
 import type { SalonConfig } from "@/lib/salon";
@@ -20,6 +20,7 @@ type Look = {
   after: string;
   serviceKeys: string[];
   tool: "style" | "brows" | "beard" | "nails";
+  demo?: boolean;
 };
 
 type TryTool = "colour" | "style" | "brows" | "beard" | "nails";
@@ -356,17 +357,20 @@ export function TryOnApp({
     const out = await res.blob();
     const reason = res.headers.get("x-demo-reason") || "";
     const sample = reason === "no-key" || reason === "spend-cap" || reason === "failover" || (res.headers.get("x-provider") || "").includes("mock");
-    setNotice(reason === "spend-cap" ? t(lang, "spendCapNote") : "");
+    const styleDemo = sample && chosen.tool === "style";
+    const userUrl = URL.createObjectURL(blob);
+    setNotice(reason === "spend-cap" ? t(lang, "spendCapNote") : styleDemo ? t(lang, "demoStyleBanner") : "");
     const after = URL.createObjectURL(out);
     const look: Look = {
       id: res.headers.get("x-tryon-id") || crypto.randomUUID(),
       styleId: chosen.id,
       styleName: chosen.name,
       shadeName: chosen.tool === "style" ? shade?.name ?? null : null,
-      before: sample ? "/samples/demo-before.jpg" : URL.createObjectURL(blob),
+      before: styleDemo ? userUrl : sample ? "/samples/demo-before.jpg" : userUrl,
       after,
       serviceKeys: chosen.serviceKeys,
       tool: chosen.tool,
+      demo: styleDemo,
     };
     setLooks((current) => [look, ...current.filter((item) => item.styleId !== look.styleId)].slice(0, 4));
     setActiveId(look.id);
@@ -523,7 +527,12 @@ export function TryOnApp({
 
           <section className="overflow-hidden rounded-[28px] bg-[#14110e] shadow-lg">
             {showResult && active ? (
-              <BeforeAfter before={active.before} after={active.after} beforeLabel={t(lang, "before")} afterLabel={t(lang, "after")} />
+              <div>
+                <BeforeAfter before={active.before} after={active.after} beforeLabel={t(lang, "before")} afterLabel={t(lang, "after")} />
+                {active.demo && (
+                  <p className="bg-[#241c16] px-4 py-3 text-center text-sm leading-6 text-white" role="status">{t(lang, "demoStyleBanner")}</p>
+                )}
+              </div>
             ) : (
               <div className="relative aspect-[3/4]">
                 <video
@@ -612,7 +621,7 @@ export function TryOnApp({
                 {busy && (
                   <div className="absolute inset-0 z-20 grid place-items-center bg-black/60 px-6 text-center text-white" role="status">
                     <div className="w-full max-w-xs">
-                      <p className="font-serif text-3xl">{t(lang, "progress")}</p>
+                      <p className="font-serif text-3xl">{tool === "style" ? t(lang, "styling") : t(lang, "progress")}</p>
                       <p className="mt-1 text-sm">{pendingName}</p>
                       <p className="mt-1 text-xs text-white/80">{t(lang, "usually")}</p>
                       <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/25">
@@ -660,10 +669,10 @@ export function TryOnApp({
 
           {tool === "style" && photoBlob && stylePhase === "pick" && !busy && (
             <section className="card p-4" aria-label={t(lang, "styles")}>
-              <div className="mb-3 flex flex-wrap gap-2">
-                {config.showWomen && <button className={gender === "women" ? "btn" : "btn secondary"} type="button" onClick={() => setGender("women")}>{t(lang, "women")}</button>}
-                {config.showMen && <button className={gender === "men" ? "btn" : "btn secondary"} type="button" onClick={() => setGender("men")}>{t(lang, "men")}</button>}
-                {config.showKids && <button className={gender === "kids" ? "btn" : "btn secondary"} type="button" onClick={() => setGender("kids")}>{t(lang, "kids")}</button>}
+              <div className="mb-3 inline-flex flex-wrap gap-1 rounded-full bg-[#241c16] p-1" role="group" aria-label="Style audience">
+                {config.showWomen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "women" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "women"} onClick={() => setGender("women")}>{t(lang, "women")}</button>}
+                {config.showMen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "men" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "men"} onClick={() => setGender("men")}>{t(lang, "men")}</button>}
+                {config.showKids && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "kids" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "kids"} onClick={() => setGender("kids")}>{t(lang, "kids")}</button>}
               </div>
               {gender === "kids" && <p className="mb-3 text-xs text-muted">{t(lang, "kidsNote")}</p>}
               <label className="mb-3 flex items-center gap-2 text-sm">
@@ -671,17 +680,17 @@ export function TryOnApp({
                 {t(lang, "generateHd")}
                 <span className="text-xs text-muted">{t(lang, "hdNote")}</span>
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
                 {styles.map((style) => (
                   <button
                     key={style.id}
                     type="button"
                     aria-pressed={style.id === styleId}
-                    className={`overflow-hidden rounded-2xl border bg-white text-left ${style.id === styleId ? "border-[var(--brand)]" : "border-line"}`}
+                    className={`overflow-hidden rounded-2xl border bg-white text-left ${style.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
                     onClick={() => void preview({ id: style.id, name: style.name, serviceKeys: style.serviceKeys, tool: "style" })}
                   >
-                    <div className="aspect-[4/5]"><StyleThumb category={style.category} gender={style.gender} name={style.name} /></div>
-                    <span className="block px-2 py-2 text-sm font-medium">{style.name}</span>
+                    <StyleCard id={style.id} name={style.name} />
+                    <span className="block px-2 py-2 text-center text-sm font-medium">{style.name}</span>
                   </button>
                 ))}
               </div>
@@ -853,7 +862,7 @@ export function TryOnApp({
             {answer && <p className="mt-3 text-sm leading-6" role="status">{answer}</p>}
           </section>
 
-          {notice && <p className="text-sm" role="status">{notice}</p>}
+          {notice && !(active?.demo && notice === t(lang, "demoStyleBanner")) && <p className="text-sm" role="status">{notice}</p>}
           {error && <p className="text-sm text-[var(--bad)]" role="alert">{error}</p>}
           {cameraError && (cameraOn || photoUrl) && <p className="text-sm text-[var(--bad)]" role="alert">{cameraError}</p>}
           {config.poweredBy && <p className="text-center text-xs text-muted">{t(lang, "poweredBy")} HelixStac TryOn</p>}

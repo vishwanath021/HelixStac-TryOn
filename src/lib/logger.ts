@@ -1,11 +1,12 @@
-const BANNED = /photo|image|buffer|dataurl|base64|inlinedata|pixels|selfie/i;
+const BANNED = /photo|image|buffer|dataurl|base64|inlinedata|pixels|selfie|apikey|api_key|secret|cipher|authorization|token/i;
+const KEY_TEXT = /(?:^|[^A-Za-z0-9])(?:sk-(?:proj-)?[A-Za-z0-9_\-]{8,}|AIza[0-9A-Za-z\-_]{8,})/;
 
 export function redact(value: unknown, depth = 0): unknown {
   if (depth > 6) return "[depth]";
   if (typeof Buffer !== "undefined" && Buffer.isBuffer(value)) return "[buffer]";
   if (value instanceof Uint8Array) return "[bytes]";
   if (typeof value === "string") {
-    if (value.startsWith("data:image") || value.length > 400) return "[redacted-string]";
+    if (value.startsWith("data:image") || value.length > 400 || KEY_TEXT.test(value)) return "[redacted-string]";
     return value;
   }
   if (Array.isArray(value)) return value.map((entry) => redact(entry, depth + 1));
