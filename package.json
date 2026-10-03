@@ -18,6 +18,7 @@
     "placeholders": "tsx scripts/generate-placeholders.ts",
     "ai:smoke": "node --env-file=.env --import tsx scripts/ai-smoke.ts",
     "calibrate": "tsx scripts/calibrate.ts",
+    "replay:raw": "tsx scripts/replay-raw.ts",
     "scan:secrets": "tsx scripts/scan-secrets.ts",
     "prepare": "git config core.hooksPath .githooks || true"
   },

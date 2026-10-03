@@ -16,9 +16,15 @@ export function openAIQuality(preview: PreviewQuality): OpenAIImageQuality {
   return preview === "hd" ? "high" : "medium";
 }
 
-function inputFidelity(model: string) {
-  if (model.includes("gpt-image-1-mini")) return "low";
-  if (model === "gpt-image-1" || model.startsWith("gpt-image-1.5")) return "high";
+/**
+ * OpenAI image-edit docs: input_fidelity is supported on gpt-image-1 and on
+ * gpt-image-1.5 and later models. It is not supported on gpt-image-1-mini.
+ * Where it is supported, ask for high so the face and the framing stay put.
+ */
+export function inputFidelityForModel(model: string): "high" | "" {
+  const id = model.toLowerCase();
+  if (id.includes("mini") || id.includes("dall-e")) return "";
+  if (id.includes("gpt-image-") || id.includes("chatgpt-image")) return "high";
   return "";
 }
 
@@ -72,7 +78,7 @@ export class OpenAIProvider implements ImageStyleProvider {
     form.set("size", spec.size);
     form.set("output_format", "jpeg");
     form.set("n", "1");
-    const fidelity = inputFidelity(spec.model);
+    const fidelity = inputFidelityForModel(spec.model);
     if (fidelity) form.set("input_fidelity", fidelity);
     form.append("image[]", new Blob([new Uint8Array(padded.image)], { type: "image/jpeg" }), "selfie.jpg");
     const reference = styleReferenceFor(input, "openai");

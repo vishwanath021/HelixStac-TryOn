@@ -177,16 +177,16 @@ Salon owner pages and the guest try-on do not receive model ids, provider cost, 
 
 Before a paid edit, the server finds the face from the skin region and places the mask with facial proportions (one upright face, not a profile, large enough to place). This is not a neural face mesh, and it is not a claim about how a real model blends:
 
-- Hair and colour: the hair, plus room beside and above the head for the new length, minus the face and clothing. Eyes, brows, forehead skin, the nose, and the lips are cut out of the zone. A shirt below the chin is left out. Long hair that is actually hair-coloured can extend past the shoulders. The MediaPipe hair-segmenter weights are not in this repo, so clothing is excluded with a colour check rather than that model.
+- Hair and colour: the hair-coloured pixels, plus a margin that depends on the cut. A longer style may extend a little below the current ends. A shorter style stays on the hair that is already there, so that hair can be removed, and does not include the empty background. Eyes, brows, forehead skin, the nose, and the lips are cut out. Plain background and a shirt outside that margin stay out. The MediaPipe hair-segmenter weights are not in this repo, so this is a colour check, not that model.
 - Brows: the brow band, above the eyes
 - Beard: the jaw and chin below the nose, with the mouth left out
 - Nails: fingertip regions on a hand photo. A picture that looks like a face is refused
 
-OpenAI receives that mask on the image edit. Transparent mask pixels are the editable area. Opaque pixels must stay. Gemini does not take a mask; the same server-side composite still runs. The hair prompt tells the model to keep the face and forehead skin untouched, to change only hair length, cut, and shape, and to remove original hair inside the mask that falls outside the new style (long hair becoming a bob).
+OpenAI receives that mask on the image edit. Transparent mask pixels are the editable area. Opaque pixels must stay. `input_fidelity=high` is sent for `gpt-image-1` and later image models. `gpt-image-1-mini` does not accept that parameter, so it is omitted. Gemini does not take a mask; the same server-side composite still runs. The hair prompt tells the model to keep the head, face, and framing the same size and position, not to zoom or re-frame, to change only hair inside the mask, and to remove original hair inside the mask that falls outside the new style (long hair becoming a bob).
 
 Photos are not stretched to the square the image model returns. The photo and the mask are padded onto a centered square with a neutral edge fill (mask bars are opaque, so they are not editable). The result is cropped back to the original aspect before it is composited. The same pad and crop is used for every tool.
 
-After a hair or colour composite, if the brows, eyes, or nose differ materially from the original, the edit is rejected. The guest sees “Try another photo.” The provider cost stays on the ledger as billed but failed, it does not count toward the spend cap, and the provider is not called again.
+Before that composite, a hair or colour result is compared with the original face. The face scale must stay within 5 percent and the face must not have moved, or, if the scale is between 0.8 and 1.25, the frame is warped back into place. The brows, eyes, and nose are compared on that provider frame. If they differ, or the re-frame is larger than that, the edit is rejected. The guest sees “Try another photo.” The provider cost stays on the ledger as billed but failed, it does not count toward the spend cap, and the provider is not called again. The composite is not returned.
 
 Set `DEBUG_SAVE_RAW=true` to write the raw provider JPEG, before that composite, under `var/ai-debug/`. That folder is gitignored and is not served. It is for local diagnosis of a failed paid edit.
 
@@ -199,7 +199,9 @@ The unit suite proves this without a provider key:
 - OpenAI mask alpha is 0 on editable hair and 255 on the face
 - Masks sit in the expected zone on frontal, off-centre, mirrored, EXIF-rotated, wide, and camera-shaped fixtures
 - No face, two faces, a tilt, a side profile, a tiny face, and a hand sent to the beard tool are rejected before the edit function is called
-- A hair edit that changes the eyes is rejected once and is not retried
+- A hair edit that changes the eyes, or that zooms the face past the alignment window, is rejected once and is not retried
+- A modest zoom is warped back onto the original face and can then be composited
+- `npm run replay:raw -- raw.jpg original.jpg long-layers` runs that check on a saved provider JPEG with no network call
 - A provider error is tried once more. An unknown model id is not tried again. A placement failure is not tried again and does not keep the rupee charge. A billed post-check or face-guard failure stays billed and is not charged against the cap
 - Calibration stops at 5 images or about ₹30, whichever comes first
 

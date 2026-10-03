@@ -7,8 +7,9 @@ import { readTierFlags } from "@/lib/ai/settings-store";
 import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
 import { ledgerTool, resolveGuestTier, tierRequest, type ImageProviderName, type ModelTier } from "@/lib/ai/tiers";
 import type { GenerateInput, GenerateOutput, ImageStyleProvider } from "@/lib/ai/types";
+import { styleById } from "@/data/styles";
 import { runLockedEdit } from "@/lib/face/pipeline";
-import { preflightPhoto, type RegionTool } from "@/lib/face/region";
+import { hairExtentForStyle, preflightPhoto, type RegionTool } from "@/lib/face/region";
 import { aiProviderName } from "@/lib/env";
 
 export type ProviderChoice = {
@@ -59,7 +60,8 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
   const primary = choice ? selectProvider(choice.name, choice.apiKey) : selectProvider();
   if (primary.name === "mock") return demoFallback(input, primary.name, "no-key");
   const tool = regionOf(input);
-  const pre = await preflightPhoto(input.image, tool);
+  const hairExtent = hairExtentForStyle(styleById(input.styleId), tool);
+  const pre = await preflightPhoto(input.image, tool, { hairExtent });
   if (!pre.ok) return demoFallback(input, "mock:placement", "placement");
 
   const flags = await readTierFlags(input.tenantId);
@@ -74,6 +76,7 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
   const locked = await runLockedEdit({
     image: input.image,
     tool,
+    hairExtent,
     edit: async (attempt) => {
       const gate = await beginPaidCall({
         provider: primary.name,

@@ -173,27 +173,89 @@ function faceSpans(data: Buffer, width: number, height: number, face: FaceBox) {
   return spans;
 }
 
-/**
- * Hair zone: room for the current hair and for a new length or cut, minus the face and the body.
- * The box reaches beside and above the head so a shorter style can replace long hair.
- * Real hair-coloured pixels below that box stay in. Skin, and anything below the chin that is not hair, stays out.
- */
-function hairMask(mask: Uint8Array, width: number, height: number, face: FaceBox, data: Buffer) {
-  const cx = face.x + face.w / 2;
-  const x0 = Math.max(0, Math.floor(cx - face.w * 1.6));
-  const x1 = Math.min(width - 1, Math.ceil(cx + face.w * 1.6));
-  const y0 = Math.max(0, Math.floor(face.y - face.h * 0.6));
-  const y1 = Math.min(height - 1, Math.ceil(face.y + face.h * 1.2));
-  for (let y = y0; y <= y1; y += 1) {
-    for (let x = x0; x <= x1; x += 1) mask[y * width + x] = 255;
+export type HairExtent = "short" | "medium" | "long";
+
+export type RegionOptions = { hairExtent?: HairExtent };
+
+/** How far a new cut may grow past the hair that is already in the photo. */
+export function hairExtentForStyle(style: { id?: string; category?: string } | null | undefined, tool: RegionTool): HairExtent {
+  if (tool === "colour") return "short";
+  const category = style?.category || "";
+  const id = style?.id || "";
+  if (category === "short" || category === "crop" || category === "fade" || category === "taper" || /pixie|buzz|crew/.test(id)) return "short";
+  if (category === "bob" || id === "lob" || id.endsWith("-lob")) return "medium";
+  return "long";
+}
+
+function extentRadii(face: FaceBox, extent: HairExtent) {
+  const cap = Math.max(8, Math.round(Math.min(face.w, face.h) * 0.28));
+  if (extent === "short") {
+    return { rx: Math.min(cap, Math.max(2, face.w * 0.04)), up: Math.min(cap, Math.max(2, face.h * 0.05)), down: Math.min(Math.round(cap * 0.35), Math.max(2, face.h * 0.035)) };
   }
-  const yExt = Math.min(height - 1, Math.ceil(face.y + face.h * 2.6));
-  for (let y = y1 + 1; y <= yExt; y += 1) {
-    for (let x = x0; x <= x1; x += 1) {
-      const i = (y * width + x) * 3;
-      if (hairLike(data[i], data[i + 1], data[i + 2])) mask[y * width + x] = 255;
+  if (extent === "medium") {
+    return { rx: Math.min(cap, Math.max(3, face.w * 0.07)), up: Math.min(cap, Math.max(3, face.h * 0.07)), down: Math.min(cap, Math.max(3, face.h * 0.1)) };
+  }
+  return { rx: Math.min(cap, Math.max(4, face.w * 0.09)), up: Math.min(cap, Math.max(4, face.h * 0.08)), down: Math.min(cap, Math.max(4, face.h * 0.2)) };
+}
+
+/** Grow the hair core sideways, a little upward, and downward by the style's length. */
+function dilateHair(core: Uint8Array, width: number, height: number, rx: number, up: number, down: number) {
+  const r = Math.max(0, Math.round(rx));
+  const u = Math.max(0, Math.round(up));
+  const d = Math.max(0, Math.round(down));
+  const horiz = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    const row = y * width;
+    for (let x = 0; x < width; x += 1) {
+      const x0 = Math.max(0, x - r);
+      const x1 = Math.min(width - 1, x + r);
+      for (let k = x0; k <= x1; k += 1) {
+        if (core[row + k]) {
+          horiz[row + x] = 255;
+          break;
+        }
+      }
     }
   }
+  const out = new Uint8Array(width * height);
+  for (let x = 0; x < width; x += 1) {
+    for (let y = 0; y < height; y += 1) {
+      const y0 = Math.max(0, y - d);
+      const y1 = Math.min(height - 1, y + u);
+      for (let k = y0; k <= y1; k += 1) {
+        if (horiz[k * width + x]) {
+          out[y * width + x] = 255;
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Hair zone: hair-coloured pixels, plus a margin for the new length, minus the face.
+ * A shorter style keeps the existing hair (so it can be removed) and adds little empty background.
+ * A longer style may extend below the current ends. Plain background and shirt outside that margin stay out.
+ */
+function hairMask(mask: Uint8Array, width: number, height: number, face: FaceBox, data: Buffer, extent: HairExtent) {
+  const cx = face.x + face.w / 2;
+  const x0 = Math.max(0, Math.floor(cx - face.w * 2.2));
+  const x1 = Math.min(width - 1, Math.ceil(cx + face.w * 2.2));
+  const y0 = Math.max(0, Math.floor(face.y - face.h * 0.85));
+  const y1 = Math.min(height - 1, Math.ceil(face.y + face.h * 3.1));
+  const core = new Uint8Array(width * height);
+  for (let y = y0; y <= y1; y += 1) {
+    for (let x = x0; x <= x1; x += 1) {
+      const i = (y * width + x) * 3;
+      if (hairLike(data[i], data[i + 1], data[i + 2])) core[y * width + x] = 255;
+    }
+  }
+  const radii = extentRadii(face, extent);
+  const grown = dilateHair(core, width, height, radii.rx, radii.up, radii.down);
+  grown.forEach((value, index) => {
+    if (value) mask[index] = 255;
+  });
   const margin = Math.max(2, Math.round(face.w * 0.03));
   for (const span of faceSpans(data, width, height, face)) {
     const a = Math.max(0, span.x0 - margin);
@@ -202,18 +264,20 @@ function hairMask(mask: Uint8Array, width: number, height: number, face: FaceBox
       for (let x = a; x <= b; x += 1) mask[y * width + x] = 0;
     }
   }
-  const chin = face.y + face.h * 0.92;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const p = y * width + x;
       if (!mask[p]) continue;
       const i = p * 3;
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      if (skinPixel(r, g, b) || (y >= chin && !hairLike(r, g, b))) mask[p] = 0;
+      if (skinPixel(data[i], data[i + 1], data[i + 2])) mask[p] = 0;
     }
   }
+}
+
+export function primaryFace(data: Buffer, width: number, height: number): FaceBox | null {
+  const blobs = faceBlobs(data, width, height);
+  if (blobs.length !== 1) return null;
+  return blobs[0].box;
 }
 
 function browMask(mask: Uint8Array, width: number, height: number, face: FaceBox) {
@@ -385,7 +449,7 @@ function fail(partial: Omit<RegionReport, "ok" | "message" | "feather"> & { reas
   return { ...partial, ok: false, message: TRY_ANOTHER_PHOTO, feather: empty(partial.width, partial.height) };
 }
 
-export function analyzeRegion(data: Buffer, width: number, height: number, tool: RegionTool): RegionReport {
+export function analyzeRegion(data: Buffer, width: number, height: number, tool: RegionTool, options?: RegionOptions): RegionReport {
   const mask = empty(width, height);
   const base = { width, height, raw: data, mask, face: null as FaceBox | null };
   if (tool === "nails") {
@@ -414,7 +478,7 @@ export function analyzeRegion(data: Buffer, width: number, height: number, tool:
     base.face = face;
     if (tool === "brows") browMask(mask, width, height, face);
     else if (tool === "beard") beardMask(mask, width, height, face);
-    else hairMask(mask, width, height, face, data);
+    else hairMask(mask, width, height, face, data, options?.hairExtent ?? (tool === "colour" ? "short" : "long"));
     if (face.h < MIN_FACE) return fail({ ...base, face, reason: "small" });
     if (blob.tilt > 18) return fail({ ...base, face, reason: "tilt" });
     if (blob.symmetry < 0.86) return fail({ ...base, face, reason: "profile" });
@@ -545,8 +609,8 @@ export function faceRegionDelta(original: Buffer, next: Buffer, face: FaceBox, w
   return sum / count;
 }
 
-export async function preflightPhoto(jpeg: Buffer, tool: RegionTool) {
+export async function preflightPhoto(jpeg: Buffer, tool: RegionTool, options?: RegionOptions) {
   const decoded = await decodeRgb(jpeg);
-  const report = analyzeRegion(decoded.data, decoded.width, decoded.height, tool);
+  const report = analyzeRegion(decoded.data, decoded.width, decoded.height, tool, options);
   return { ...report, maskFile: report.ok ? await maskPng(report.feather, report.width, report.height) : null };
 }

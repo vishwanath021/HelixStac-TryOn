@@ -1,14 +1,15 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { registerProviderFrame } from "@/lib/face/register";
 import {
   analyzeRegion,
   compositeLocked,
   decodeRgb,
   disallowedChange,
-  faceRegionDelta,
   preflightPhoto,
   TRY_ANOTHER_PHOTO,
+  type HairExtent,
   type RegionTool,
 } from "@/lib/face/region";
 import { SpendCapError, UnknownModelError } from "@/lib/ai/errors";
@@ -29,6 +30,7 @@ export type LockedEdit =
       reason: "placement" | "provider" | "postcheck" | "face-guard" | "unknown-model" | "spend-cap";
       message: string;
       callId?: string;
+      detail?: string;
     };
 
 function changedPixels(original: Buffer, next: Buffer, width: number, height: number) {
@@ -53,17 +55,19 @@ export async function outsideMaskDelta(original: Buffer, next: Buffer, feather: 
 /**
  * Placement is checked before `edit` is called. A failed placement check does not call the provider.
  * The provider may be tried once more if it throws. A failed post-check does not try again.
+ * Hair and colour compare the provider frame with the original face before compositing.
  * The returned pixels outside the feathered mask match the original photo byte for byte.
  */
 export async function runLockedEdit(args: {
   image: Buffer;
   tool: RegionTool;
   edit: (attempt: number) => Promise<GenerateOutput>;
+  hairExtent?: HairExtent;
   /** Test hook. Skips the composite so the post-check can fail on purpose. */
   skipLock?: boolean;
 }): Promise<LockedEdit> {
   const decoded = await decodeRgb(args.image);
-  const report = analyzeRegion(decoded.data, decoded.width, decoded.height, args.tool);
+  const report = analyzeRegion(decoded.data, decoded.width, decoded.height, args.tool, { hairExtent: args.hairExtent });
   if (!report.ok) return { ok: false, calls: 0, reason: "placement", message: report.message || TRY_ANOTHER_PHOTO };
 
   let calls = 0;
@@ -88,17 +92,20 @@ export async function runLockedEdit(args: {
   if (!last) return { ok: false, calls, reason: "provider", message: TRY_ANOTHER_PHOTO };
 
   await saveRawProviderImage(last.image, args.tool);
-  const edited = await sharp(last.image, { failOn: "none" })
+  let edited = await sharp(last.image, { failOn: "none" })
     .rotate()
     .resize(decoded.width, decoded.height, { fit: "cover", position: "centre" })
     .removeAlpha()
     .raw()
     .toBuffer();
-  const locked = args.skipLock ? edited : compositeLocked(decoded.data, edited, report.feather);
   if ((args.tool === "style" || args.tool === "colour") && report.face) {
-    const delta = faceRegionDelta(decoded.data, locked, report.face, decoded.width, decoded.height);
-    if (delta > 18) return { ok: false, calls, reason: "face-guard", message: TRY_ANOTHER_PHOTO, callId: last.callId };
+    const registered = await registerProviderFrame(decoded.data, edited, decoded.width, decoded.height, report.face);
+    if (!registered.registration.ok) {
+      return { ok: false, calls, reason: "face-guard", message: TRY_ANOTHER_PHOTO, callId: last.callId, detail: registered.registration.detail };
+    }
+    edited = registered.rgb;
   }
+  const locked = args.skipLock ? edited : compositeLocked(decoded.data, edited, report.feather);
   const outside = await outsideMaskDelta(decoded.data, locked, report.feather);
   const spill = disallowedChange(args.tool, report.face, changedPixels(decoded.data, locked, decoded.width, decoded.height), decoded.width, decoded.height);
   if (outside !== 0 || spill > 0.02) return { ok: false, calls, reason: "postcheck", message: TRY_ANOTHER_PHOTO, callId: last.callId };

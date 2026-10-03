@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
-import { paintFlat } from "@/lib/ai/flat-edit";
 import { runLockedEdit } from "@/lib/face/pipeline";
 import { preflightPhoto, renderOverlay, TRY_ANOTHER_PHOTO, type RegionTool } from "@/lib/face/region";
 import { drawFrontal, drawHand, type Scene } from "@/lib/face/synthetic";
@@ -61,7 +60,7 @@ export async function runCalibration(args: {
   const estimate = Math.max(0, args.estimateInr ?? 0);
   const listing = args.listing ?? { model: "", quality: "", estimateInr: estimate };
   const fixtures = args.fixtures ?? (await calibrationFixtures());
-  const edit = args.edit ?? (async (image: Buffer) => (await paintFlat(image)).image);
+  const edit = args.edit ?? (async (image: Buffer) => image);
   let spentInr = 0;
   let stoppedBecause: "cap" | "limit" | "" = "";
   const panels: CalibrationPanel[] = [];

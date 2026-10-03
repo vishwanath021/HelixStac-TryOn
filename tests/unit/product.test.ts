@@ -18,7 +18,7 @@ import { parseHost } from "@/lib/host";
 import { sanitizeSelfie } from "@/lib/images";
 import { redact } from "@/lib/logger";
 import { annualExGst, assumedInr, breakEvenAccounts, previewCogsInr, withGst } from "@/lib/pricing";
-import { openAIQuality } from "@/lib/ai/openai";
+import { inputFidelityForModel, openAIQuality } from "@/lib/ai/openai";
 import { beginPaidCall, costPerCallInr, spendCapInr } from "@/lib/ai/spend";
 import { prisma } from "@/lib/prisma";
 import { findSecrets, scanRepo } from "@/lib/secrets";
@@ -55,7 +55,16 @@ describe("prompts", () => {
     expect(prompt).toContain("natural hairline");
     expect(prompt).toContain("long hair becoming a bob");
     expect(prompt).toContain("Transparent mask pixels may change");
+    expect(prompt).toContain("Do not zoom, crop, re-frame, or move the subject");
     expect(prompt.toLowerCase()).not.toContain("change the face");
+  });
+
+  it("asks supported OpenAI image models for high input fidelity and omits it on mini", () => {
+    expect(inputFidelityForModel("gpt-image-1-mini")).toBe("");
+    expect(inputFidelityForModel("gpt-image-1")).toBe("high");
+    expect(inputFidelityForModel("gpt-image-1.5")).toBe("high");
+    expect(inputFidelityForModel("gpt-image-2")).toBe("high");
+    expect(inputFidelityForModel("dall-e-2")).toBe("");
   });
 });
 

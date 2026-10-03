@@ -15,7 +15,7 @@ import { numberEnv } from "@/lib/env";
 import { resolveLook } from "@/lib/guidance";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 import { sanitizeSelfie, ImageError } from "@/lib/images";
-import { preflightPhoto, TRY_ANOTHER_PHOTO, type RegionTool } from "@/lib/face/region";
+import { hairExtentForStyle, preflightPhoto, TRY_ANOTHER_PHOTO, type RegionTool } from "@/lib/face/region";
 import { logError } from "@/lib/logger";
 import { AI_PREVIEW_KINDS, actorKeyFor, capForTier, hashIp, readGuestToken, verifySalonToken, type PreviewTier } from "@/lib/preview-access";
 import { prisma } from "@/lib/prisma";
@@ -130,9 +130,10 @@ export async function POST(req: Request) {
 
   const shade = tool === "style" ? shadeById(shadeId) : null;
   const region: RegionTool = tool === "nails" ? "nails" : tool === "brows" ? "brows" : tool === "beard" ? "beard" : shade ? "colour" : "style";
+  const lookStyle = tool === "style" ? styleById(styleId) : null;
   const choice = await resolveProviderChoice(tenant.id);
   if (selectProvider(choice.name, choice.apiKey).name !== "mock") {
-    const placement = await preflightPhoto(jpeg, region);
+    const placement = await preflightPhoto(jpeg, region, { hairExtent: hairExtentForStyle(lookStyle, region) });
     if (!placement.ok) return NextResponse.json({ error: "PLACEMENT", message: TRY_ANOTHER_PHOTO }, { status: 422 });
   }
 
@@ -155,7 +156,7 @@ export async function POST(req: Request) {
   }
 
   const kind = tool === "brows" ? "BROWS" : tool === "beard" ? "BEARD" : tool === "nails" ? "NAILS" : "STYLE";
-  const style = tool === "style" ? styleById(styleId) : null;
+  const style = lookStyle;
   const prompt =
     tool === "brows" ? buildBrowPrompt(browById(styleId)!) :
     tool === "beard" ? buildBeardPrompt(beardById(styleId)!) :

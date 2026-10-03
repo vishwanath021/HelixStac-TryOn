@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
@@ -12,11 +12,29 @@ import { finalizePaidCall, releasePaidCall, beginPaidCall } from "@/lib/ai/spend
 import { writeOverlays } from "@/lib/face/fixtures";
 import { outsideMaskDelta, runLockedEdit, saveRawProviderImage } from "@/lib/face/pipeline";
 import { analyzeRegion, compositeLocked, decodeRgb, maskPng, preflightPhoto, type FaceBox, type RegionTool } from "@/lib/face/region";
+import type { GenerateOutput } from "@/lib/ai/types";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 import { prisma } from "@/lib/prisma";
 import { drawFrontal, drawHand, drawLongHair, drawTilted, type Scene } from "@/lib/face/synthetic";
 
 const FACE_TOOLS: RegionTool[] = ["style", "colour", "brows", "beard"];
+
+function identityEdit(image: Buffer): GenerateOutput {
+  return { image, mime: "image/jpeg", provider: "identity", providerCostUsd: 0, latencyMs: 0 };
+}
+
+async function zoomFromCenter(jpeg: Buffer, factor: number) {
+  const meta = await sharp(jpeg).metadata();
+  const width = meta.width || 8;
+  const height = meta.height || 8;
+  const scaledWidth = Math.round(width * factor);
+  const scaledHeight = Math.round(height * factor);
+  const big = await sharp(jpeg).resize(scaledWidth, scaledHeight, { fit: "fill" }).toBuffer();
+  return sharp(big)
+    .extract({ left: Math.floor((scaledWidth - width) / 2), top: Math.floor((scaledHeight - height) / 2), width, height })
+    .jpeg({ quality: 95 })
+    .toBuffer();
+}
 
 function faceSpots(face: FaceBox): [number, number][] {
   return [
@@ -135,7 +153,27 @@ describe("region masks", () => {
     expect(report.mask[below * scene.width + hairX]).toBe(255);
     expect(report.mask[below * scene.width + cx]).toBe(0);
     expect(report.mask[Math.round(face.y + face.h * 0.45) * scene.width + Math.round(face.cx)]).toBe(0);
-    expect(report.mask[Math.round(face.y + face.h * 0.4) * scene.width + Math.round(face.x - face.w * 0.3)]).toBe(255);
+    expect(report.mask[4 * scene.width + 4]).toBe(0);
+  });
+
+  it("keeps a short cut on the existing hair and gives a long cut a little room below it", () => {
+    const scene = drawLongHair();
+    const long = analyzeRegion(scene.data, scene.width, scene.height, "style", { hairExtent: "long" });
+    const short = analyzeRegion(scene.data, scene.width, scene.height, "style", { hairExtent: "short" });
+    expect(long.ok && short.ok).toBe(true);
+    const face = long.face!;
+    const hairX = Math.round(face.x - face.w * 0.2);
+    let bottom = Math.round(face.y);
+    for (let y = 0; y < scene.height; y += 1) {
+      const i = (y * scene.width + hairX) * 3;
+      if (scene.data[i] < 80 && scene.data[i + 1] < 60 && scene.data[i + 2] < 50) bottom = y;
+    }
+    const grown = Math.min(scene.height - 1, Math.round(bottom + face.h * 0.15));
+    expect(short.mask[bottom * scene.width + hairX]).toBe(255);
+    expect(long.mask[bottom * scene.width + hairX]).toBe(255);
+    expect(short.mask[grown * scene.width + hairX]).toBe(0);
+    expect(long.mask[grown * scene.width + hairX]).toBe(255);
+    expect(long.mask[4 * scene.width + 4]).toBe(0);
   });
 
   it("marks transparent mask pixels as editable and opaque pixels as keep for the OpenAI edit", async () => {
@@ -206,11 +244,63 @@ describe("region masks", () => {
       tool: "colour",
       edit: async () => {
         calls += 1;
-        return paintFlat(jpeg);
+        return identityEdit(jpeg);
       },
     });
     expect(locked.ok).toBe(true);
     expect(calls).toBe(1);
+  });
+
+  it("rejects the reframed paid hair frame and accepts a matched one", async () => {
+    const before = readFileSync(path.join(process.cwd(), "tests/fixtures/replay/long-layers-before.jpg"));
+    const raw = readFileSync(path.join(process.cwd(), "tests/fixtures/replay/long-layers-raw.jpg"));
+    let calls = 0;
+    const rejected = await runLockedEdit({
+      image: before,
+      tool: "style",
+      hairExtent: "long",
+      edit: async () => {
+        calls += 1;
+        return { ...identityEdit(raw), callId: "paid-long-layers" };
+      },
+    });
+    expect(calls).toBe(1);
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) {
+      expect(rejected.reason).toBe("face-guard");
+      expect(rejected.message).toContain("Try another photo");
+      expect(rejected.detail || "").toMatch(/scale/);
+    }
+
+    const scene = drawFrontal(360, 480);
+    const jpeg = await sharp(scene.data, { raw: { width: 360, height: 480, channels: 3 } }).jpeg({ quality: 95 }).toBuffer();
+    const matched = await runLockedEdit({
+      image: jpeg,
+      tool: "style",
+      edit: async () => identityEdit(jpeg),
+    });
+    expect(matched.ok).toBe(true);
+
+    const zoomed = await zoomFromCenter(jpeg, 1.12);
+    const aligned = await runLockedEdit({
+      image: jpeg,
+      tool: "style",
+      edit: async () => identityEdit(zoomed),
+    });
+    expect(aligned.ok).toBe(true);
+    const tooFar = await zoomFromCenter(jpeg, 1.8);
+    let farCalls = 0;
+    const refused = await runLockedEdit({
+      image: jpeg,
+      tool: "style",
+      edit: async () => {
+        farCalls += 1;
+        return identityEdit(tooFar);
+      },
+    });
+    expect(farCalls).toBe(1);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.reason).toBe("face-guard");
   });
 
   it("saves the raw provider image only when DEBUG_SAVE_RAW is on", async () => {
@@ -260,9 +350,9 @@ describe("region masks", () => {
       const result = await runLockedEdit({
         image: jpeg,
         tool: name === "upload-wide" ? "colour" : "style",
-        edit: (attempt) => {
+        edit: async (attempt) => {
           expect(attempt).toBe(1);
-          return paintFlat(jpeg);
+          return identityEdit(jpeg);
         },
       });
       expect(result.ok, name).toBe(true);
