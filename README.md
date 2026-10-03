@@ -156,15 +156,31 @@ flowchart LR
 
 More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Guest try-on
+
+After the consent notice, the salon page is a phone-sized mirror.
+
+1. A **COLOUR | STYLE** pill sits under the hero.
+2. The dark stage asks for the front camera or an upload. **START CAMERA** opens the live mirror, with a round shutter and a small **Photo** upload. If the camera is blocked, the same stage keeps the upload path.
+3. Colour swatches (the 16 named shades) sit on the live feed and on a still photo. Live colour stays on the device.
+4. After a shutter tap or an upload, **STYLE** opens the Women / Men / Kids gallery. Illustrated thumbnails are original placeholders. Choosing a style runs the preview (about 10 seconds on a paid model; the demo mock is faster) and then a draggable **BEFORE / AFTER** slider.
+5. **BOOK THIS LOOK** opens the salon's WhatsApp with the look and mapped services, and records a lead. **DOWNLOAD** saves the after image in the browser. **TRY ANOTHER STYLE** returns to the gallery and keeps the same photo. Up to four looks stay in the compare strip.
+
+A demo-only **Use sample portrait** link is under the empty stage for machines with no camera.
+
 ## Screenshots
 
-Taken from the mock-mode demo in a phone-sized browser.
+Taken from the mock-mode demo in a phone-sized browser. The camera shot uses Chromium's fake camera.
 
 ![Home](docs/screenshots/01-home.png)
 
 ![Consent](docs/screenshots/02-consent.png)
 
-![Colour shades](docs/screenshots/03-colour.png)
+![Start camera](docs/screenshots/03-start.png)
+
+![Live camera and shades](docs/screenshots/03-camera.png)
+
+![Colour on an uploaded portrait](docs/screenshots/03-colour.png)
 
 ![Style preview](docs/screenshots/04-preview.png)
 

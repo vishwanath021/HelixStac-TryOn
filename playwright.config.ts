@@ -1,4 +1,7 @@
+import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
+
+const fakeCamera = path.join(process.cwd(), "tests/fixtures/selfie.y4m");
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -7,9 +10,17 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   use: {
+    ...devices["Pixel 5"],
     baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3000",
     trace: "retain-on-failure",
-    ...devices["Pixel 5"],
+    permissions: ["camera"],
+    launchOptions: {
+      args: [
+        "--use-fake-device-for-media-stream",
+        "--use-fake-ui-for-media-stream",
+        `--use-file-for-fake-video-capture=${fakeCamera}`,
+      ],
+    },
   },
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
