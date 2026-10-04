@@ -12,6 +12,8 @@ export type UsageNumbers = {
   textTokens?: number;
   imageTokens?: number;
   thoughtTokens?: number;
+  /** Provider-reported USD, such as OpenRouter usage.cost. Preferred over a token reconstruction. */
+  reportedCostUsd?: number;
 };
 
 export type TierRequest = {
@@ -145,6 +147,9 @@ function tokenRates(model: string): TokenRates | null {
 /** USD from token usage. Null when the response has no usable counts or the model has no rate table. */
 export function costUsdFromUsage(model: string, usage: UsageNumbers | undefined): number | null {
   if (!usage) return null;
+  if (typeof usage.reportedCostUsd === "number" && Number.isFinite(usage.reportedCostUsd) && usage.reportedCostUsd >= 0) {
+    return Math.round(usage.reportedCostUsd * 1_000_000) / 1_000_000;
+  }
   const rates = tokenRates(model);
   if (!rates) return null;
   const output = usage.outputTokens ?? 0;

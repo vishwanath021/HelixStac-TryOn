@@ -109,3 +109,23 @@ export async function resolveFalKey(): Promise<{ ok: true; apiKey: string } | { 
   if (envKey) return { ok: true, apiKey: envKey };
   return { ok: false, reason: "missing" };
 }
+
+/**
+ * OpenRouter key from its own cipher. A saved key that is not enabled does not fall back to the environment.
+ * No saved key may use OPENROUTER_API_KEY. This comparison does not borrow an OpenAI, Gemini, or fal key.
+ */
+export async function resolveOpenRouterKey(): Promise<{ ok: true; apiKey: string } | { ok: false; reason: "missing" | "off" }> {
+  const cipher = await setting("platform_openrouter_key_cipher");
+  if (cipher) {
+    if ((await setting("platform_openrouter_enabled")) !== "true") return { ok: false, reason: "off" };
+    try {
+      const apiKey = decryptSecret(cipher);
+      if (apiKey) return { ok: true, apiKey };
+    } catch {
+      return { ok: false, reason: "missing" };
+    }
+  }
+  const envKey = process.env.OPENROUTER_API_KEY?.trim() || "";
+  if (envKey) return { ok: true, apiKey: envKey };
+  return { ok: false, reason: "missing" };
+}

@@ -9,6 +9,7 @@ import { existingHairstyleFiles, hairstyleReferenceFile, readHairstyleReference 
 import { buildReferencePrompt } from "@/lib/prompts";
 import { FAL_COMPARISON_MODELS, quoteFalModel } from "@/lib/ai/fal-models";
 import { productionModelNotice } from "@/lib/ai/model-notices";
+import { OPENROUTER_COMPARISON_MODELS, quoteOpenRouterModel } from "@/lib/ai/openrouter-models";
 import { bufferedInr, usdFromTokenCounts } from "@/lib/ai/tiers";
 
 /**
@@ -24,6 +25,7 @@ import { bufferedInr, usdFromTokenCounts } from "@/lib/ai/tiers";
  * - The 2.5 parameter table does not list input_fidelity. The explicit omit sentence is only for gpt-image-2.
  * gemini-3.1-flash-image is the stable image model (Nano Banana 2), preferred over the lite id.
  * fal-ai/qwen-image-edit-plus is documented ($0.03 per megapixel, image_urls) and is not in this list.
+ * OpenRouter rows are chat completions with image input and image+text output. fal.ai is not proxied.
  */
 const OPENAI_AND_GEMINI = [
   {
@@ -67,6 +69,12 @@ export const COMPARISON_MODELS = [
     warning: row.experimental
       ? "Experimental. The cap uses the higher price reading. A timeout is an unknown bill and is not sent again."
       : "A timeout is an unknown bill and is not sent again.",
+  })),
+  ...OPENROUTER_COMPARISON_MODELS.map((row) => ({
+    id: row.id,
+    provider: "openrouter" as const,
+    label: row.label,
+    warning: "One OpenRouter model. Provider fallback is off. A timeout is an unknown bill and is not sent again.",
   })),
 ];
 
@@ -141,6 +149,11 @@ export function quoteComparisonModel(modelId: string, width: number, height: num
     if (!quoted.ok) return quoted;
     return { ...quoted, warning: row.warning };
   }
+  if (row.provider === "openrouter") {
+    const quoted = quoteOpenRouterModel(row.id, width, height, reference);
+    if (!quoted.ok) return quoted;
+    return { ...quoted, warning: row.warning };
+  }
   const caps = imageEditModel(row.id);
   if (!caps) {
     return { ok: false as const, message: `${row.id} has no image-edit capability row. No other model was substituted.` };
@@ -209,7 +222,7 @@ export async function prepareComparison(args: { jpeg: Buffer; styleId: string; c
     textureWarning: textureChoice.warning,
     prompt,
   };
-  if (row.provider === "gemini" || row.provider === "fal") {
+  if (row.provider === "gemini" || row.provider === "fal" || row.provider === "openrouter") {
     const selfiePng = await sharp(args.jpeg, { failOn: "none" }).rotate().png().toBuffer();
     return { ok: true as const, provider: row.provider, planned: null, selfiePng, fitted: null, ...shared };
   }

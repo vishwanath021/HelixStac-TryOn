@@ -26,6 +26,7 @@ export type PlatformAiSettings = SalonAiSettings & {
   openaiKey: StoredKeyStatus;
   geminiKey: StoredKeyStatus;
   falKey: StoredKeyStatus & { enabled: boolean };
+  openRouterKey: StoredKeyStatus & { enabled: boolean };
 };
 
 /** @deprecated Salon pages use SalonAiSettings. Super pages use PlatformAiSettings. */
@@ -107,6 +108,10 @@ export async function platformAiView(): Promise<PlatformAiSettings> {
     openaiKey,
     geminiKey,
     falKey: { ...fal, enabled: fal.saved && (await setting("platform_fal_enabled")) === "true" },
+    openRouterKey: {
+      ...(await storedStatus("platform_openrouter_key_cipher", "platform_openrouter_key_hint")),
+      enabled: Boolean(await setting("platform_openrouter_key_cipher")) && (await setting("platform_openrouter_enabled")) === "true",
+    },
   };
 }
 
@@ -141,6 +146,13 @@ function freshFalKey(raw: string) {
   const trimmed = raw.trim();
   if (!trimmed || trimmed.startsWith("•")) return null;
   if (!/^[A-Za-z0-9_\-.:]{12,400}$/.test(trimmed)) throw new Error("INVALID_KEY");
+  return trimmed;
+}
+
+function freshOpenRouterKey(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.startsWith("•")) return null;
+  if (!/^[A-Za-z0-9_\-.]{12,400}$/.test(trimmed)) throw new Error("INVALID_KEY");
   return trimmed;
 }
 
@@ -181,6 +193,35 @@ export async function saveFalKey(
       action: "AI_KEY_UPDATE",
       target: "platform",
       meta: JSON.stringify({ provider: "fal", rotated: Boolean(input.apiKey.trim()), removed: input.remove, enabled: input.enabled }),
+    },
+  });
+}
+
+export async function saveOpenRouterKey(
+  input: { apiKey: string; enabled: boolean; remove: boolean },
+  actorId: string,
+) {
+  if (input.remove) {
+    await putSetting("platform_openrouter_key_cipher", "");
+    await putSetting("platform_openrouter_key_hint", "");
+    await putSetting("platform_openrouter_enabled", "false");
+  } else {
+    const next = freshOpenRouterKey(input.apiKey);
+    if (next) {
+      await putSetting("platform_openrouter_key_cipher", encryptSecret(next));
+      await putSetting("platform_openrouter_key_hint", keyHint(next));
+    } else if (!(await setting("platform_openrouter_key_cipher")) && input.apiKey.trim()) {
+      throw new Error("INVALID_KEY");
+    }
+    const saved = Boolean(await setting("platform_openrouter_key_cipher"));
+    await putSetting("platform_openrouter_enabled", saved && input.enabled ? "true" : "false");
+  }
+  await prisma.auditLog.create({
+    data: {
+      actorId,
+      action: "AI_KEY_UPDATE",
+      target: "platform",
+      meta: JSON.stringify({ provider: "openrouter", rotated: Boolean(input.apiKey.trim()), removed: input.remove, enabled: input.enabled }),
     },
   });
 }

@@ -34,6 +34,9 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
   const [falKey, setFalKey] = useState(initial.falKey);
   const [falDraft, setFalDraft] = useState("");
   const [falEnabled, setFalEnabled] = useState(initial.falKey.enabled);
+  const [openRouterKey, setOpenRouterKey] = useState(initial.openRouterKey);
+  const [openRouterDraft, setOpenRouterDraft] = useState("");
+  const [openRouterEnabled, setOpenRouterEnabled] = useState(initial.openRouterKey.enabled);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [panels, setPanels] = useState<Panel[]>([]);
@@ -47,6 +50,8 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
     setGeminiKey(data.geminiKey);
     setFalKey(data.falKey);
     setFalEnabled(Boolean(data.falKey?.enabled));
+    setOpenRouterKey(data.openRouterKey);
+    setOpenRouterEnabled(Boolean(data.openRouterKey?.enabled));
     setAllowByo(data.allowByo);
     setHighEnabled(data.highEnabled);
     setMediumApproved(data.mediumApproved);
@@ -136,6 +141,30 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
     setMessage(remove ? "The fal key was removed." : "The fal key was saved.");
   }
 
+  async function saveOpenRouter(remove: boolean) {
+    setBusy(true);
+    setMessage("");
+    const res = await fetch("/api/v1/super/ai", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        openRouterOnly: true,
+        openRouterKey: openRouterDraft,
+        openRouterEnabled,
+        removeOpenRouterKey: remove,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setMessage(data.message || "Could not save the OpenRouter key.");
+      return;
+    }
+    applyView(data);
+    setOpenRouterDraft("");
+    setMessage(remove ? "The OpenRouter key was removed." : "The OpenRouter key was saved.");
+  }
+
   return (
     <form
       className="card grid max-w-3xl gap-4 p-5"
@@ -151,12 +180,17 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
         <p className="font-medium">Saved provider keys</p>
         <p>
           OpenAI: {openaiKey.saved ? `saved as ${openaiKey.hint}. This key is available for OpenAI guest try-on and for OpenAI comparison models.` : "not saved."}
-          {" "}Saving a Gemini key or a fal key does not remove it. Enable high quality only unlocks the High tier. A greyed High row means that tier is off. It does not turn the OpenAI key off.
+          {" "}Saving a Gemini key, a fal key, or an OpenRouter key does not remove it. Enable high quality only unlocks the High tier. A greyed High row means that tier is off. It does not turn the OpenAI key off.
         </p>
         <p>Gemini: {geminiKey.saved ? `saved as ${geminiKey.hint}. Used when the guest provider is Gemini, and for Gemini comparison models.` : "not saved."}</p>
         <p>
           fal: {falKey.saved
             ? `saved as ${falKey.hint}. ${falKey.enabled ? "Comparison calls are on." : "Comparison calls are off until you enable them."}`
+            : "not saved."}
+        </p>
+        <p>
+          OpenRouter: {openRouterKey.saved
+            ? `saved as ${openRouterKey.hint}. ${openRouterKey.enabled ? "Comparison calls are on." : "Comparison calls are off until you enable them."}`
             : "not saved."}
         </p>
       </div>
@@ -261,6 +295,34 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
         <div className="flex flex-wrap gap-2">
           <button className="btn secondary" type="button" disabled={busy} onClick={() => void saveFal(false)}>Save fal key</button>
           <button className="btn secondary" type="button" disabled={busy || !falKey.saved} onClick={() => void saveFal(true)}>Remove fal key</button>
+        </div>
+      </div>
+      <div className="grid gap-2 border-t border-line pt-4">
+        <p className="text-sm font-medium">OpenRouter key</p>
+        <p className="text-xs text-muted">
+          Separate from the OpenAI, Gemini, and fal keys. Paste it here, tick Enable OpenRouter comparisons, then Save OpenRouter key. Those comparisons read this key. They do not call another provider if it is missing or off. OpenRouter does not proxy fal.ai.
+        </p>
+        <label className="text-sm">
+          OpenRouter key
+          <input
+            className="field mt-1 font-mono"
+            type="password"
+            name="openrouter-key"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="OpenRouter key"
+            placeholder={openRouterKey.saved ? openRouterKey.hint || "An OpenRouter key is saved" : "Paste the OpenRouter key"}
+            value={openRouterDraft}
+            onChange={(event) => setOpenRouterDraft(event.target.value)}
+          />
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={openRouterEnabled} onChange={(event) => setOpenRouterEnabled(event.target.checked)} />
+          Enable OpenRouter comparisons
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn secondary" type="button" disabled={busy} onClick={() => void saveOpenRouter(false)}>Save OpenRouter key</button>
+          <button className="btn secondary" type="button" disabled={busy || !openRouterKey.saved} onClick={() => void saveOpenRouter(true)}>Remove OpenRouter key</button>
         </div>
       </div>
       {message && <p role="status">{message}</p>}

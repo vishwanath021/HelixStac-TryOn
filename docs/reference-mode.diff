@@ -1,16 +1,20 @@
 diff --git a/.env.example b/.env.example
-index 6ec3dab..a0944cd 100644
+index 6ec3dab..70ece1c 100644
 --- a/.env.example
 +++ b/.env.example
-@@ -44,6 +44,7 @@ GEMINI_TEXT_MODEL="gemini-3.1-flash-lite"
+@@ -44,7 +44,11 @@ GEMINI_TEXT_MODEL="gemini-3.1-flash-lite"
  # Optional failover. Leave blank to keep the stub inactive.
  # REPLICATE_API_TOKEN=""
  # REPLICATE_MODEL="flux-kontext-apps/change-haircut"
 +# Optional fallback only. Reference comparisons use the encrypted fal key saved on /super/ai.
  # FAL_KEY=""
++# Optional fallback only. Reference comparisons use the encrypted OpenRouter key saved on /super/ai.
++# OpenRouter does not proxy fal.ai models.
++# OPENROUTER_API_KEY=""
  # FAL_MODEL="fal-ai/flux-pro/kontext"
  # Set to gemini to allow the concierge to call a text model. Default is rules.
-@@ -67,7 +68,29 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
+ CONCIERGE_LLM="rules"
+@@ -67,7 +71,29 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
  # Hard testing guard for paid image calls, in INR estimates (not a provider invoice).
  # Default ₹500. At the cap the app returns a labelled sample instead of calling the provider.
  AI_SPEND_CAP_INR="500"
@@ -190,10 +194,10 @@ index c5ef9e0..6faa9da 100644
  
 diff --git a/docs/REFERENCE-MODE-REVIEW.md b/docs/REFERENCE-MODE-REVIEW.md
 new file mode 100644
-index 0000000..14260f2
+index 0000000..ae5a4ec
 --- /dev/null
 +++ b/docs/REFERENCE-MODE-REVIEW.md
-@@ -0,0 +1,374 @@
+@@ -0,0 +1,400 @@
 +# Reference-mode review
 +
 +Date: 4 Oct 2026. Baseline before this work: `8a3a244` (`docs: record which image-edit parameters the hair path never sends`) on `cursor/feat-initial-build-5096`. The shareable diff against that commit is `docs/reference-mode.diff`.
@@ -536,6 +540,32 @@ index 0000000..14260f2
 +
 +The fal box is separate. Save fal key stores it. Enable fal comparisons must be on or the comparison refuses before `beginPaidCall` and does not call OpenAI or Gemini. Remove fal key clears that slot. `FAL_KEY` in the environment is only a fallback when no fal key is saved. A saved key that is turned off does not use the environment value.
 +
++### OpenRouter comparison
++
++Fetched 4 Oct 2026. OpenRouter does not proxy fal.ai. The image-output catalog has Black Forest Labs Flux ids and no `fal-ai/` endpoint. Flux on OpenRouter returns image only, so it is not called through chat completions here.
++
++Chat completions are `POST https://openrouter.ai/api/v1/chat/completions` with `modalities: ["image","text"]`. The chat reference documents that field. The image-generation guide's dedicated Image API is a different route and is not used. The official blog (11 Sep 2026) says only models whose output modalities include both image and text are called that way: the Gemini image models and the OpenAI gpt-5-image models. `GET /api/v1/models?output_modalities=image` on 4 Oct 2026 still lists those, plus preview slugs and the routers `openrouter/auto` and `openrouter/auto-beta`.
++
++The dropdown has the general-availability ids that accept image input and return image and text. Each model page states a reference-image maximum of at least 3, so two images are inside the documented limit. Preview slugs are on the catalog and are not in the dropdown. Routers are not in the dropdown. Image-only models, including `openai/gpt-image-2` and the 2.5 image ids on OpenRouter, are not in this list because their output modality is image only.
++
++| Model | Inputs | Page rates per 1M tokens | Portrait estimate |
++|---|---|---|---|
++| `google/gemini-2.5-flash-image` | up to 3 images | image in $0.30, text in $0.30, image out $30, text out $2.50 | about ₹3.35 before the buffer, cap ₹3.70 |
++| `google/gemini-3.1-flash-lite-image` | up to 14 | image in $0.25, text in $0.25, image out $30, text out $1.50 | about ₹3.32, cap ₹3.60 |
++| `google/gemini-3.1-flash-image` | up to 14 | image in $0.50, text in $0.50, image out $60, text out $3 | about ₹6.64, cap ₹7.20 |
++| `google/gemini-3-pro-image` | up to 14 | image in $2, text in $2, image out $120, text out $12 | about ₹13.64, cap ₹14.80 |
++| `openai/gpt-5-image-mini` | up to 16 | image in $2.50, text in $2.50, image out $8, text out $2 | about ₹2.54, cap ₹2.80 |
++| `openai/gpt-5.4-image-2` | up to 16 | image in $8, text in $8, image out $30, text out $15 | about ₹9.10, cap ₹9.90 |
++| `openai/gpt-5-image` | up to 16 | image in $10, text in $10, image out $40, text out $10 | cap ₹29.10 |
++
++Gemini quotes use 1,120 tokens per image. The 11 Sep measurements divide evenly into that count at the published output rate. The quote adds 400 text-input tokens and 200 text-output tokens. It does not change with selfie pixels. OpenAI chat quotes use the same image-input calibration as the direct edit (15% over the first 1536×1024 run) and the medium portrait output-token allowance, because the chat path does not publish an image-token count. Those figures are for a 480×640 selfie and a 512×512 reference, aspect `2:3`. A larger selfie raises the OpenAI-token quotes. `openai/gpt-5-image` also takes the higher of that allowance and $0.28. The blog measured $0.20 to $0.28 for a text-and-image chat on 11 Sep 2026 and did not say two reference images were sent.
++
++The request sends the reference prompt as text, then the selfie, then the hairstyle reference, as data URLs. The image-input guide says to send text first and then each image in its own content part. `image_config.aspect_ratio` is `2:3`, `3:2`, or `1:1`. `models` is a one-element list of the same id. `provider.allow_fallbacks` is false. `route` is omitted. There is no auto-router plugin. If the response `model` is a different id, the image is discarded, the call is counted as billed, and it is not retried. Images are read from `message.images[].image_url.url` when that value is a base64 data URL. The TypeScript SDK documents that field as generated images, URL or base64. An https URL in that field is not fetched. `usage.cost` is the actual USD when OpenRouter returns it. Otherwise the estimate is shown and marked as an estimate.
++
++A timeout or a dropped connection is an unknown bill. The request is not sent again. The key is the encrypted OpenRouter slot. It is not written to logs. A saved key that is turned off does not use `OPENROUTER_API_KEY`.
++
++One measured `google/gemini-3-pro-image` chat returned two images at about the one-image token price. This client keeps the first `message.images` entry. Whether a second image is always billed was not retested.
++
 +## How to run a controlled paid test locally
 +
 +```bash
@@ -547,9 +577,9 @@ index 0000000..14260f2
 +```
 +
 +1. Open http://localhost:3000/login and sign in as `super@helixstac.app` / `SuperAdmin#2026`.
-+2. Open http://localhost:3000/super/ai. The page lists which provider keys are saved. Paste an OpenAI key in **Provider key** with the provider set to OpenAI, then Save. Paste a fal key in the **fal key** box, tick **Enable fal comparisons**, then **Save fal key**. Do not put either key in git. A greyed High tier means high quality is off. It does not turn a saved OpenAI key off.
++2. Open http://localhost:3000/super/ai. The page lists which provider keys are saved. Paste an OpenAI key in **Provider key** with the provider set to OpenAI, then Save. Paste a fal key in the **fal key** box, tick **Enable fal comparisons**, then **Save fal key**. Paste an OpenRouter key in the **OpenRouter key** box, tick **Enable OpenRouter comparisons**, then **Save OpenRouter key**. Do not put any key in git. A greyed High tier means high quality is off. It does not turn a saved OpenAI key off.
 +3. Optional, no charge: `npm run benchmark:quote`.
-+4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. Leave **Hair-only composite** off unless you want the smaller fallback. Set **Hair texture** to **Curly** when the selfie is curly and the catalogue JPEG is straight. **Comparison model** opens on `gpt-image-2.5-sunburst (recommended)`. `gpt-image-1.5` stays in the list and is labelled as shutting down on 1 Dec 2026. fal models are further down the same list. Those controls are absent until Reference mode is on, and they are absent for a guest. Upload or take a selfie, pick a style, read the texture warning if Image 2 does not match, read that model's estimate (fal shows a range; the rupee figure is the higher end plus the 8% buffer), tick **I understand this makes one paid call for this model and does not retry**, and press **Try this hairstyle**. To compare a second model, change **Comparison model**, read the new estimate, tick the box again, and press **Try this hairstyle** once more. That is a separate call.
++4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. Leave **Hair-only composite** off unless you want the smaller fallback. Set **Hair texture** to **Curly** when the selfie is curly and the catalogue JPEG is straight. **Comparison model** opens on `gpt-image-2.5-sunburst (recommended)`. `gpt-image-1.5` stays in the list and is labelled as shutting down on 1 Dec 2026. fal models are further down the same list. OpenRouter models are after those. They need the OpenRouter key enabled. OpenRouter does not proxy fal.ai. Those controls are absent until Reference mode is on, and they are absent for a guest. Upload or take a selfie, pick a style, read the texture warning if Image 2 does not match, read that model's estimate (fal shows a range; the rupee figure is the higher end plus the 8% buffer), tick **I understand this makes one paid call for this model and does not retry**, and press **Try this hairstyle**. To compare a second model, change **Comparison model**, read the new estimate, tick the box again, and press **Try this hairstyle** once more. That is a separate call.
 +5. The large image is the raw provider output. The download is that raw image. A hair-only composite, when the fallback was on, is the smaller image and is not the download. The raw image stays labelled unvalidated. A neckline shift shows a clothing warning. A face warning says the face may differ and, for the super-admin, shows the landmark score. Open **saved stages** and look at `face-check.png` (green selfie landmarks, red aligned generated landmarks). **Delete now** removes that run, or leave the files for 72 hours. Do not commit the photos. The face check and the optional composite need `pip install -r scripts/requirements-vision.txt`. A missing vision install still returns the raw image after a paid call when the composite box is off. With the composite box on, a missing install is refused before the paid call.
 +6. The benchmark form still works: on `/super/ai`, pick a hairstyle, choose a selfie, tick the confirmation, and press **Run benchmark**. Open the result link. The right image is `provider-response.png`, labelled UNVALIDATED. `validation.json` stays `accepted: false`.
 +
@@ -1079,14 +1109,14 @@ index 0000000..d67207c
 +  });
 +}
 diff --git a/src/app/api/v1/super/ai/route.ts b/src/app/api/v1/super/ai/route.ts
-index b5ba519..0618313 100644
+index b5ba519..6cf02ad 100644
 --- a/src/app/api/v1/super/ai/route.ts
 +++ b/src/app/api/v1/super/ai/route.ts
-@@ -1,14 +1,18 @@
+@@ -1,14 +1,22 @@
  import { NextResponse } from "next/server";
  import { z } from "zod";
 -import { platformAiView, savePlatformAi } from "@/lib/ai/settings-store";
-+import { platformAiView, saveFalKey, savePlatformAi } from "@/lib/ai/settings-store";
++import { platformAiView, saveFalKey, saveOpenRouterKey, savePlatformAi } from "@/lib/ai/settings-store";
  import { requireSuper } from "@/lib/session";
  
  const schema = z.object({
@@ -1101,15 +1131,24 @@ index b5ba519..0618313 100644
 +  falKey: z.string().max(400).optional().default(""),
 +  falEnabled: z.boolean().optional().default(false),
 +  removeFalKey: z.boolean().optional().default(false),
++  openRouterOnly: z.boolean().optional(),
++  openRouterKey: z.string().max(400).optional().default(""),
++  openRouterEnabled: z.boolean().optional().default(false),
++  removeOpenRouterKey: z.boolean().optional().default(false),
  });
  
  export async function GET() {
-@@ -24,7 +28,26 @@ export async function PUT(req: Request) {
+@@ -24,7 +32,31 @@ export async function PUT(req: Request) {
    const parsed = schema.safeParse(await req.json().catch(() => null));
    if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
    try {
 -    await savePlatformAi(parsed.data, access.session.user.id);
-+    if (parsed.data.falOnly) {
++    if (parsed.data.openRouterOnly) {
++      await saveOpenRouterKey(
++        { apiKey: parsed.data.openRouterKey, enabled: parsed.data.openRouterEnabled, remove: parsed.data.removeOpenRouterKey },
++        access.session.user.id,
++      );
++    } else if (parsed.data.falOnly) {
 +      await saveFalKey(
 +        { apiKey: parsed.data.falKey, enabled: parsed.data.falEnabled, remove: parsed.data.removeFalKey },
 +        access.session.user.id,
@@ -1523,7 +1562,7 @@ index 0000000..645eff9
 +  );
 +}
 diff --git a/src/app/super/ai/page.tsx b/src/app/super/ai/page.tsx
-index 6b191bf..dc90809 100644
+index 6b191bf..82068cf 100644
 --- a/src/app/super/ai/page.tsx
 +++ b/src/app/super/ai/page.tsx
 @@ -1,9 +1,12 @@
@@ -1552,7 +1591,7 @@ index 6b191bf..dc90809 100644
        </p>
        <p className="mb-4 max-w-xl text-sm leading-6">
          Test is the default for a new key and for every calibration run. Medium turns on only after you approve it. High stays off until you enable it. Guests use Test until a salon or this page selects a higher tier that is allowed.
-+        Guest Test and Medium still send gpt-image-1-mini, which shuts down on 1 Dec 2026. Guest High still sends gpt-image-1, which shuts down on 23 Oct 2026. Those prices and requests are unchanged. Move a tier only in a later change that updates the estimate and the request together, after the comparison dropdown has been checked. The proposed replacement for new edits is gpt-image-2.5-sunburst, with gpt-image-2.5-flare as the faster check.
++        Guest Test and Medium still send gpt-image-1-mini, which shuts down on 1 Dec 2026. Guest High still sends gpt-image-1, which shuts down on 23 Oct 2026. Those prices and requests are unchanged. Move a tier only in a later change that updates the estimate and the request together, after the comparison dropdown has been checked. The proposed replacement for new edits is gpt-image-2.5-sunburst, with gpt-image-2.5-flare as the faster check. OpenRouter comparisons use their own key on this page. OpenRouter does not proxy fal.ai.
        </p>
        <SuperAiForm initial={initial} />
 +      {squareQuote.ok && (
@@ -1755,7 +1794,7 @@ index 0000000..4850aa0
 +  );
 +}
 diff --git a/src/components/admin/SuperAiForm.tsx b/src/components/admin/SuperAiForm.tsx
-index f6985df..49143bf 100644
+index f6985df..54bfa1a 100644
 --- a/src/components/admin/SuperAiForm.tsx
 +++ b/src/components/admin/SuperAiForm.tsx
 @@ -2,6 +2,7 @@
@@ -1766,7 +1805,7 @@ index f6985df..49143bf 100644
  import type { ImageProviderName, TierRequest } from "@/lib/ai/tiers";
  
  type Panel = {
-@@ -28,6 +29,11 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+@@ -28,6 +29,14 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
    const [calibrationOk, setCalibrationOk] = useState(initial.calibrationOk);
    const [hint, setHint] = useState(initial.hint);
    const [hasKey, setHasKey] = useState(initial.hasKey);
@@ -1775,10 +1814,13 @@ index f6985df..49143bf 100644
 +  const [falKey, setFalKey] = useState(initial.falKey);
 +  const [falDraft, setFalDraft] = useState("");
 +  const [falEnabled, setFalEnabled] = useState(initial.falKey.enabled);
++  const [openRouterKey, setOpenRouterKey] = useState(initial.openRouterKey);
++  const [openRouterDraft, setOpenRouterDraft] = useState("");
++  const [openRouterEnabled, setOpenRouterEnabled] = useState(initial.openRouterKey.enabled);
    const [message, setMessage] = useState("");
    const [busy, setBusy] = useState(false);
    const [panels, setPanels] = useState<Panel[]>([]);
-@@ -37,6 +43,10 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+@@ -37,6 +46,12 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
    function applyView(data: PlatformAiSettings) {
      setHint(data.hint || "");
      setHasKey(Boolean(data.hasKey));
@@ -1786,10 +1828,12 @@ index f6985df..49143bf 100644
 +    setGeminiKey(data.geminiKey);
 +    setFalKey(data.falKey);
 +    setFalEnabled(Boolean(data.falKey?.enabled));
++    setOpenRouterKey(data.openRouterKey);
++    setOpenRouterEnabled(Boolean(data.openRouterKey?.enabled));
      setAllowByo(data.allowByo);
      setHighEnabled(data.highEnabled);
      setMediumApproved(data.mediumApproved);
-@@ -107,6 +117,25 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+@@ -107,6 +122,49 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
      setMessage(data.message || (res.ok ? "Connected." : "The provider rejected that key."));
    }
  
@@ -1812,10 +1856,34 @@ index f6985df..49143bf 100644
 +    setMessage(remove ? "The fal key was removed." : "The fal key was saved.");
 +  }
 +
++  async function saveOpenRouter(remove: boolean) {
++    setBusy(true);
++    setMessage("");
++    const res = await fetch("/api/v1/super/ai", {
++      method: "PUT",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify({
++        openRouterOnly: true,
++        openRouterKey: openRouterDraft,
++        openRouterEnabled,
++        removeOpenRouterKey: remove,
++      }),
++    });
++    const data = await res.json().catch(() => ({}));
++    setBusy(false);
++    if (!res.ok) {
++      setMessage(data.message || "Could not save the OpenRouter key.");
++      return;
++    }
++    applyView(data);
++    setOpenRouterDraft("");
++    setMessage(remove ? "The OpenRouter key was removed." : "The OpenRouter key was saved.");
++  }
++
    return (
      <form
        className="card grid max-w-3xl gap-4 p-5"
-@@ -118,6 +147,19 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+@@ -118,6 +176,24 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
        <p role="status">
          Charged against the cap: ₹{initial.spend.spentInr.toFixed(2)} of ₹{initial.spend.capInr.toFixed(0)} ({initial.spend.calls} calls).
        </p>
@@ -1823,7 +1891,7 @@ index f6985df..49143bf 100644
 +        <p className="font-medium">Saved provider keys</p>
 +        <p>
 +          OpenAI: {openaiKey.saved ? `saved as ${openaiKey.hint}. This key is available for OpenAI guest try-on and for OpenAI comparison models.` : "not saved."}
-+          {" "}Saving a Gemini key or a fal key does not remove it. Enable high quality only unlocks the High tier. A greyed High row means that tier is off. It does not turn the OpenAI key off.
++          {" "}Saving a Gemini key, a fal key, or an OpenRouter key does not remove it. Enable high quality only unlocks the High tier. A greyed High row means that tier is off. It does not turn the OpenAI key off.
 +        </p>
 +        <p>Gemini: {geminiKey.saved ? `saved as ${geminiKey.hint}. Used when the guest provider is Gemini, and for Gemini comparison models.` : "not saved."}</p>
 +        <p>
@@ -1831,11 +1899,16 @@ index f6985df..49143bf 100644
 +            ? `saved as ${falKey.hint}. ${falKey.enabled ? "Comparison calls are on." : "Comparison calls are off until you enable them."}`
 +            : "not saved."}
 +        </p>
++        <p>
++          OpenRouter: {openRouterKey.saved
++            ? `saved as ${openRouterKey.hint}. ${openRouterKey.enabled ? "Comparison calls are on." : "Comparison calls are off until you enable them."}`
++            : "not saved."}
++        </p>
 +      </div>
        <label className="text-sm">
          Provider
          <select className="field mt-1" value={provider} onChange={(event) => setProvider(event.target.value === "gemini" ? "gemini" : "openai")}>
-@@ -151,6 +193,7 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+@@ -151,6 +227,7 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
                  {choice.estimateInr.toFixed(2)}
                  {" / image"}
                  {choice.tier === "test" && choice.inputLongSide > 0 ? ` · input long side ${choice.inputLongSide}px` : ""}
@@ -1843,7 +1916,7 @@ index f6985df..49143bf 100644
                </span>
              </label>
            );
-@@ -176,8 +219,8 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+@@ -176,8 +253,8 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
          />
        </label>
        <p className="text-xs text-muted">
@@ -1854,7 +1927,7 @@ index f6985df..49143bf 100644
        </p>
        <label className="flex items-center gap-2 text-sm">
          <input type="checkbox" checked={allowByo} onChange={(event) => setAllowByo(event.target.checked)} />
-@@ -192,6 +235,34 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+@@ -192,6 +269,62 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
          </button>
        </div>
        {mediumApproved && <p className="text-sm">Medium quality is approved.</p>}
@@ -1884,6 +1957,34 @@ index f6985df..49143bf 100644
 +        <div className="flex flex-wrap gap-2">
 +          <button className="btn secondary" type="button" disabled={busy} onClick={() => void saveFal(false)}>Save fal key</button>
 +          <button className="btn secondary" type="button" disabled={busy || !falKey.saved} onClick={() => void saveFal(true)}>Remove fal key</button>
++        </div>
++      </div>
++      <div className="grid gap-2 border-t border-line pt-4">
++        <p className="text-sm font-medium">OpenRouter key</p>
++        <p className="text-xs text-muted">
++          Separate from the OpenAI, Gemini, and fal keys. Paste it here, tick Enable OpenRouter comparisons, then Save OpenRouter key. Those comparisons read this key. They do not call another provider if it is missing or off. OpenRouter does not proxy fal.ai.
++        </p>
++        <label className="text-sm">
++          OpenRouter key
++          <input
++            className="field mt-1 font-mono"
++            type="password"
++            name="openrouter-key"
++            autoComplete="off"
++            spellCheck={false}
++            aria-label="OpenRouter key"
++            placeholder={openRouterKey.saved ? openRouterKey.hint || "An OpenRouter key is saved" : "Paste the OpenRouter key"}
++            value={openRouterDraft}
++            onChange={(event) => setOpenRouterDraft(event.target.value)}
++          />
++        </label>
++        <label className="flex items-center gap-2 text-sm">
++          <input type="checkbox" checked={openRouterEnabled} onChange={(event) => setOpenRouterEnabled(event.target.checked)} />
++          Enable OpenRouter comparisons
++        </label>
++        <div className="flex flex-wrap gap-2">
++          <button className="btn secondary" type="button" disabled={busy} onClick={() => void saveOpenRouter(false)}>Save OpenRouter key</button>
++          <button className="btn secondary" type="button" disabled={busy || !openRouterKey.saved} onClick={() => void saveOpenRouter(true)}>Remove OpenRouter key</button>
 +        </div>
 +      </div>
        {message && <p role="status">{message}</p>}
@@ -2562,10 +2663,10 @@ index fb6f536..5c3f8d0 100644
  
 diff --git a/src/lib/ai/benchmark.ts b/src/lib/ai/benchmark.ts
 new file mode 100644
-index 0000000..973b248
+index 0000000..8220272
 --- /dev/null
 +++ b/src/lib/ai/benchmark.ts
-@@ -0,0 +1,272 @@
+@@ -0,0 +1,277 @@
 +import { mkdir, writeFile } from "node:fs/promises";
 +import path from "node:path";
 +import sharp from "sharp";
@@ -2619,6 +2720,11 @@ index 0000000..973b248
 +    if (allowed.includes("1024x1024")) return "1024x1024";
 +  }
 +  return editSizeForAspect(width, height, allowed);
++}
++
++/** Medium output-token allowance for one guide size, with the first paid run's margin. */
++export function mediumOutputTokenAllowance(size: EditSize) {
++  return Math.ceil(OUTPUT_TOKEN_TABLE.medium[size] * OUTPUT_TOKEN_MARGIN);
 +}
 +
 +export function estimateImageInputTokens(canvasPixels: number, referencePixels: number) {
@@ -2948,10 +3054,10 @@ index 0000000..bec50ae
 +}
 diff --git a/src/lib/ai/compare-models.ts b/src/lib/ai/compare-models.ts
 new file mode 100644
-index 0000000..b34a492
+index 0000000..f28f0b8
 --- /dev/null
 +++ b/src/lib/ai/compare-models.ts
-@@ -0,0 +1,237 @@
+@@ -0,0 +1,250 @@
 +import path from "node:path";
 +import sharp from "sharp";
 +import { styleById } from "@/data/styles";
@@ -2963,6 +3069,7 @@ index 0000000..b34a492
 +import { buildReferencePrompt } from "@/lib/prompts";
 +import { FAL_COMPARISON_MODELS, quoteFalModel } from "@/lib/ai/fal-models";
 +import { productionModelNotice } from "@/lib/ai/model-notices";
++import { OPENROUTER_COMPARISON_MODELS, quoteOpenRouterModel } from "@/lib/ai/openrouter-models";
 +import { bufferedInr, usdFromTokenCounts } from "@/lib/ai/tiers";
 +
 +/**
@@ -2978,6 +3085,7 @@ index 0000000..b34a492
 + * - The 2.5 parameter table does not list input_fidelity. The explicit omit sentence is only for gpt-image-2.
 + * gemini-3.1-flash-image is the stable image model (Nano Banana 2), preferred over the lite id.
 + * fal-ai/qwen-image-edit-plus is documented ($0.03 per megapixel, image_urls) and is not in this list.
++ * OpenRouter rows are chat completions with image input and image+text output. fal.ai is not proxied.
 + */
 +const OPENAI_AND_GEMINI = [
 +  {
@@ -3021,6 +3129,12 @@ index 0000000..b34a492
 +    warning: row.experimental
 +      ? "Experimental. The cap uses the higher price reading. A timeout is an unknown bill and is not sent again."
 +      : "A timeout is an unknown bill and is not sent again.",
++  })),
++  ...OPENROUTER_COMPARISON_MODELS.map((row) => ({
++    id: row.id,
++    provider: "openrouter" as const,
++    label: row.label,
++    warning: "One OpenRouter model. Provider fallback is off. A timeout is an unknown bill and is not sent again.",
 +  })),
 +];
 +
@@ -3095,6 +3209,11 @@ index 0000000..b34a492
 +    if (!quoted.ok) return quoted;
 +    return { ...quoted, warning: row.warning };
 +  }
++  if (row.provider === "openrouter") {
++    const quoted = quoteOpenRouterModel(row.id, width, height, reference);
++    if (!quoted.ok) return quoted;
++    return { ...quoted, warning: row.warning };
++  }
 +  const caps = imageEditModel(row.id);
 +  if (!caps) {
 +    return { ok: false as const, message: `${row.id} has no image-edit capability row. No other model was substituted.` };
@@ -3163,7 +3282,7 @@ index 0000000..b34a492
 +    textureWarning: textureChoice.warning,
 +    prompt,
 +  };
-+  if (row.provider === "gemini" || row.provider === "fal") {
++  if (row.provider === "gemini" || row.provider === "fal" || row.provider === "openrouter") {
 +    const selfiePng = await sharp(args.jpeg, { failOn: "none" }).rotate().png().toBuffer();
 +    return { ok: true as const, provider: row.provider, planned: null, selfiePng, fitted: null, ...shared };
 +  }
@@ -3219,10 +3338,10 @@ index d1e70fa..7c8563d 100644
    const ids = [...new Set(recent.map((row) => row.tenantId).filter((id) => id.length > 8))];
    const tenants = ids.length
 diff --git a/src/lib/ai/credentials.ts b/src/lib/ai/credentials.ts
-index e1a5dd8..aa7358c 100644
+index e1a5dd8..e828807 100644
 --- a/src/lib/ai/credentials.ts
 +++ b/src/lib/ai/credentials.ts
-@@ -39,3 +39,73 @@ export async function resolveProviderChoice(tenantId: string): Promise<ProviderC
+@@ -39,3 +39,93 @@ export async function resolveProviderChoice(tenantId: string): Promise<ProviderC
    if (platform) return platform;
    return { name: aiProviderName() };
  }
@@ -3293,6 +3412,26 @@ index e1a5dd8..aa7358c 100644
 +    }
 +  }
 +  const envKey = process.env.FAL_KEY?.trim() || "";
++  if (envKey) return { ok: true, apiKey: envKey };
++  return { ok: false, reason: "missing" };
++}
++
++/**
++ * OpenRouter key from its own cipher. A saved key that is not enabled does not fall back to the environment.
++ * No saved key may use OPENROUTER_API_KEY. This comparison does not borrow an OpenAI, Gemini, or fal key.
++ */
++export async function resolveOpenRouterKey(): Promise<{ ok: true; apiKey: string } | { ok: false; reason: "missing" | "off" }> {
++  const cipher = await setting("platform_openrouter_key_cipher");
++  if (cipher) {
++    if ((await setting("platform_openrouter_enabled")) !== "true") return { ok: false, reason: "off" };
++    try {
++      const apiKey = decryptSecret(cipher);
++      if (apiKey) return { ok: true, apiKey };
++    } catch {
++      return { ok: false, reason: "missing" };
++    }
++  }
++  const envKey = process.env.OPENROUTER_API_KEY?.trim() || "";
 +  if (envKey) return { ok: true, apiKey: envKey };
 +  return { ok: false, reason: "missing" };
 +}
@@ -3711,6 +3850,474 @@ index 3c73025..815befb 100644
      this.name = "BilledProviderError";
      this.costUsd = costUsd;
      this.usage = usage;
+diff --git a/src/lib/ai/fal-models.ts b/src/lib/ai/fal-models.ts
+new file mode 100644
+index 0000000..ce6d3df
+--- /dev/null
++++ b/src/lib/ai/fal-models.ts
+@@ -0,0 +1,236 @@
++import { benchmarkRunCapInr } from "@/lib/ai/benchmark";
++import { editSizeForAspect, type EditSize } from "@/lib/ai/edit-request";
++import { bufferedInr, exactInr } from "@/lib/ai/tiers";
++
++/**
++ * Explicit fal edit endpoints. Match the full id. Prices from each model's llms.txt page, fetched 4 Oct 2026.
++ * Where the page does not say whether inputs are billed, the quote keeps both ends and the cap uses the higher one.
++ */
++const OUTPUT_SIZES = ["1024x1024", "1024x1536", "1536x1024"] as const;
++
++export type FalSizeMode = "image_size" | "aspect_ratio";
++
++export type FalModelRow = {
++  id: string;
++  label: string;
++  experimental: boolean;
++  /** The schema lists enable_safety_checker. nano-banana uses safety_tolerance and does not get this field. */
++  safetyChecker: boolean;
++  sizeMode: FalSizeMode;
++  /** Documented maximum image_urls. 0 means the fetched page did not state a maximum. */
++  maxInputs: number;
++};
++
++export const FAL_COMPARISON_MODELS: readonly FalModelRow[] = [
++  {
++    id: "fal-ai/flux-2/edit",
++    label: "fal-ai/flux-2/edit",
++    experimental: false,
++    safetyChecker: true,
++    sizeMode: "image_size",
++    maxInputs: 4,
++  },
++  {
++    id: "fal-ai/flux-2-pro/edit",
++    label: "fal-ai/flux-2-pro/edit",
++    experimental: false,
++    safetyChecker: true,
++    sizeMode: "image_size",
++    maxInputs: 0,
++  },
++  {
++    id: "fal-ai/qwen-image-edit-2511",
++    label: "fal-ai/qwen-image-edit-2511",
++    experimental: false,
++    safetyChecker: true,
++    sizeMode: "image_size",
++    maxInputs: 0,
++  },
++  {
++    id: "fal-ai/bytedance/seedream/v4/edit",
++    label: "fal-ai/bytedance/seedream/v4/edit (experimental)",
++    experimental: true,
++    safetyChecker: true,
++    sizeMode: "image_size",
++    maxInputs: 10,
++  },
++  {
++    id: "fal-ai/flux-2/klein/9b/edit",
++    label: "fal-ai/flux-2/klein/9b/edit (experimental)",
++    experimental: true,
++    safetyChecker: true,
++    sizeMode: "image_size",
++    maxInputs: 4,
++  },
++  {
++    id: "fal-ai/flux-2/klein/4b/edit",
++    label: "fal-ai/flux-2/klein/4b/edit (experimental)",
++    experimental: true,
++    safetyChecker: true,
++    sizeMode: "image_size",
++    maxInputs: 4,
++  },
++  {
++    id: "fal-ai/nano-banana/edit",
++    label: "fal-ai/nano-banana/edit (experimental)",
++    experimental: true,
++    safetyChecker: false,
++    sizeMode: "aspect_ratio",
++    maxInputs: 0,
++  },
++];
++
++export function falModel(id: string) {
++  return FAL_COMPARISON_MODELS.find((row) => row.id === id) ?? null;
++}
++
++export function falOutputSize(width: number, height: number): EditSize {
++  return editSizeForAspect(width, height, OUTPUT_SIZES);
++}
++
++function megapixels(width: number, height: number) {
++  return (Math.max(1, width) * Math.max(1, height)) / 1_000_000;
++}
++
++function roundUpMp(value: number) {
++  return Math.max(1, Math.ceil(value - 1e-9));
++}
++
++export type FalUsdRange = {
++  lowUsd: number;
++  highUsd: number;
++  detail: string;
++};
++
++/**
++ * Dollar range before the 8% INR buffer.
++ * A model that resizes each input to 1MP uses 1 MP as the low input reading and one MP per input as the high reading.
++ * A page that only says "per megapixel" uses output-only as the low end and the higher of actual pixels or 1 MP per input as the high end.
++ */
++export function falUsdRange(
++  id: string,
++  output: EditSize,
++  inputs: { width: number; height: number }[],
++): FalUsdRange | null {
++  const [outW, outH] = output.split("x").map((part) => Number(part));
++  const outMp = megapixels(outW, outH);
++  const count = Math.max(1, inputs.length);
++  const actualIn = inputs.reduce((sum, image) => sum + megapixels(image.width, image.height), 0);
++  if (id === "fal-ai/flux-2/edit" || id === "fal-ai/flux-2/klein/9b/edit") {
++    const rate = id.endsWith("/9b/edit") ? 0.011 : 0.012;
++    return {
++      lowUsd: (1 + outMp) * rate,
++      highUsd: (count + outMp) * rate,
++      detail: `$${rate} per megapixel of input and output. The page resizes each input to 1MP. The low end counts the inputs as 1MP together. The high end counts ${count} input megapixels. Which of those fal bills was not stated beyond the one-input example.`,
++    };
++  }
++  if (id === "fal-ai/flux-2-pro/edit") {
++    const outUnits = roundUpMp(outMp);
++    const outputUsd = 0.03 + Math.max(0, outUnits - 1) * 0.015;
++    const inputUnits = inputs.reduce((sum, image) => sum + roundUpMp(megapixels(image.width, image.height)), 0);
++    return {
++      lowUsd: outputUsd,
++      highUsd: outputUsd + inputUnits * 0.015,
++      detail: "$0.03 for the first output megapixel, then $0.015 per extra megapixel of input and output, rounded up. The low end is output only. The high end rounds up each input image. The fetched page did not state a maximum of 9 references.",
++    };
++  }
++  if (id === "fal-ai/qwen-image-edit-2511" || id === "fal-ai/flux-2/klein/4b/edit") {
++    const rate = id.endsWith("/4b/edit") ? 0.01 : 0.03;
++    const billedIn = Math.max(count, actualIn);
++    return {
++      lowUsd: outMp * rate,
++      highUsd: (billedIn + outMp) * rate,
++      detail: `$${rate} per megapixel. The page does not say whether inputs are included. The low end is the output only. The high end bills the larger of actual input pixels or 1MP for each input.`,
++    };
++  }
++  if (id === "fal-ai/bytedance/seedream/v4/edit") {
++    return {
++      lowUsd: 0.03,
++      highUsd: 0.03,
++      detail: "$0.03 per image. The page prices the output image, not extra megapixels. image_size is sent explicitly so the 2048 default is not used. Minimum area is 921,600 pixels.",
++    };
++  }
++  if (id === "fal-ai/nano-banana/edit") {
++    return {
++      lowUsd: 0.039,
++      highUsd: 0.039,
++      detail: "$0.039 per image. aspect_ratio is sent (2:3, 3:2, or 1:1). The page does not add an input megapixel term.",
++    };
++  }
++  return null;
++}
++
++export function quoteFalModel(id: string, width: number, height: number, reference = { width: 512, height: 512 }) {
++  const row = falModel(id);
++  if (!row) return { ok: false as const, message: `${id} is not a configured comparison model. No other model was substituted.` };
++  const size = falOutputSize(width, height);
++  const range = falUsdRange(id, size, [
++    { width, height },
++    reference,
++  ]);
++  if (!range) return { ok: false as const, message: `${id} has no documented price. The request was not sent.` };
++  const estimateUsd = range.highUsd;
++  const estimateInr = bufferedInr(estimateUsd);
++  const capInr = benchmarkRunCapInr();
++  if (estimateInr > capInr) {
++    return {
++      ok: false as const,
++      message: `This comparison is about ₹${estimateInr.toFixed(2)}, above the ₹${capInr.toFixed(0)} run cap. It was not sent.`,
++    };
++  }
++  const [outW, outH] = size.split("x").map((part) => Number(part));
++  if (id === "fal-ai/bytedance/seedream/v4/edit" && outW * outH < 921_600) {
++    return { ok: false as const, message: `${id} needs an output of at least 921,600 pixels. The request was not sent.` };
++  }
++  const lowInr = exactInr(range.lowUsd);
++  const highInr = exactInr(range.highUsd);
++  const rangeText = lowInr === highInr ? `about ₹${highInr.toFixed(2)}` : `₹${lowInr.toFixed(2)}–₹${highInr.toFixed(2)}`;
++  return {
++    ok: true as const,
++    provider: "fal" as const,
++    model: row.id,
++    quality: "edit",
++    size,
++    outputFormat: "png" as const,
++    inputFidelity: null,
++    n: 1 as const,
++    estimateUsd,
++    estimateInr,
++    capInr,
++    outputTokens: 0,
++    outputUsd: range.highUsd,
++    imageInputTokens: 0,
++    imageInputUsd: 0,
++    textInputTokens: 0,
++    textInputUsd: 0,
++    inputSizeMode: "native" as const,
++    rangeLowInr: lowInr,
++    rangeHighInr: highInr,
++    note: `Estimate ${rangeText} at FX 96 before the 8% buffer. The figure used for the ₹${capInr.toFixed(0)} cap is the higher end with that buffer (₹${estimateInr.toFixed(2)}). ${range.detail} fal does not report token usage, so a finished call is billed at this estimate. Not an invoice.`,
++  };
++}
++
++export function falAspectRatio(size: EditSize) {
++  if (size === "1024x1536") return "2:3";
++  if (size === "1536x1024") return "3:2";
++  return "1:1";
++}
++
++/** JSON body for one edit. image_urls is selfie then the hairstyle reference. Seed, mask, and guidance are omitted. */
++export function buildFalEditBody(id: string, args: { prompt: string; selfieUrl: string; referenceUrl: string; size: EditSize }) {
++  const row = falModel(id);
++  if (!row) return null;
++  if (row.maxInputs > 0 && row.maxInputs < 2) return null;
++  const [width, height] = args.size.split("x").map((part) => Number(part));
++  const body: Record<string, unknown> = {
++    prompt: args.prompt,
++    image_urls: [args.selfieUrl, args.referenceUrl],
++    num_images: 1,
++  };
++  if (row.sizeMode === "aspect_ratio") body.aspect_ratio = falAspectRatio(args.size);
++  else body.image_size = { width, height };
++  if (row.id === "fal-ai/bytedance/seedream/v4/edit") body.max_images = 1;
++  if (row.safetyChecker) body.enable_safety_checker = true;
++  if (row.id !== "fal-ai/bytedance/seedream/v4/edit") body.output_format = "png";
++  return body;
++}
+diff --git a/src/lib/ai/fal-reference.ts b/src/lib/ai/fal-reference.ts
+new file mode 100644
+index 0000000..7fb2854
+--- /dev/null
++++ b/src/lib/ai/fal-reference.ts
+@@ -0,0 +1,220 @@
++import sharp from "sharp";
++import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
++import { buildFalEditBody, falModel } from "@/lib/ai/fal-models";
++import type { EditSize } from "@/lib/ai/edit-request";
++import { numberEnv } from "@/lib/env";
++
++const QUEUE_ORIGIN = "https://queue.fal.run";
++const REST_ORIGIN = "https://rest.fal.ai";
++
++/** fal retries a failed queue request up to 10 times. This header turns that off. */
++export function falSubmitHeaders(apiKey: string): Record<string, string> {
++  return {
++    Authorization: `Key ${apiKey}`,
++    "Content-Type": "application/json",
++    "X-Fal-No-Retry": "1",
++  };
++}
++
++function scrub(text: string) {
++  return text.replace(/sk-[A-Za-z0-9_\-]{8,}/g, "sk-[redacted]").replace(/AIza[0-9A-Za-z\-_]{8,}/g, "AIza[redacted]").replace(/Key\s+[^\s"]+/gi, "Key [redacted]").slice(0, 400);
++}
++
++function sameOrigin(url: string, origin: string) {
++  try {
++    return new URL(url).origin === origin;
++  } catch {
++    return false;
++  }
++}
++
++async function imageLooksBlocked(bytes: Buffer, nsfw?: boolean[]) {
++  const stats = await sharp(bytes, { failOn: "none" }).stats();
++  const mean = stats.channels.reduce((sum, channel) => sum + channel.mean, 0) / Math.max(1, stats.channels.length);
++  const black = mean < 8;
++  const flagged = Array.isArray(nsfw) && nsfw.some(Boolean);
++  return black || flagged;
++}
++
++type FetchImpl = typeof fetch;
++
++async function uploadOne(args: {
++  fetchImpl: FetchImpl;
++  apiKey: string;
++  bytes: Buffer;
++  fileName: string;
++  contentType: string;
++}) {
++  let initiate: Response;
++  try {
++    initiate = await args.fetchImpl(`${REST_ORIGIN}/storage/upload/initiate?storage_type=fal-cdn-v3`, {
++      method: "POST",
++      headers: {
++        Authorization: `Key ${args.apiKey}`,
++        "Content-Type": "application/json",
++        "X-Fal-Object-Lifecycle-Preference": JSON.stringify({ expiration_duration_seconds: 3600 }),
++      },
++      body: JSON.stringify({ file_name: args.fileName, content_type: args.contentType }),
++      signal: AbortSignal.timeout(20_000),
++    });
++  } catch {
++    throw new UnbilledProviderError("The fal upload did not start. No edit was submitted.");
++  }
++  if (initiate.status === 401 || initiate.status === 403) {
++    throw new UnbilledProviderError("fal rejected the key before an edit was submitted.");
++  }
++  if (!initiate.ok) throw new UnbilledProviderError("The fal upload was refused. No edit was submitted.");
++  const payload = (await initiate.json()) as { upload_url?: string; file_url?: string };
++  if (!payload.upload_url || !payload.file_url || !payload.upload_url.startsWith("https://") || !payload.file_url.startsWith("https://")) {
++    throw new UnbilledProviderError("fal did not return an upload URL. No edit was submitted.");
++  }
++  let put: Response;
++  try {
++    put = await args.fetchImpl(payload.upload_url, {
++      method: "PUT",
++      headers: { "Content-Type": args.contentType },
++      body: new Uint8Array(args.bytes),
++      signal: AbortSignal.timeout(30_000),
++    });
++  } catch {
++    throw new UnbilledProviderError("The fal upload did not finish. No edit was submitted.");
++  }
++  if (!put.ok) throw new UnbilledProviderError("The fal upload was refused. No edit was submitted.");
++  return payload.file_url;
++}
++
++/**
++ * One queue submit, then poll. X-Fal-No-Retry is always sent.
++ * A timeout after the submit is an unknown bill. The submit is not repeated.
++ * Input CDN files are not deleted: the payloads API leaves input files in place. The upload sets a 1 hour expiry instead.
++ */
++export async function postFalReferenceEdit(args: {
++  apiKey: string;
++  endpointId: string;
++  prompt: string;
++  selfiePng: Buffer;
++  referenceJpeg: Buffer;
++  size: EditSize;
++  estimateUsd: number;
++  fetchImpl?: FetchImpl;
++  now?: () => number;
++  deadlineMs?: number;
++  sleep?: (ms: number) => Promise<void>;
++}) {
++  const row = falModel(args.endpointId);
++  if (!row) throw new UnknownModelError(`${args.endpointId} is not a configured fal edit. No other model was called.`);
++  const fetchImpl = args.fetchImpl ?? fetch;
++  const now = args.now ?? Date.now;
++  const deadlineMs = args.deadlineMs ?? numberEnv("FAL_QUEUE_DEADLINE_MS", 180_000);
++  const sleep = args.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
++  const selfieUrl = await uploadOne({ fetchImpl, apiKey: args.apiKey, bytes: args.selfiePng, fileName: "selfie.png", contentType: "image/png" });
++  const referenceUrl = await uploadOne({ fetchImpl, apiKey: args.apiKey, bytes: args.referenceJpeg, fileName: "style-reference.jpg", contentType: "image/jpeg" });
++  const body = buildFalEditBody(row.id, { prompt: args.prompt, selfieUrl, referenceUrl, size: args.size });
++  if (!body) throw new UnknownModelError(`${row.id} is not a configured fal edit. No other model was called.`);
++  const started = now();
++  const deadline = started + deadlineMs;
++  let submitted = false;
++  let requestId = "";
++  let statusUrl = "";
++  try {
++    const response = await fetchImpl(`${QUEUE_ORIGIN}/${row.id}`, {
++      method: "POST",
++      headers: falSubmitHeaders(args.apiKey),
++      body: JSON.stringify(body),
++      signal: AbortSignal.timeout(30_000),
++    });
++    submitted = true;
++    const text = await response.text();
++    if (response.status === 401 || response.status === 403) {
++      throw new UnbilledProviderError("fal rejected the key. The edit was not accepted.");
++    }
++    let payload: { request_id?: string; status_url?: string; error?: string } = {};
++    try {
++      payload = JSON.parse(text) as typeof payload;
++    } catch {
++      payload = {};
++    }
++    if (!response.ok || !payload.request_id) {
++      if (response.status >= 400 && response.status < 500) {
++        throw new UnbilledProviderError(scrub(payload.error || "fal refused the edit before it was queued."));
++      }
++      throw new UncertainBillingError("fal did not confirm the queue request. It was not submitted again.");
++    }
++    requestId = payload.request_id;
++    const expected = `${QUEUE_ORIGIN}/${row.id}/requests/${requestId}/status`;
++    statusUrl = payload.status_url && payload.status_url.startsWith(expected) ? payload.status_url : expected;
++    if (!sameOrigin(statusUrl, QUEUE_ORIGIN)) statusUrl = expected;
++  } catch (error) {
++    if (error instanceof UnbilledProviderError || error instanceof UncertainBillingError || error instanceof UnknownModelError) throw error;
++    if (submitted) throw new UncertainBillingError("The fal queue request left this server and the reply was lost. It was not submitted again.");
++    throw new UncertainBillingError("The fal queue request timed out. It was not submitted again.");
++  }
++
++  let completed = false;
++  let resultUrl = `${QUEUE_ORIGIN}/${row.id}/requests/${requestId}`;
++  while (now() < deadline) {
++    let statusResponse: Response;
++    try {
++      statusResponse = await fetchImpl(statusUrl, {
++        headers: { Authorization: `Key ${args.apiKey}` },
++        signal: AbortSignal.timeout(15_000),
++      });
++    } catch {
++      await sleep(2_000);
++      continue;
++    }
++    if (!statusResponse.ok) {
++      await sleep(2_000);
++      continue;
++    }
++    const status = (await statusResponse.json()) as { status?: string; response_url?: string; error?: string };
++    if (status.status === "COMPLETED") {
++      completed = true;
++      if (status.response_url && status.response_url.startsWith(`${QUEUE_ORIGIN}/${row.id}/requests/${requestId}`)) {
++        resultUrl = status.response_url;
++      }
++      if (status.error) {
++        throw new BilledProviderError(args.estimateUsd, undefined, `fal finished with an error. The call was not retried. ${scrub(status.error)}`);
++      }
++      break;
++    }
++    await sleep(2_000);
++  }
++  if (!completed) {
++    throw new UncertainBillingError("The fal edit did not finish before the deadline. The queue request was not submitted again.");
++  }
++
++  const resultResponse = await fetchImpl(resultUrl, {
++    headers: { Authorization: `Key ${args.apiKey}` },
++    signal: AbortSignal.timeout(20_000),
++  }).catch(() => {
++    throw new UncertainBillingError("fal marked the edit complete and the result could not be read. It was not submitted again.");
++  });
++  if (!resultResponse.ok) {
++    throw new UncertainBillingError("fal marked the edit complete and the result was refused. It was not submitted again.");
++  }
++  const result = (await resultResponse.json()) as {
++    images?: { url?: string }[];
++    has_nsfw_concepts?: boolean[];
++  };
++  const imageUrl = result.images?.[0]?.url || "";
++  if (!imageUrl.startsWith("https://")) {
++    throw new BilledProviderError(args.estimateUsd, undefined, "fal finished without an image URL. The call was not retried.");
++  }
++  const imageResponse = await fetchImpl(imageUrl, { signal: AbortSignal.timeout(30_000) }).catch(() => {
++    throw new UncertainBillingError("The fal image URL could not be downloaded. The edit was not submitted again.");
++  });
++  if (!imageResponse.ok) {
++    throw new UncertainBillingError("The fal image URL was refused. The edit was not submitted again.");
++  }
++  const bytes = Buffer.from(await imageResponse.arrayBuffer());
++  if (await imageLooksBlocked(bytes, result.has_nsfw_concepts)) {
++    throw new BilledProviderError(
++      args.estimateUsd,
++      undefined,
++      "The safety checker blocked this image. fal returned a black frame or marked it unsafe. The call was not retried.",
++    );
++  }
++  const png = await sharp(bytes, { failOn: "none" }).rotate().png().toBuffer();
++  return { image: png, requestId };
++}
 diff --git a/src/lib/ai/frame.ts b/src/lib/ai/frame.ts
 new file mode 100644
 index 0000000..f576f12
@@ -3905,6 +4512,28 @@ index 965209b..454b66f 100644
  /** Headers a guest is allowed to see. No model, provider, or cost. */
  export function guestPreviewHeaders(args: { tryOnId: string; creditsLeft: number; demoReason?: string }) {
    return {
+diff --git a/src/lib/ai/model-notices.ts b/src/lib/ai/model-notices.ts
+new file mode 100644
+index 0000000..8a7c98c
+--- /dev/null
++++ b/src/lib/ai/model-notices.ts
+@@ -0,0 +1,16 @@
++/**
++ * Shutdown dates from https://developers.openai.com/api/docs/deprecations fetched 4 Oct 2026.
++ * These notices do not change the request or the price.
++ */
++export function productionModelNotice(model: string) {
++  if (model === "gpt-image-1-mini") {
++    return "Shuts down 1 Dec 2026. This tier still sends gpt-image-1-mini. The price and the request are unchanged.";
++  }
++  if (model === "gpt-image-1") {
++    return "Shuts down 23 Oct 2026. This tier still sends gpt-image-1. The price and the request are unchanged.";
++  }
++  if (model === "gpt-image-1.5") {
++    return "Shuts down 1 Dec 2026. The deprecations page names gpt-image-2.5-sunburst or gpt-image-2.5-flare as the replacement. Selecting this still sends gpt-image-1.5.";
++  }
++  return "";
++}
 diff --git a/src/lib/ai/openai.ts b/src/lib/ai/openai.ts
 index 11d68e8..e9e879b 100644
 --- a/src/lib/ai/openai.ts
@@ -4052,10 +4681,10 @@ index 0000000..776a70d
 +}
 diff --git a/src/lib/ai/reference-run.ts b/src/lib/ai/reference-run.ts
 new file mode 100644
-index 0000000..ce6339d
+index 0000000..8de30dd
 --- /dev/null
 +++ b/src/lib/ai/reference-run.ts
-@@ -0,0 +1,575 @@
+@@ -0,0 +1,607 @@
 +import { randomUUID } from "node:crypto";
 +import { rm } from "node:fs/promises";
 +import { NextResponse } from "next/server";
@@ -4067,8 +4696,9 @@ index 0000000..ce6339d
 +import { assertVisionReady } from "@/lib/face/vision-assets";
 +import type { DriftReport } from "@/lib/face/hair-composite";
 +import { assessClothing } from "@/lib/ai/clothing-check";
-+import { resolveFalKey, resolveGeminiKey, resolveOpenAIKey } from "@/lib/ai/credentials";
++import { resolveFalKey, resolveGeminiKey, resolveOpenAIKey, resolveOpenRouterKey } from "@/lib/ai/credentials";
 +import { postFalReferenceEdit } from "@/lib/ai/fal-reference";
++import { postOpenRouterReferenceEdit } from "@/lib/ai/openrouter-reference";
 +import type { EditSize } from "@/lib/ai/edit-request";
 +import { editFormFields } from "@/lib/ai/edit-request";
 +import { postGeminiReferenceEdit } from "@/lib/ai/gemini-reference";
@@ -4113,7 +4743,7 @@ index 0000000..ce6339d
 +  ok: true;
 +  id: string;
 +  callId: string;
-+  provider: "openai" | "gemini" | "fal";
++  provider: "openai" | "gemini" | "fal" | "openrouter";
 +  model: string;
 +  quality: string;
 +  size: string;
@@ -4191,6 +4821,20 @@ index 0000000..ce6339d
 +      };
 +    }
 +    apiKey = fal.apiKey;
++  } else if (provider === "openrouter") {
++    const openrouter = await resolveOpenRouterKey();
++    if (!openrouter.ok) {
++      return {
++        ok: false,
++        httpStatus: 400,
++        error: "NO_OPENROUTER_KEY",
++        outcome: "key",
++        message: openrouter.reason === "off"
++          ? "The OpenRouter key is saved and comparisons are off. Enable it on AI settings. This comparison does not call OpenAI, Gemini, or fal instead."
++          : "Add an OpenRouter key on AI settings and enable it. This comparison does not call OpenAI, Gemini, or fal instead.",
++      };
++    }
++    apiKey = openrouter.apiKey;
 +  } else apiKey = await resolveOpenAIKey();
 +  if (!apiKey) {
 +    return provider === "gemini"
@@ -4320,6 +4964,21 @@ index 0000000..ce6339d
 +      });
 +      usage = undefined;
 +      providerResponse = fal.image;
++    } else if (provider === "openrouter") {
++      const prompt = "prompt" in prepared ? prepared.prompt : planned?.prompt || "";
++      const selfieMeta = await sharp(inputPng, { failOn: "none" }).metadata();
++      const openrouter = await postOpenRouterReferenceEdit({
++        apiKey,
++        modelId: quote.model,
++        prompt,
++        selfiePng: inputPng,
++        referenceJpeg: reference,
++        width: selfieMeta.width || 1,
++        height: selfieMeta.height || 1,
++        estimateUsd: quote.estimateUsd,
++      });
++      usage = openrouter.usage;
++      providerResponse = openrouter.image;
 +    } else {
 +      if (!planned) {
 +        throw new UnknownModelError(`${quote.model} is not a configured image-edit model. No other model was called.`);
@@ -4439,6 +5098,8 @@ index 0000000..ce6339d
 +    const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
 +    let message = `Unvalidated model output. The raw provider image is the result. One provider call. No mask, no face paste, no retry.${clothingNote}`;
 +    if (costIsEstimate && provider === "fal") message += " The shown cost is the conservative estimate. fal did not report usage.";
++    if (provider === "openrouter" && costIsEstimate) message += " The shown cost is the estimate. OpenRouter did not return usage.cost.";
++    if (provider === "openrouter" && !costIsEstimate) message += " The shown cost is usage.cost from OpenRouter.";
 +    if (rawDrift?.flagged) message += " Face may differ from your photo.";
 +    if (args.hairComposite && compositePng) {
 +      message += " Hair-only composite saved separately as an optional fallback. It is not the download.";
@@ -4773,10 +5434,10 @@ index ce5b6c1..bc33dcc 100644
      return demoFallback(input, "mock:placement", "placement");
    }
 diff --git a/src/lib/ai/settings-store.ts b/src/lib/ai/settings-store.ts
-index f1bd932..0526113 100644
+index f1bd932..60fcccf 100644
 --- a/src/lib/ai/settings-store.ts
 +++ b/src/lib/ai/settings-store.ts
-@@ -17,10 +17,15 @@ export type SalonAiSettings = {
+@@ -17,10 +17,16 @@ export type SalonAiSettings = {
    highEnabled: boolean;
  };
  
@@ -4789,10 +5450,11 @@ index f1bd932..0526113 100644
 +  openaiKey: StoredKeyStatus;
 +  geminiKey: StoredKeyStatus;
 +  falKey: StoredKeyStatus & { enabled: boolean };
++  openRouterKey: StoredKeyStatus & { enabled: boolean };
  };
  
  /** @deprecated Salon pages use SalonAiSettings. Super pages use PlatformAiSettings. */
-@@ -54,14 +59,44 @@ export async function readTierFlags(tenantId: string) {
+@@ -54,14 +60,44 @@ export async function readTierFlags(tenantId: string) {
    return { stored, highEnabled: gate.highEnabled, mediumApproved: gate.mediumApproved };
  }
  
@@ -4841,17 +5503,21 @@ index f1bd932..0526113 100644
      allowByo: await allowByoKey(),
      tier: gate.platformTier,
      mediumApproved: gate.mediumApproved,
-@@ -69,6 +104,9 @@ export async function platformAiView(): Promise<PlatformAiSettings> {
+@@ -69,6 +105,13 @@ export async function platformAiView(): Promise<PlatformAiSettings> {
      calibrationOk: gate.calibrationOk,
      choices: { openai: tierCatalog("openai"), gemini: tierCatalog("gemini") },
      spend: await spendSummary(),
 +    openaiKey,
 +    geminiKey,
 +    falKey: { ...fal, enabled: fal.saved && (await setting("platform_fal_enabled")) === "true" },
++    openRouterKey: {
++      ...(await storedStatus("platform_openrouter_key_cipher", "platform_openrouter_key_hint")),
++      enabled: Boolean(await setting("platform_openrouter_key_cipher")) && (await setting("platform_openrouter_enabled")) === "true",
++    },
    };
  }
  
-@@ -99,18 +137,73 @@ function freshKey(raw: string) {
+@@ -99,18 +142,109 @@ function freshKey(raw: string) {
    return trimmed;
  }
  
@@ -4859,6 +5525,13 @@ index f1bd932..0526113 100644
 +  const trimmed = raw.trim();
 +  if (!trimmed || trimmed.startsWith("•")) return null;
 +  if (!/^[A-Za-z0-9_\-.:]{12,400}$/.test(trimmed)) throw new Error("INVALID_KEY");
++  return trimmed;
++}
++
++function freshOpenRouterKey(raw: string) {
++  const trimmed = raw.trim();
++  if (!trimmed || trimmed.startsWith("•")) return null;
++  if (!/^[A-Za-z0-9_\-.]{12,400}$/.test(trimmed)) throw new Error("INVALID_KEY");
 +  return trimmed;
 +}
 +
@@ -4903,6 +5576,35 @@ index f1bd932..0526113 100644
 +  });
 +}
 +
++export async function saveOpenRouterKey(
++  input: { apiKey: string; enabled: boolean; remove: boolean },
++  actorId: string,
++) {
++  if (input.remove) {
++    await putSetting("platform_openrouter_key_cipher", "");
++    await putSetting("platform_openrouter_key_hint", "");
++    await putSetting("platform_openrouter_enabled", "false");
++  } else {
++    const next = freshOpenRouterKey(input.apiKey);
++    if (next) {
++      await putSetting("platform_openrouter_key_cipher", encryptSecret(next));
++      await putSetting("platform_openrouter_key_hint", keyHint(next));
++    } else if (!(await setting("platform_openrouter_key_cipher")) && input.apiKey.trim()) {
++      throw new Error("INVALID_KEY");
++    }
++    const saved = Boolean(await setting("platform_openrouter_key_cipher"));
++    await putSetting("platform_openrouter_enabled", saved && input.enabled ? "true" : "false");
++  }
++  await prisma.auditLog.create({
++    data: {
++      actorId,
++      action: "AI_KEY_UPDATE",
++      target: "platform",
++      meta: JSON.stringify({ provider: "openrouter", rotated: Boolean(input.apiKey.trim()), removed: input.remove, enabled: input.enabled }),
++    },
++  });
++}
++
  export async function savePlatformAi(
    input: { provider: "openai" | "gemini"; apiKey: string; allowByo: boolean; tier: ModelTier; highEnabled: boolean },
    actorId: string,
@@ -4927,7 +5629,7 @@ index f1bd932..0526113 100644
      await putSetting("platform_ai_tier", "test");
      await putSetting("platform_ai_medium_approved", "false");
      await putSetting("platform_ai_calibration_ok", "false");
-@@ -119,6 +212,14 @@ export async function savePlatformAi(
+@@ -119,6 +253,14 @@ export async function savePlatformAi(
      if (tier === "high" && !input.highEnabled) tier = "test";
      if (tier === "medium" && !gate.mediumApproved) tier = "test";
      await putSetting("platform_ai_tier", tier);
@@ -5065,10 +5767,19 @@ index f225ca0..0c9e069 100644
 +  return readFileSync(file);
 +}
 diff --git a/src/lib/ai/tiers.ts b/src/lib/ai/tiers.ts
-index 903e2ae..39f4c17 100644
+index 903e2ae..73fee3a 100644
 --- a/src/lib/ai/tiers.ts
 +++ b/src/lib/ai/tiers.ts
-@@ -129,8 +129,14 @@ export function resolveGuestTier(args: {
+@@ -12,6 +12,8 @@ export type UsageNumbers = {
+   textTokens?: number;
+   imageTokens?: number;
+   thoughtTokens?: number;
++  /** Provider-reported USD, such as OpenRouter usage.cost. Preferred over a token reconstruction. */
++  reportedCostUsd?: number;
+ };
+ 
+ export type TierRequest = {
+@@ -129,8 +131,14 @@ export function resolveGuestTier(args: {
  type TokenRates = { textIn: number; imageIn: number; imageOut: number; textOut: number };
  
  function tokenRates(model: string): TokenRates | null {
@@ -5084,7 +5795,17 @@ index 903e2ae..39f4c17 100644
    if (model.includes("flash-lite-image")) return { textIn: 0.25, imageIn: 0.25, imageOut: 30, textOut: 1.5 };
    if (model.includes("flash-image")) return { textIn: 0.5, imageIn: 0.5, imageOut: 60, textOut: 3 };
    return null;
-@@ -156,6 +162,14 @@ export function costUsdFromUsage(model: string, usage: UsageNumbers | undefined)
+@@ -139,6 +147,9 @@ function tokenRates(model: string): TokenRates | null {
+ /** USD from token usage. Null when the response has no usable counts or the model has no rate table. */
+ export function costUsdFromUsage(model: string, usage: UsageNumbers | undefined): number | null {
+   if (!usage) return null;
++  if (typeof usage.reportedCostUsd === "number" && Number.isFinite(usage.reportedCostUsd) && usage.reportedCostUsd >= 0) {
++    return Math.round(usage.reportedCostUsd * 1_000_000) / 1_000_000;
++  }
+   const rates = tokenRates(model);
+   if (!rates) return null;
+   const output = usage.outputTokens ?? 0;
+@@ -156,6 +167,14 @@ export function costUsdFromUsage(model: string, usage: UsageNumbers | undefined)
    return Math.round(usd * 1_000_000) / 1_000_000;
  }
  
@@ -6676,6 +7397,300 @@ index 0000000..f36d143
 +    expect(parts.parts[2]).toEqual({ text: ready.prompt });
 +    expect("inlineData" in parts.parts[0] && parts.parts[0].inlineData.mimeType).toBe("image/png");
 +    expect("inlineData" in parts.parts[1] && parts.parts[1].inlineData.mimeType).toBe("image/jpeg");
++  });
++});
+diff --git a/tests/unit/fal-compare.test.ts b/tests/unit/fal-compare.test.ts
+new file mode 100644
+index 0000000..998d226
+--- /dev/null
++++ b/tests/unit/fal-compare.test.ts
+@@ -0,0 +1,288 @@
++import sharp from "sharp";
++import { afterEach, describe, expect, it } from "vitest";
++import { COMPARISON_MODELS, comparisonModel, quoteComparisonModel } from "@/lib/ai/compare-models";
++import { resolveFalKey, resolveOpenAIKey } from "@/lib/ai/credentials";
++import { BilledProviderError, UncertainBillingError } from "@/lib/ai/errors";
++import { buildFalEditBody, falModel } from "@/lib/ai/fal-models";
++import { falSubmitHeaders, postFalReferenceEdit } from "@/lib/ai/fal-reference";
++import { productionModelNotice } from "@/lib/ai/model-notices";
++import { executeReferenceEdit } from "@/lib/ai/reference-run";
++import { saveFalKey, savePlatformAi } from "@/lib/ai/settings-store";
++import { tierRequest } from "@/lib/ai/tiers";
++import { encryptSecret } from "@/lib/crypto/secret";
++import { prisma } from "@/lib/prisma";
++
++const portrait = { width: 512, height: 512 };
++
++function json(body: unknown, status = 200) {
++  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
++}
++
++describe("fal and shutdown catalogue", () => {
++  afterEach(async () => {
++    await prisma.platformSetting.deleteMany({
++      where: {
++        key: {
++          in: [
++            "platform_openai_key_cipher",
++            "platform_openai_key_hint",
++            "platform_gemini_key_cipher",
++            "platform_gemini_key_hint",
++            "platform_ai_key_cipher",
++            "platform_ai_key_hint",
++            "platform_ai_provider",
++            "platform_fal_key_cipher",
++            "platform_fal_key_hint",
++            "platform_fal_enabled",
++          ],
++        },
++      },
++    });
++    await prisma.aiCall.deleteMany();
++    delete process.env.FAL_KEY;
++    delete process.env.FAL_QUEUE_DEADLINE_MS;
++  });
++
++  it("defaults to sunburst, keeps shutdown warnings, and refuses a prefix", () => {
++    expect(COMPARISON_MODELS[0]?.id).toBe("gpt-image-2.5-sunburst");
++    expect(comparisonModel("gpt-image-2.5")).toBeNull();
++    expect(comparisonModel("fal-ai/flux-2")).toBeNull();
++    expect(comparisonModel("fal-ai/qwen-image-edit-plus")).toBeNull();
++    expect(comparisonModel("gpt-image-1.5")?.label).toContain("1 Dec 2026");
++    expect(productionModelNotice("gpt-image-1-mini")).toContain("1 Dec 2026");
++    expect(productionModelNotice("gpt-image-1")).toContain("23 Oct 2026");
++    const testTier = tierRequest("openai", "test");
++    const medium = tierRequest("openai", "medium");
++    const high = tierRequest("openai", "high");
++    expect(testTier.model).toBe("gpt-image-1-mini");
++    expect(medium.model).toBe("gpt-image-1-mini");
++    expect(high.model).toBe("gpt-image-1");
++    expect(testTier.quality).toBe("low");
++    expect(high.quality).toBe("high");
++    expect(testTier.estimateInr).toBeGreaterThan(0);
++    expect(high.estimateInr).toBeGreaterThan(testTier.estimateInr);
++  });
++
++  it("quotes the documented 1024x1536 range and builds image_urls in order", () => {
++    const cases: [string, number, number][] = [
++      ["fal-ai/flux-2/edit", 2.96, 4.12],
++      ["fal-ai/flux-2-pro/edit", 4.32, 7.2],
++      ["fal-ai/qwen-image-edit-2511", 4.53, 10.29],
++      ["fal-ai/bytedance/seedream/v4/edit", 2.88, 2.88],
++      ["fal-ai/flux-2/klein/9b/edit", 2.72, 3.77],
++      ["fal-ai/flux-2/klein/4b/edit", 1.51, 3.43],
++      ["fal-ai/nano-banana/edit", 3.74, 3.74],
++    ];
++    for (const [id, low, high] of cases) {
++      const quote = quoteComparisonModel(id, 480, 640, portrait);
++      expect(quote.ok, id).toBe(true);
++      if (!quote.ok) continue;
++      expect(quote.provider).toBe("fal");
++      expect(quote.size).toBe("1024x1536");
++      expect(quote.rangeLowInr).toBeCloseTo(low, 2);
++      expect(quote.rangeHighInr).toBeCloseTo(high, 2);
++      expect(quote.estimateInr).toBeGreaterThanOrEqual(high);
++      expect(quote.estimateInr).toBeLessThanOrEqual(30);
++      expect(quote.note).toMatch(/8% buffer/);
++    }
++    const flux = buildFalEditBody("fal-ai/flux-2/edit", {
++      prompt: "Image 1 is the person. Image 2 is the hair.",
++      selfieUrl: "https://cdn.example/selfie.png",
++      referenceUrl: "https://cdn.example/reference.jpg",
++      size: "1024x1536",
++    });
++    expect(flux?.image_urls).toEqual(["https://cdn.example/selfie.png", "https://cdn.example/reference.jpg"]);
++    expect(flux?.enable_safety_checker).toBe(true);
++    expect(flux?.num_images).toBe(1);
++    expect(flux).not.toHaveProperty("seed");
++    expect(JSON.stringify(flux)).not.toMatch(/mask/i);
++    expect(falSubmitHeaders("fal-test-key")["X-Fal-No-Retry"]).toBe("1");
++    const nano = buildFalEditBody("fal-ai/nano-banana/edit", {
++      prompt: "edit",
++      selfieUrl: "https://cdn.example/selfie.png",
++      referenceUrl: "https://cdn.example/reference.jpg",
++      size: "1024x1536",
++    });
++    expect(nano?.aspect_ratio).toBe("2:3");
++    expect(nano).not.toHaveProperty("enable_safety_checker");
++    const seedream = buildFalEditBody("fal-ai/bytedance/seedream/v4/edit", {
++      prompt: "edit",
++      selfieUrl: "https://cdn.example/selfie.png",
++      referenceUrl: "https://cdn.example/reference.jpg",
++      size: "1024x1536",
++    });
++    expect(seedream?.image_size).toEqual({ width: 1024, height: 1536 });
++    expect(seedream?.max_images).toBe(1);
++    expect(falModel("fal-ai/qwen-image-edit-plus")).toBeNull();
++  });
++
++  it("refuses a missing fal key before any request", async () => {
++    let calls = 0;
++    globalThis.fetch = (async () => {
++      calls += 1;
++      throw new Error("fetch should not run");
++    }) as typeof fetch;
++    const jpeg = await sharp({ create: { width: 80, height: 120, channels: 3, background: "#886655" } }).jpeg().toBuffer();
++    const result = await executeReferenceEdit({
++      jpeg,
++      original: jpeg,
++      styleId: "long-layers",
++      tenantId: "fal-missing",
++      source: "tryon",
++      tool: "reference",
++      modelId: "fal-ai/flux-2/edit",
++    });
++    expect(result.ok).toBe(false);
++    if (!result.ok) {
++      expect(result.error).toBe("NO_FAL_KEY");
++      expect(result.message).toMatch(/does not call OpenAI or Gemini/);
++    }
++    expect(calls).toBe(0);
++    const reserved = await prisma.aiCall.count({ where: { tenantId: "fal-missing" } });
++    expect(reserved).toBe(0);
++  });
++
++  it("submits once with no retry and records an unknown bill on timeout", async () => {
++    await saveFalKey({ apiKey: "fal-test-key-123456", enabled: true, remove: false }, "super");
++    process.env.FAL_QUEUE_DEADLINE_MS = "0";
++    const submits: { url: string; retry: string }[] = [];
++    globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
++      const href = String(url);
++      const headers = new Headers(init?.headers);
++      if (href.includes("/storage/upload/initiate")) {
++        return json({ upload_url: "https://upload.example/put", file_url: "https://v3.fal.media/files/in.png" });
++      }
++      if (href.startsWith("https://upload.example")) return new Response(null, { status: 200 });
++      if (href.startsWith("https://queue.fal.run/") && !href.includes("/requests/")) {
++        submits.push({ url: href, retry: headers.get("X-Fal-No-Retry") || "" });
++        return json({ request_id: "req-1", status_url: "https://queue.fal.run/fal-ai/flux-2/edit/requests/req-1/status" });
++      }
++      return json({ status: "IN_PROGRESS" });
++    }) as typeof fetch;
++    const jpeg = await sharp({ create: { width: 80, height: 120, channels: 3, background: "#886655" } }).jpeg().toBuffer();
++    const result = await executeReferenceEdit({
++      jpeg,
++      original: jpeg,
++      styleId: "long-layers",
++      tenantId: "fal-timeout",
++      source: "tryon",
++      tool: "reference",
++      modelId: "fal-ai/flux-2/edit",
++    });
++    expect(submits).toHaveLength(1);
++    expect(submits[0]?.retry).toBe("1");
++    expect(result.ok).toBe(false);
++    if (!result.ok) expect(result.error).toBe("UNCERTAIN");
++    const call = await prisma.aiCall.findFirst({ where: { tenantId: "fal-timeout" } });
++    expect(call?.status).toBe("UNCERTAIN");
++    expect(call?.charged).toBe(true);
++  });
++
++  it("reports a black fal frame as a safety block and does not submit again", async () => {
++    const black = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#000000" } }).png().toBuffer();
++    let submits = 0;
++    const fetchImpl = (async (url: string | URL) => {
++      const href = String(url);
++      if (href.includes("/storage/upload/initiate")) {
++        return json({ upload_url: "https://upload.example/put", file_url: "https://v3.fal.media/files/in.png" });
++      }
++      if (href.startsWith("https://upload.example")) return new Response(null, { status: 200 });
++      if (href.startsWith("https://queue.fal.run/") && !href.includes("/requests/")) {
++        submits += 1;
++        return json({ request_id: "req-black" });
++      }
++      if (href.endsWith("/status")) return json({ status: "COMPLETED" });
++      if (href.includes("/requests/req-black") && !href.endsWith("/status")) {
++        return json({ images: [{ url: "https://v3.fal.media/files/black.png" }], has_nsfw_concepts: [false] });
++      }
++      if (href.startsWith("https://v3.fal.media/")) return new Response(new Uint8Array(black), { status: 200 });
++      throw new Error(`unexpected ${href}`);
++    }) as typeof fetch;
++    const selfie = await sharp({ create: { width: 16, height: 16, channels: 3, background: "#ccbbaa" } }).png().toBuffer();
++    const reference = await sharp({ create: { width: 16, height: 16, channels: 3, background: "#998877" } }).jpeg().toBuffer();
++    await expect(postFalReferenceEdit({
++      apiKey: "fal-test-key-123456",
++      endpointId: "fal-ai/flux-2/edit",
++      prompt: "Image 1 stays. Image 2 supplies the cut.",
++      selfiePng: selfie,
++      referenceJpeg: reference,
++      size: "1024x1536",
++      estimateUsd: 0.05,
++      fetchImpl,
++      now: () => 0,
++      deadlineMs: 10_000,
++      sleep: async () => undefined,
++    })).rejects.toBeInstanceOf(BilledProviderError);
++    expect(submits).toBe(1);
++    await expect(postFalReferenceEdit({
++      apiKey: "fal-test-key-123456",
++      endpointId: "not-a-model",
++      prompt: "x",
++      selfiePng: selfie,
++      referenceJpeg: reference,
++      size: "1024x1024",
++      estimateUsd: 0.05,
++      fetchImpl,
++    })).rejects.toThrow(/No other model was called/);
++    expect(submits).toBe(1);
++  });
++
++  it("keeps a saved OpenAI key when the guest provider moves, and keeps a fal key off until enabled", async () => {
++    await savePlatformAi({ provider: "openai", apiKey: "openai-test-key-123456", allowByo: false, tier: "test", highEnabled: false }, "super");
++    await savePlatformAi({ provider: "gemini", apiKey: "", allowByo: false, tier: "test", highEnabled: false }, "super");
++    expect(await resolveOpenAIKey()).toBe("openai-test-key-123456");
++    await prisma.platformSetting.deleteMany({ where: { key: { in: ["platform_openai_key_cipher", "platform_openai_key_hint"] } } });
++    await prisma.platformSetting.upsert({
++      where: { key: "platform_ai_provider" },
++      update: { value: "gemini" },
++      create: { key: "platform_ai_provider", value: "gemini" },
++    });
++    await prisma.platformSetting.upsert({
++      where: { key: "platform_ai_key_cipher" },
++      update: { value: encryptSecret("sk-shortkey123456") },
++      create: { key: "platform_ai_key_cipher", value: encryptSecret("sk-shortkey123456") },
++    });
++    expect(await resolveOpenAIKey()).toBe("sk-shortkey123456");
++    await prisma.platformSetting.upsert({
++      where: { key: "platform_fal_key_cipher" },
++      update: { value: encryptSecret("fal-test-key-123456") },
++      create: { key: "platform_fal_key_cipher", value: encryptSecret("fal-test-key-123456") },
++    });
++    await prisma.platformSetting.upsert({
++      where: { key: "platform_fal_enabled" },
++      update: { value: "false" },
++      create: { key: "platform_fal_enabled", value: "false" },
++    });
++    process.env.FAL_KEY = "fal-env-should-not-win";
++    expect(await resolveFalKey()).toEqual({ ok: false, reason: "off" });
++    await saveFalKey({ apiKey: "", enabled: true, remove: false }, "super");
++    expect(await resolveFalKey()).toEqual({ ok: true, apiKey: "fal-test-key-123456" });
++  });
++
++  it("treats a lost queue reply as an unknown bill without a second submit", async () => {
++    let submits = 0;
++    const fetchImpl = (async (url: string | URL) => {
++      const href = String(url);
++      if (href.includes("/storage/upload/initiate")) return json({ upload_url: "https://upload.example/put", file_url: "https://v3.fal.media/files/in.png" });
++      if (href.startsWith("https://upload.example")) return new Response(null, { status: 200 });
++      if (href.startsWith("https://queue.fal.run/") && !href.includes("/requests/")) {
++        submits += 1;
++        throw new Error("socket hang up");
++      }
++      throw new Error("unexpected");
++    }) as typeof fetch;
++    const selfie = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#ccbbaa" } }).png().toBuffer();
++    await expect(postFalReferenceEdit({
++      apiKey: "fal-test-key-123456",
++      endpointId: "fal-ai/flux-2/edit",
++      prompt: "edit",
++      selfiePng: selfie,
++      referenceJpeg: selfie,
++      size: "1024x1536",
++      estimateUsd: 0.05,
++      fetchImpl,
++      deadlineMs: 0,
++    })).rejects.toBeInstanceOf(UncertainBillingError);
++    expect(submits).toBe(1);
 +  });
 +});
 diff --git a/tests/unit/hair-composite.test.ts b/tests/unit/hair-composite.test.ts

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { platformAiView, saveFalKey, savePlatformAi } from "@/lib/ai/settings-store";
+import { platformAiView, saveFalKey, saveOpenRouterKey, savePlatformAi } from "@/lib/ai/settings-store";
 import { requireSuper } from "@/lib/session";
 
 const schema = z.object({
@@ -13,6 +13,10 @@ const schema = z.object({
   falKey: z.string().max(400).optional().default(""),
   falEnabled: z.boolean().optional().default(false),
   removeFalKey: z.boolean().optional().default(false),
+  openRouterOnly: z.boolean().optional(),
+  openRouterKey: z.string().max(400).optional().default(""),
+  openRouterEnabled: z.boolean().optional().default(false),
+  removeOpenRouterKey: z.boolean().optional().default(false),
 });
 
 export async function GET() {
@@ -28,7 +32,12 @@ export async function PUT(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
   try {
-    if (parsed.data.falOnly) {
+    if (parsed.data.openRouterOnly) {
+      await saveOpenRouterKey(
+        { apiKey: parsed.data.openRouterKey, enabled: parsed.data.openRouterEnabled, remove: parsed.data.removeOpenRouterKey },
+        access.session.user.id,
+      );
+    } else if (parsed.data.falOnly) {
       await saveFalKey(
         { apiKey: parsed.data.falKey, enabled: parsed.data.falEnabled, remove: parsed.data.removeFalKey },
         access.session.user.id,

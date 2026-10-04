@@ -9,8 +9,9 @@ import { composeHairOnly, reviewProviderFace } from "@/lib/face/compose-hair";
 import { assertVisionReady } from "@/lib/face/vision-assets";
 import type { DriftReport } from "@/lib/face/hair-composite";
 import { assessClothing } from "@/lib/ai/clothing-check";
-import { resolveFalKey, resolveGeminiKey, resolveOpenAIKey } from "@/lib/ai/credentials";
+import { resolveFalKey, resolveGeminiKey, resolveOpenAIKey, resolveOpenRouterKey } from "@/lib/ai/credentials";
 import { postFalReferenceEdit } from "@/lib/ai/fal-reference";
+import { postOpenRouterReferenceEdit } from "@/lib/ai/openrouter-reference";
 import type { EditSize } from "@/lib/ai/edit-request";
 import { editFormFields } from "@/lib/ai/edit-request";
 import { postGeminiReferenceEdit } from "@/lib/ai/gemini-reference";
@@ -55,7 +56,7 @@ export type ReferenceSuccess = {
   ok: true;
   id: string;
   callId: string;
-  provider: "openai" | "gemini" | "fal";
+  provider: "openai" | "gemini" | "fal" | "openrouter";
   model: string;
   quality: string;
   size: string;
@@ -133,6 +134,20 @@ export async function executeReferenceEdit(args: {
       };
     }
     apiKey = fal.apiKey;
+  } else if (provider === "openrouter") {
+    const openrouter = await resolveOpenRouterKey();
+    if (!openrouter.ok) {
+      return {
+        ok: false,
+        httpStatus: 400,
+        error: "NO_OPENROUTER_KEY",
+        outcome: "key",
+        message: openrouter.reason === "off"
+          ? "The OpenRouter key is saved and comparisons are off. Enable it on AI settings. This comparison does not call OpenAI, Gemini, or fal instead."
+          : "Add an OpenRouter key on AI settings and enable it. This comparison does not call OpenAI, Gemini, or fal instead.",
+      };
+    }
+    apiKey = openrouter.apiKey;
   } else apiKey = await resolveOpenAIKey();
   if (!apiKey) {
     return provider === "gemini"
@@ -262,6 +277,21 @@ export async function executeReferenceEdit(args: {
       });
       usage = undefined;
       providerResponse = fal.image;
+    } else if (provider === "openrouter") {
+      const prompt = "prompt" in prepared ? prepared.prompt : planned?.prompt || "";
+      const selfieMeta = await sharp(inputPng, { failOn: "none" }).metadata();
+      const openrouter = await postOpenRouterReferenceEdit({
+        apiKey,
+        modelId: quote.model,
+        prompt,
+        selfiePng: inputPng,
+        referenceJpeg: reference,
+        width: selfieMeta.width || 1,
+        height: selfieMeta.height || 1,
+        estimateUsd: quote.estimateUsd,
+      });
+      usage = openrouter.usage;
+      providerResponse = openrouter.image;
     } else {
       if (!planned) {
         throw new UnknownModelError(`${quote.model} is not a configured image-edit model. No other model was called.`);
@@ -381,6 +411,8 @@ export async function executeReferenceEdit(args: {
     const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
     let message = `Unvalidated model output. The raw provider image is the result. One provider call. No mask, no face paste, no retry.${clothingNote}`;
     if (costIsEstimate && provider === "fal") message += " The shown cost is the conservative estimate. fal did not report usage.";
+    if (provider === "openrouter" && costIsEstimate) message += " The shown cost is the estimate. OpenRouter did not return usage.cost.";
+    if (provider === "openrouter" && !costIsEstimate) message += " The shown cost is usage.cost from OpenRouter.";
     if (rawDrift?.flagged) message += " Face may differ from your photo.";
     if (args.hairComposite && compositePng) {
       message += " Hair-only composite saved separately as an optional fallback. It is not the download.";

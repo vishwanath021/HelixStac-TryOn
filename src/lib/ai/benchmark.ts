@@ -53,6 +53,11 @@ export function benchmarkCanvasSize(width: number, height: number, allowed: read
   return editSizeForAspect(width, height, allowed);
 }
 
+/** Medium output-token allowance for one guide size, with the first paid run's margin. */
+export function mediumOutputTokenAllowance(size: EditSize) {
+  return Math.ceil(OUTPUT_TOKEN_TABLE.medium[size] * OUTPUT_TOKEN_MARGIN);
+}
+
 export function estimateImageInputTokens(canvasPixels: number, referencePixels: number) {
   const pixels = Math.max(1, canvasPixels + referencePixels);
   return Math.ceil(pixels * (CALIBRATED_IMAGE_INPUT_TOKENS / CALIBRATED_INPUT_PIXELS) * IMAGE_TOKEN_MARGIN);
