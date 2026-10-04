@@ -194,7 +194,7 @@ Set `DEBUG_SAVE_RAW=true` to write the provider JPEG, after square restore and b
 
 This path is separate from guest production. It sends the sanitized selfie first and `public/styles/{styleId}.jpg` second. It does not send a mask, does not paste the original face back, and does not fall back to Gemini, a mock, or another model. Guests stay on the production tiers.
 
-Default request. Prices are the published per-image output table checked 4 Oct 2026 at [GPT Image 1.5](https://developers.openai.com/api/docs/models/gpt-image-1.5) and the [image generation guide](https://developers.openai.com/api/docs/guides/image-generation). Input tokens are extra. These are not invoices.
+Default request. Output token counts and per-token rates were checked 4 Oct 2026 at [GPT Image 1.5](https://developers.openai.com/api/docs/models/gpt-image-1.5) and the [image generation guide](https://developers.openai.com/api/docs/guides/image-generation). The quote also adds image-input tokens, scaled from the first paid run (10,885 image tokens for a 1536×1024 canvas plus a 512 reference) with a 15% margin, plus a 400-token text allowance. A 1536×1024 medium quote is about ₹17 buffered. The actual bill is whatever usage the provider returns. These are not invoices.
 
 - `POST https://api.openai.com/v1/images/edits`
 - model `gpt-image-1.5` (`BENCHMARK_MODEL`)
@@ -204,7 +204,8 @@ Default request. Prices are the published per-image output table checked 4 Oct 2
 - `n=1`
 - size `1024x1024`, `1536x1024`, or `1024x1536`, chosen from the selfie aspect
 - one call, no retry
-- hard run cap `BENCHMARK_RUN_CAP_INR` (default 30) on the output estimate
+- hard run cap `BENCHMARK_RUN_CAP_INR` (default 30) on the full estimate, including input tokens
+- `BENCHMARK_INPUT_SIZE=1024` is off by default. It sends the selfie on a 1024 edge (square, or 1024×1536 for a tall photo) so a super-admin can compare cost. A wide selfie gains side bars and a smaller subject. The reference stays at its native 512.
 
 The 59 catalogue references are 512×512 synthetic portraits. No larger file is in the repo, so the 512px JPEG is what gets sent. Do not commit customer selfies. Put the three review photos only on the machine that runs the test.
 
@@ -214,7 +215,7 @@ Quote without a provider call:
 npm run benchmark:quote
 ```
 
-Paid run: sign in as the super-admin, open `/super/ai`, choose one style and one local selfie, read the estimate, tick the confirmation, and press **Run benchmark**. Open `/super/ai/benchmark/{id}`. The page is labelled unvalidated model output. `provider-response.png` is the decoded provider body before any crop. `restored-output.png` is the crop from the recorded transform. Stages older than `BENCHMARK_RETENTION_HOURS` (default 72) are deleted on the next benchmark request. They are never served to guests.
+Paid run: sign in as the super-admin, open `/super/ai`, choose any hairstyle and one selfie from your computer, read the estimate and its breakdown, tick the confirmation, and press **Run benchmark**. Open `/super/ai/benchmark/{id}`. The page shows the sanitized selfie beside `provider-response.png`, labelled UNVALIDATED, plus usage, latency, the estimate, and the actual cost from provider usage. **Delete now** removes that run's photos. Stages older than `BENCHMARK_RETENTION_HOURS` (default 72) are deleted on the next benchmark request. They are never served to guests. Family photos are personal data and are sent only to OpenAI.
 
 Score six runs (three selfies, two styles, including at least one long-to-short) in `docs/benchmark-score-sheet.csv`. Columns: likeness, style match, framing, edges, reconstruction, latency, token usage, output estimate, usage INR if the ledger has it, and whether you accept the frame. Do not treat a passing alignment, or this offline test suite, as a haircut score.
 

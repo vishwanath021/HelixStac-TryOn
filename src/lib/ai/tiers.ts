@@ -157,6 +157,14 @@ export function costUsdFromUsage(model: string, usage: UsageNumbers | undefined)
   return Math.round(usd * 1_000_000) / 1_000_000;
 }
 
+/** Same rates as costUsdFromUsage, for a quote that has not called the provider yet. */
+export function usdFromTokenCounts(model: string, counts: { textIn: number; imageIn: number; output: number }): number | null {
+  const rates = tokenRates(model);
+  if (!rates) return null;
+  const usd = (counts.textIn * rates.textIn + counts.imageIn * rates.imageIn + counts.output * rates.imageOut) / 1_000_000;
+  return Math.round(usd * 1_000_000) / 1_000_000;
+}
+
 export function ledgerTool(kind?: string, colour?: string | null): "hair" | "colour" | "brows" | "beard" | "nails" {
   if (kind === "brows" || kind === "beard" || kind === "nails") return kind;
   return colour ? "colour" : "hair";

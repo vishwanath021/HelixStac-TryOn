@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { STYLES } from "@/data/styles";
 import { prepareBenchmark, quoteBenchmark } from "@/lib/ai/benchmark";
+import { assessClothing, clothingBandDelta } from "@/lib/ai/clothing-check";
 import { claimGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
 import { editFormFields, FORBIDDEN_EDIT_FIELDS, planImageEdit } from "@/lib/ai/edit-request";
 import { UncertainBillingError } from "@/lib/ai/errors";
@@ -45,6 +46,8 @@ describe("reference benchmark request", () => {
     expect(fields.size).toBe("1536x1024");
     for (const name of FORBIDDEN_EDIT_FIELDS) expect(fields[name]).toBeUndefined();
     expect(prompt).not.toMatch(/mask/i);
+    expect(prompt).toContain("exact crew neckline");
+    expect(prompt).toContain("Only the hair region");
     expect(prompt).toContain("Image 1 is the person to edit");
     expect(prompt).toContain("Image 2 is a hairstyle reference only");
     expect(prompt).toContain("long-to-short");
@@ -190,6 +193,56 @@ describe("spend and duplicate jobs", () => {
     if (!result.ok) expect(result.reason).toBe("uncertain");
   });
 
+  it("flags a changed neckline and leaves an unchanged shirt alone", async () => {
+    const scene = drawFrontal(320, 420);
+    const face = scene.face!;
+    const shirt = Buffer.from(scene.data);
+    const yShirt = face.y + face.h;
+    for (let y = yShirt; y < scene.height; y += 1) {
+      for (let x = Math.max(0, face.x - 8); x < Math.min(scene.width, face.x + face.w + 8); x += 1) {
+        const i = (y * scene.width + x) * 3;
+        shirt[i] = 248;
+        shirt[i + 1] = 248;
+        shirt[i + 2] = 248;
+      }
+    }
+    const same = clothingBandDelta(shirt, Buffer.from(shirt), scene.width, scene.height, face);
+    expect(same.warning).toBeNull();
+    const scooped = Buffer.from(shirt);
+    const y1 = Math.min(scene.height, yShirt + Math.round(face.h * 0.35));
+    const x0 = face.x + Math.round(face.w * 0.25);
+    const x1 = face.x + Math.round(face.w * 0.75);
+    for (let y = yShirt; y < y1; y += 1) {
+      for (let x = x0; x < x1; x += 1) {
+        const i = (y * scene.width + x) * 3;
+        scooped[i] = 18;
+        scooped[i + 1] = 32;
+        scooped[i + 2] = 96;
+      }
+    }
+    const changed = clothingBandDelta(shirt, scooped, scene.width, scene.height, face);
+    expect(changed.warning).toBe("clothing_changed");
+    const hairOnly = Buffer.from(shirt);
+    for (let y = 0; y < face.y; y += 1) {
+      for (let x = 0; x < scene.width; x += 1) {
+        const i = (y * scene.width + x) * 3;
+        hairOnly[i] = 180;
+        hairOnly[i + 1] = 40;
+        hairOnly[i + 2] = 40;
+      }
+    }
+    expect(clothingBandDelta(shirt, hairOnly, scene.width, scene.height, face).warning).toBeNull();
+    const original = await sharp(shirt, { raw: { width: scene.width, height: scene.height, channels: 3 } }).png().toBuffer();
+    const edited = await sharp(scooped, { raw: { width: scene.width, height: scene.height, channels: 3 } }).png().toBuffer();
+    const finding = await assessClothing(original, edited);
+    expect(finding.accepted).toBe(false);
+    expect(finding.registered).toBe(true);
+    expect(finding.warning).toBe("clothing_changed");
+    const quiet = await assessClothing(original, original);
+    expect(quiet.warning).toBeNull();
+    expect(quiet.accepted).toBe(false);
+  });
+
   it("does not treat a mock result as a paid success", () => {
     expect(salonOutcome("no-key")).toEqual({ status: "DEMO", commit: false, placement: false });
     expect(salonOutcome("spend-cap").commit).toBe(false);
@@ -203,7 +256,24 @@ describe("spend and duplicate jobs", () => {
     if (!quote.ok) return;
     expect(quote.model).toBe("gpt-image-1.5");
     expect(quote.size).toBe("1536x1024");
+    expect(quote.estimateInr).toBeGreaterThanOrEqual(15);
+    expect(quote.estimateInr).toBeLessThanOrEqual(17);
+    expect(quote.imageInputTokens).toBeGreaterThan(10_000);
+    expect(quote.note).toMatch(/estimate, actual from provider usage/i);
+    expect(quote.outputUsd + quote.imageInputUsd + quote.textInputUsd).toBeCloseTo(quote.estimateUsd, 5);
     expect(quote.estimateInr).toBeLessThanOrEqual(quote.capInr);
+    process.env.BENCHMARK_INPUT_SIZE = "1024";
+    const tight = quoteBenchmark(1280, 720);
+    delete process.env.BENCHMARK_INPUT_SIZE;
+    expect(tight.ok).toBe(true);
+    if (tight.ok) {
+      expect(tight.size).toBe("1024x1024");
+      expect(tight.estimateInr).toBeLessThan(quote.estimateInr);
+    }
+    process.env.BENCHMARK_QUALITY = "high";
+    const high = quoteBenchmark(1280, 720);
+    delete process.env.BENCHMARK_QUALITY;
+    expect(high.ok).toBe(false);
     expect(quote.inputFidelity).toBe("high");
     const before = readFileSync("tests/fixtures/replay/long-layers-before.jpg");
     const raw = readFileSync("tests/fixtures/replay/long-layers-raw.jpg");

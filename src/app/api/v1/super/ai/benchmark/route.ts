@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { NextResponse } from "next/server";
+import sharp from "sharp";
 import { benchmarkDir, prepareBenchmark, quoteBenchmark, restoredFromProvider, writeBenchmarkStages } from "@/lib/ai/benchmark";
+import { assessClothing } from "@/lib/ai/clothing-check";
+import { readHairstyleReference } from "@/lib/ai/style-reference";
 import { resolveOpenAIKey } from "@/lib/ai/credentials";
 import { editFormFields } from "@/lib/ai/edit-request";
 import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
 import { postImageEdit } from "@/lib/ai/openai";
 import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
-import { costUsdFromUsage, type UsageNumbers } from "@/lib/ai/tiers";
+import { bufferedInr, costUsdFromUsage, exactInr, type UsageNumbers } from "@/lib/ai/tiers";
 import { sanitizeSelfie, ImageError } from "@/lib/images";
 import { numberEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
@@ -55,7 +58,13 @@ export async function GET(req: Request) {
   if (width < 64 || height < 64) {
     return NextResponse.json({ error: "SIZE", message: "Width and height are required to quote a benchmark." }, { status: 400 });
   }
-  const quote = quoteBenchmark(width, height);
+  const styleId = url.searchParams.get("styleId") || "";
+  const referenceBytes = styleId ? readHairstyleReference(styleId) : null;
+  const referenceMeta = referenceBytes ? await sharp(referenceBytes, { failOn: "none" }).metadata() : null;
+  const quote = quoteBenchmark(width, height, {
+    width: referenceMeta?.width || 512,
+    height: referenceMeta?.height || 512,
+  });
   if (!quote.ok) return NextResponse.json({ error: "QUOTE", message: quote.message }, { status: 400 });
   return NextResponse.json(quote);
 }
@@ -139,6 +148,7 @@ export async function POST(req: Request) {
       size: quote.size,
       status: "PENDING",
       estimateInr: quote.estimateInr,
+      estimateUsd: quote.estimateUsd,
       callId: gate.id,
       dir,
     },
@@ -151,6 +161,7 @@ export async function POST(req: Request) {
   body.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
 
   try {
+    const started = Date.now();
     const response = await postImageEdit(apiKey, body);
     const payload = (await response.json()) as {
       data?: { b64_json?: string }[];
@@ -162,10 +173,19 @@ export async function POST(req: Request) {
       };
     };
     const usage = usageFrom(payload);
+    const latencyMs = Date.now() - started;
     const b64 = payload.data?.[0]?.b64_json;
     if (!b64) throw new BilledProviderError(quote.estimateUsd, usage);
     const providerResponse = Buffer.from(b64, "base64");
     const restored = await restoredFromProvider(providerResponse, fitted.transform);
+    const clothing = await assessClothing(jpeg, restored).catch((): Awaited<ReturnType<typeof assessClothing>> => ({
+      warning: null,
+      meanDelta: 0,
+      centerMean: 0,
+      registered: false,
+      accepted: false,
+      detail: "clothing check failed. The run is not accepted.",
+    }));
     await writeBenchmarkStages(dir, {
       original,
       sanitized: jpeg,
@@ -173,7 +193,15 @@ export async function POST(req: Request) {
       reference,
       providerResponse,
       restored,
-      validation: { ...validation, providerResponseBytes: providerResponse.length, restoredBytes: restored.length },
+      validation: {
+        ...validation,
+        providerResponseBytes: providerResponse.length,
+        restoredBytes: restored.length,
+        clothing,
+        accepted: false,
+        latencyMs,
+        usage: usage || null,
+      },
       transform: fitted.transform,
     });
     const usd = costUsdFromUsage(quote.model, usage) ?? quote.estimateUsd;
@@ -184,9 +212,25 @@ export async function POST(req: Request) {
       costUsd: usd,
       estimateInr: gate.estimateInr,
       usage,
+      latencyMs,
       imageSize: quote.size,
     });
-    await prisma.benchmarkRun.update({ where: { id }, data: { status: "UNVALIDATED", message: "Unvalidated model output." } });
+    const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
+    await prisma.benchmarkRun.update({
+      where: { id },
+      data: {
+        status: "UNVALIDATED",
+        message: `Unvalidated model output.${clothingNote}`,
+        actualUsd: usd,
+        actualInr: exactInr(usd),
+        inputTokens: usage?.inputTokens || 0,
+        outputTokens: usage?.outputTokens || 0,
+        imageTokens: usage?.imageTokens || 0,
+        textTokens: usage?.textTokens || 0,
+        latencyMs,
+        clothingWarning: clothing.warning || "",
+      },
+    });
     return NextResponse.json({
       id,
       status: "UNVALIDATED",
@@ -194,7 +238,14 @@ export async function POST(req: Request) {
       quality: quote.quality,
       size: quote.size,
       estimateInr: quote.estimateInr,
-      message: "Unvalidated model output. One provider call. No mask, no face paste, no retry.",
+      estimateUsd: quote.estimateUsd,
+      actualUsd: usd,
+      actualInr: exactInr(usd),
+      bufferedActualInr: bufferedInr(usd),
+      latencyMs,
+      usage: usage || null,
+      clothingWarning: clothing.warning,
+      message: `Unvalidated model output. One provider call. No mask, no face paste, no retry.${clothingNote}`,
     });
   } catch (error) {
     const uncertain = error instanceof UncertainBillingError;

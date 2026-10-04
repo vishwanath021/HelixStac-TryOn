@@ -1,18 +1,22 @@
 diff --git a/.env.example b/.env.example
-index 6ec3dab..c578181 100644
+index 6ec3dab..e78886f 100644
 --- a/.env.example
 +++ b/.env.example
-@@ -67,7 +67,17 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
+@@ -67,7 +67,21 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
  # Hard testing guard for paid image calls, in INR estimates (not a provider invoice).
  # Default ₹500. At the cap the app returns a labelled sample instead of calling the provider.
  AI_SPEND_CAP_INR="500"
 -# When true or 1, write the raw provider JPEG (before the face composite) under var/ai-debug/.
 +# Reference benchmark. Super-admin only, off for guests. One OpenAI edit, no retry.
-+# List-price output estimate for gpt-image-1.5 quality medium is about ₹3.60 at 1024 square
-+# and about ₹5.20 at 1536×1024 or 1024×1536, before input tokens. Not an invoice.
++# Full estimate includes image-input tokens. gpt-image-1.5 quality medium is about ₹12 at 1024 square
++# and about ₹17 at 1536×1024 or 1024×1536 (buffered, with a margin over the first paid run). Not an invoice.
++# The ₹30 run cap is checked against that full estimate.
 +BENCHMARK_MODEL="gpt-image-1.5"
 +BENCHMARK_QUALITY="medium"
 +BENCHMARK_RUN_CAP_INR="30"
++# Leave unset for the full canvas (may be 1536 wide). Set to 1024 to send a smaller selfie and compare cost.
++# Wide photos then sit in a square with side bars. The reference stays at its native 512.
++# BENCHMARK_INPUT_SIZE="1024"
 +# Hours to keep benchmark selfies under var/benchmarks. Super-admin only. Not public.
 +BENCHMARK_RETENTION_HOURS="72"
 +# How long a repeated guest request id can replay its stored JPEG. Photos stay under var/.
@@ -22,7 +26,7 @@ index 6ec3dab..c578181 100644
  DEBUG_SAVE_RAW="false"
  # Optional overrides. Leave unset to use the model-id estimates (OpenAI test ₹0.6, medium ₹1.2, high ₹17.4; Gemini test ₹3.5, medium ₹7, high ₹7).
 diff --git a/README.md b/README.md
-index 7c86367..921a4ec 100644
+index 7c86367..a5d7422 100644
 --- a/README.md
 +++ b/README.md
 @@ -139,7 +139,7 @@ Needs a key (OpenAI or Gemini):
@@ -43,7 +47,7 @@ index 7c86367..921a4ec 100644
  
  ### What the offline tests prove
  
-@@ -182,13 +182,41 @@ Before a paid edit, the server finds the face from the skin region and places th
+@@ -182,13 +182,42 @@ Before a paid edit, the server finds the face from the skin region and places th
  - Beard: the jaw and chin below the nose, with the mouth left out
  - Nails: fingertip regions on a hand photo. A picture that looks like a face is refused
  
@@ -62,7 +66,7 @@ index 7c86367..921a4ec 100644
 +
 +This path is separate from guest production. It sends the sanitized selfie first and `public/styles/{styleId}.jpg` second. It does not send a mask, does not paste the original face back, and does not fall back to Gemini, a mock, or another model. Guests stay on the production tiers.
 +
-+Default request. Prices are the published per-image output table checked 4 Oct 2026 at [GPT Image 1.5](https://developers.openai.com/api/docs/models/gpt-image-1.5) and the [image generation guide](https://developers.openai.com/api/docs/guides/image-generation). Input tokens are extra. These are not invoices.
++Default request. Output token counts and per-token rates were checked 4 Oct 2026 at [GPT Image 1.5](https://developers.openai.com/api/docs/models/gpt-image-1.5) and the [image generation guide](https://developers.openai.com/api/docs/guides/image-generation). The quote also adds image-input tokens, scaled from the first paid run (10,885 image tokens for a 1536×1024 canvas plus a 512 reference) with a 15% margin, plus a 400-token text allowance. A 1536×1024 medium quote is about ₹17 buffered. The actual bill is whatever usage the provider returns. These are not invoices.
 +
 +- `POST https://api.openai.com/v1/images/edits`
 +- model `gpt-image-1.5` (`BENCHMARK_MODEL`)
@@ -72,7 +76,8 @@ index 7c86367..921a4ec 100644
 +- `n=1`
 +- size `1024x1024`, `1536x1024`, or `1024x1536`, chosen from the selfie aspect
 +- one call, no retry
-+- hard run cap `BENCHMARK_RUN_CAP_INR` (default 30) on the output estimate
++- hard run cap `BENCHMARK_RUN_CAP_INR` (default 30) on the full estimate, including input tokens
++- `BENCHMARK_INPUT_SIZE=1024` is off by default. It sends the selfie on a 1024 edge (square, or 1024×1536 for a tall photo) so a super-admin can compare cost. A wide selfie gains side bars and a smaller subject. The reference stays at its native 512.
 +
 +The 59 catalogue references are 512×512 synthetic portraits. No larger file is in the repo, so the 512px JPEG is what gets sent. Do not commit customer selfies. Put the three review photos only on the machine that runs the test.
 +
@@ -82,13 +87,13 @@ index 7c86367..921a4ec 100644
 +npm run benchmark:quote
 +```
 +
-+Paid run: sign in as the super-admin, open `/super/ai`, choose one style and one local selfie, read the estimate, tick the confirmation, and press **Run benchmark**. Open `/super/ai/benchmark/{id}`. The page is labelled unvalidated model output. `provider-response.png` is the decoded provider body before any crop. `restored-output.png` is the crop from the recorded transform. Stages older than `BENCHMARK_RETENTION_HOURS` (default 72) are deleted on the next benchmark request. They are never served to guests.
++Paid run: sign in as the super-admin, open `/super/ai`, choose any hairstyle and one selfie from your computer, read the estimate and its breakdown, tick the confirmation, and press **Run benchmark**. Open `/super/ai/benchmark/{id}`. The page shows the sanitized selfie beside `provider-response.png`, labelled UNVALIDATED, plus usage, latency, the estimate, and the actual cost from provider usage. **Delete now** removes that run's photos. Stages older than `BENCHMARK_RETENTION_HOURS` (default 72) are deleted on the next benchmark request. They are never served to guests. Family photos are personal data and are sent only to OpenAI.
 +
 +Score six runs (three selfies, two styles, including at least one long-to-short) in `docs/benchmark-score-sheet.csv`. Columns: likeness, style match, framing, edges, reconstruction, latency, token usage, output estimate, usage INR if the ledger has it, and whether you accept the frame. Do not treat a passing alignment, or this offline test suite, as a haircut score.
  
  The unit suite proves this without a provider key:
  
-@@ -202,7 +230,7 @@ The unit suite proves this without a provider key:
+@@ -202,7 +231,7 @@ The unit suite proves this without a provider key:
  - A hair edit that changes the eyes, or that zooms the face past the alignment window, is rejected once and is not retried
  - A modest zoom is warped back onto the original face and can then be composited
  - `npm run replay:raw -- raw.jpg original.jpg long-layers` runs that check on a saved provider JPEG with no network call
@@ -112,10 +117,10 @@ index c5ef9e0..6faa9da 100644
  
 diff --git a/docs/REFERENCE-MODE-REVIEW.md b/docs/REFERENCE-MODE-REVIEW.md
 new file mode 100644
-index 0000000..53cc1ac
+index 0000000..a355231
 --- /dev/null
 +++ b/docs/REFERENCE-MODE-REVIEW.md
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,245 @@
 +# Reference-mode review
 +
 +Date: 4 Oct 2026. Baseline before this work: `8a3a244` (`docs: record which image-edit parameters the hair path never sends`) on `cursor/feat-initial-build-5096`. The shareable diff against that commit is `docs/reference-mode.diff`.
@@ -130,7 +135,7 @@ index 0000000..53cc1ac
 +
 +A separate super-admin path now sends a full-frame edit: the sanitized selfie first, the selected catalogue reference second, and a prompt that names those roles. It does not send a mask, does not paste the original face back, and does not call Gemini or a mock if OpenAI fails.
 +
-+No paid generation was run for this change. Offline tests do not establish likeness, haircut match, or reconstruction quality.
++This follow-up did not place a new paid call. The owner's first paid benchmark is recorded below. Offline tests still do not establish likeness or haircut match.
 +
 +## Exact request
 +
@@ -143,7 +148,7 @@ index 0000000..53cc1ac
 +| n | `1` | Fixed. |
 +| input_fidelity | `high` | Sent only when the capability table lists it for that exact model id. |
 +| output_format | `png` | Lossless inspection file. |
-+| size | `1024x1024`, `1536x1024`, or `1024x1536` | Chosen from the selfie aspect. Ratio above 1.15 is landscape. Ratio below 1/1.15 is portrait. Otherwise square. |
++| size | `1024x1024`, `1536x1024`, or `1024x1536` | Chosen from the selfie aspect. Ratio above 1.15 is landscape. Ratio below 1/1.15 is portrait. Otherwise square. `BENCHMARK_INPUT_SIZE=1024` is off by default and forces a 1024 edge (square, or `1024x1536` for a tall photo). |
 +| image[0] | `selfie.png` | Sanitized selfie, uniform-scaled into the chosen size. Bars use the border mean. No stretch. |
 +| image[1] | `style-reference.jpg` | `public/styles/{id}@2x.jpg`, else `{id}-large.jpg`, else `{id}.jpg`. |
 +| mask | omitted | The prompt has no mask sentence on this path. |
@@ -155,7 +160,7 @@ index 0000000..53cc1ac
 +
 +One `fetch`, `AbortSignal.timeout(55_000)`, no OpenAI SDK. `@google/genai` 1.21.0 retries chunked file uploads only (`MAX_RETRY_COUNT = 3` inside `uploadBlob`). `generateContent` is a single request. The hair pipeline's `MAX_PROVIDER_ATTEMPTS` is 1. HTTP 429 and 5xx are recorded as an unknown bill and are not sent again, including where the image guide suggests retrying rate limits. A timeout, a dropped connection, a rejected output, and a lost client connection follow the same rule.
 +
-+`quoteBenchmark` refuses the run before any HTTP call when the model is unknown, when that model cannot take `input_fidelity=high`, when the price cell is missing, or when the buffered output estimate exceeds `BENCHMARK_RUN_CAP_INR` (default 30). The global `AI_SPEND_CAP_INR` still applies inside `beginPaidCall`.
++`quoteBenchmark` refuses the run before any HTTP call when the model is unknown, when that model cannot take `input_fidelity=high`, when the price cell is missing, or when the buffered full estimate (output tokens plus image-input and text-input allowances) exceeds `BENCHMARK_RUN_CAP_INR` (default 30). The global `AI_SPEND_CAP_INR` still applies inside `beginPaidCall`.
 +
 +## Documentation checked
 +
@@ -178,23 +183,37 @@ index 0000000..53cc1ac
 +
 +On fidelity, the guide says: “The `input_fidelity` parameter controls how strongly a model preserves details from input images during edits and reference-image workflows. For `gpt-image-2`, omit this parameter; the API doesn’t allow changing it because the model processes every image input at high fidelity automatically.”
 +
-+`gpt-image-1.5` is treated as a model prior to `gpt-image-2`, so the benchmark sends `input_fidelity=high`. That support was not confirmed with a live call. A rejection fails the run. `gpt-image-1-mini` and `gpt-image-2` have `inputFidelity: null` in `src/lib/ai/edit-request.ts` and the parameter is not posted. Capability checks use the exact model id. A substring of the id is not enough.
++`gpt-image-1.5` is treated as a model prior to `gpt-image-2`, so the benchmark sends `input_fidelity=high`. The first paid run accepted that parameter. A later rejection still fails the run. `gpt-image-1-mini` and `gpt-image-2` have `inputFidelity: null` in `src/lib/ai/edit-request.ts` and the parameter is not posted. Capability checks use the exact model id. A substring of the id is not enough.
 +
 +The Images API reference page timed out on fetch. Parameter names used here (`model`, `prompt`, `image[]`, `mask`, `quality`, `size`, `output_format`, `n`, `input_fidelity`) are the ones in the image guide's edit examples and the existing production client.
 +
++## First paid run
++
++The owner ran one real benchmark. This agent did not repeat it.
++
++- Model `gpt-image-1.5`, quality `medium`, `input_fidelity=high` (accepted), size `1536x1024`, selfie plus the pixie reference.
++- Latency 21.2 s.
++- Usage: input 11,180 tokens (10,885 image + 295 text), output 1,899 tokens. The guide's medium-landscape cell is 1,568 image-output tokens. Charging the reported 1,899 output tokens at $32 / 1M, the 10,885 image-input tokens at $8 / 1M, and the 295 text tokens at $5 / 1M comes to $0.149.
++- At FX 96 that is ₹14.30 with no buffer, and about ₹15.50 with the 1.08 testing buffer. The old quote of ₹5.20 was the output list price only ($0.05) and left out the image-input tokens (about $0.087).
++- The haircut, face, and background were judged good. The white crew-neck tee became a shallow V or scoop. That is a clothing failure, not a hair failure.
++
++The quote now prices output tokens at the image-output rate ($32 / 1M), image-input tokens at $8 / 1M, and a 400-token text allowance at $5 / 1M. Image-input tokens scale from 10,885 per (1536×1024 + 512×512) pixels, times 1.15. Output tokens scale from the guide table by 1899/1568. The page says “estimate, actual from provider usage.” After a run, `BenchmarkRun` stores the provider usage, latency, and the computed actual USD and INR separately from the estimate.
++
 +## Cost
 +
-+These are published list prices, not invoices. `bufferedInr` is USD × `FX_INR_PER_USD` (default 96) × 1.08, rounded up to ₹0.1. `npm run benchmark:quote` printed, with no network call:
++These are published rates plus that calibration, not invoices. `bufferedInr` is USD × `FX_INR_PER_USD` (default 96) × 1.08, rounded up to ₹0.1. `npm run benchmark:quote` printed, with no network call:
 +
-+| Selfie | Size sent | Output list price | Buffered estimate | Run cap |
-+|---|---|---|---|---|
-+| 1024×1024 | 1024×1024 | $0.034 | ₹3.6 | ₹30 |
-+| 1280×720 | 1536×1024 | $0.05 | ₹5.2 | ₹30 |
-+| 720×1280 | 1024×1536 | $0.05 | ₹5.2 | ₹30 |
++| Selfie | Size sent | Estimate USD | Buffered estimate | Breakdown | Run cap |
++|---|---|---|---|---|---|
++| 1024×1024 | 1024×1024 | $0.114 | ₹11.9 | output $0.041 + image input $0.072 (8,942 tok) + text $0.002 | ₹30 |
++| 1280×720 | 1536×1024 | $0.163 | ₹16.9 | output $0.061 + image input $0.100 (12,518 tok) + text $0.002 | ₹30 |
++| 720×1280 | 1024×1536 | $0.164 | ₹17.0 | output $0.061 + image input $0.100 (12,518 tok) + text $0.002 | ₹30 |
 +
-+Input tokens are extra. Two images plus the prompt will add image-input and text-input charges that this estimate does not include. The ledger stores `costSource=usage` from `costUsdFromUsage` when the response includes token counts, at FX with no 1.08 buffer. Image-edit output tokens are priced at the image-output rate ($32 / 1M for `gpt-image-1.5`). The Images response does not split text output from image output, so that usage figure can sit above the legacy per-image table. The cap itself still reserves the buffered output estimate.
++The ₹30 cap is checked against this full estimate. High quality at 1536×1024 is above the cap and is refused before the call. `BENCHMARK_INPUT_SIZE=1024` is unset by default. It sends a 1024-edge selfie (square, or 1024×1536 when the photo is tall) and leaves the reference at 512. A wide photo then has side bars and a smaller subject, in exchange for fewer image-input tokens. Compare one tight run with one full run before relying on it.
 +
-+The benchmark tier is visible on `/super/ai` next to the cost ledger. It is not a guest tier. Guest Test stays `gpt-image-1-mini` low at about ₹0.60. Turning this mode on for guests would replace that with roughly ₹3.60–₹5.20 of output price per image before input tokens, plus the fidelity and reference-image input. It is not enabled for guests.
++The ledger stores `costSource=usage` from `costUsdFromUsage` when the response includes token counts, at FX with no 1.08 buffer. Image-edit output tokens are priced at the image-output rate ($32 / 1M for `gpt-image-1.5`). The cap itself still reserves the buffered estimate.
++
++The benchmark tier is visible on `/super/ai` next to the cost ledger. It is not a guest tier. Guest Test stays `gpt-image-1-mini` low at about ₹0.60. Turning this mode on for guests would replace that with roughly ₹12–₹17 per image at medium quality. It is not enabled for guests.
 +
 +## Spend and duplicate requests
 +
@@ -306,29 +325,40 @@ index 0000000..53cc1ac
 +
 +`npm run test` is the broader suite. Playwright e2e was not re-run.
 +
-+Browser check against the production build on `127.0.0.1:3000`, with no provider call: an anonymous `GET /super/ai` returned 307, and an anonymous benchmark quote returned 403 `FORBIDDEN`. Signed in as the super-admin, the Reference benchmark section showed the style list, a disabled **Run benchmark** button, and after a synthetic 720×1280 JPEG the quote `gpt-image-1.5, quality medium, size 1024x1536, input_fidelity high, output png, n=1`, about ₹5.20. The confirmation checkbox enabled the button. The button was not clicked. `/super/ai/benchmark/does-not-exist` rendered the not-found page. Guest style-button disabling was not exercised in the browser; the lock and `disabled={busy}` are in `TryOnApp`.
++The clothing check compares the neckline band of the restored frame with the sanitized selfie after `registerProviderFrame`. A large change is `clothing_changed` in `validation.json` and on the run row. `accepted` stays false. Synthetic tests cover an unchanged shirt, a hair-only change above the band, and a recolored neckline.
++
++Browser check against the production build on `127.0.0.1:3000`, with no provider call: an anonymous `GET /super/ai` returned 307, and an anonymous benchmark quote returned 403 `FORBIDDEN`. Signed in as the super-admin, the Reference benchmark section showed the style list, a disabled **Run benchmark** button, and after a synthetic 720×1280 JPEG the quote `gpt-image-1.5, quality medium, size 1024x1536, input_fidelity high, output png, n=1`, about ₹5.20. That ₹5.20 figure is the old output-only quote, from before this follow-up. The confirmation checkbox enabled the button. The button was not clicked. `/super/ai/benchmark/does-not-exist` rendered the not-found page. Guest style-button disabling was not exercised in the browser; the lock and `disabled={busy}` are in `TryOnApp`.
 +
 +## Implemented, and still visually unverified
 +
 +Implemented and checked offline: the request builder, reference lookup, prompt roles, length sentences, spend statuses, dedupe, single attempt, demo accounting, super-admin quote and confirm UI, private stage files, and the production face-guard still rejecting the saved bad frame.
 +
-+Not established: that `gpt-image-1.5` accepts `input_fidelity=high` on this key; that the output preserves identity, pose, framing, clothing, and lighting; that a long-to-short cut reconstructs neck, ears, or background; that the reference cut is actually transferred; that edges look natural; latency; token usage; or the rupee cost of an accepted result. The six-row sheet `docs/benchmark-score-sheet.csv` is empty on purpose.
++The first paid pixie run showed a usable haircut with the face and background kept, and it also changed a crew neck into a shallow V. The prompt now tells the model to keep neckline, collar, sleeves, garment colour, and straps, including the exact crew neckline of a t-shirt. That sentence has not been tried on a second paid image. The six-row sheet `docs/benchmark-score-sheet.csv` is still empty.
 +
-+## How to run one controlled paid test
++## How to run a controlled paid test locally
 +
-+1. Leave the key out of git. Sign in as the super-admin and set the platform provider to OpenAI on `/super/ai`, or export `OPENAI_API_KEY` only in the process environment.
-+2. `npm run benchmark:quote` prints the estimate and does not call the API.
-+3. On `/super/ai`, under Reference benchmark, choose one style and one local selfie. The page quotes model, quality, size, fidelity, png, and the rupee estimate. Tick “I understand this makes one paid OpenAI call and does not retry.” Press **Run benchmark**. The button stays disabled until a file, a quote, and the tick are present. The server also requires `confirm=yes`, the ₹30 run cap, and the global spend cap. It makes one call.
-+4. Open the link to `/super/ai/benchmark/{id}`. Read `provider-response.png` as the decoded provider body. Read `restored-output.png` only as the crop. `validation.json` stays `accepted: false`.
-+5. Score that single run in the CSV. Do not treat it as the six-run matrix. The matrix is three selfies you keep off git, two styles each, including at least one long-to-short (`pixie` or another short id) and one short-to-long (`long-layers`). Commands and the column list are in the README section “Reference benchmark”.
++```bash
++git pull
++npm install
++npm run db:push
++npm run seed
++npm run dev
++```
 +
-+Suggested first pair, one call only: a portrait selfie and `pixie` (short, long-to-short sentence). Expect about ₹5.2 of output list price for a portrait, plus input tokens, under the ₹30 cap.
++1. Open http://localhost:3000/login and sign in as `super@helixstac.app` / `SuperAdmin#2026`.
++2. Open http://localhost:3000/super/ai. If the platform provider is not already OpenAI, paste the key there. Do not put the key in git.
++3. Optional, no charge: `npm run benchmark:quote`.
++4. In Reference benchmark, pick a hairstyle, choose a selfie from this computer, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick the confirmation, and press **Run benchmark**. The note on the form says family photos are personal data and are sent only to OpenAI.
++5. Open the result link. The left image is the sanitized selfie. The right image is `provider-response.png`, labelled UNVALIDATED. The page shows usage, latency, the estimate, and the actual cost from provider usage. `validation.json` stays `accepted: false`. A neckline shift is `clothing_changed`.
++6. Press **Delete now** when you are finished, or leave the files for the 72-hour retention. Do not commit the photos.
++
++`BENCHMARK_INPUT_SIZE=1024` in `.env`, then restart `npm run dev`, if you want a second run on a smaller canvas to compare cost. Leave it unset for the same 1536-class request as the first pixie run.
 +
 +## Remaining limitations
 +
-+- Visual quality is unverified. Mocks and unit tests do not measure a haircut.
-+- `input_fidelity=high` on `gpt-image-1.5` is inferred from the guide's `gpt-image-2` exception. A live rejection is fatal and has not been observed.
-+- Input-token cost is unknown until a usage payload exists. The confirmation number is the output estimate only.
++- One paid pixie frame looked right in the hair and wrong in the neckline. The stronger clothing sentence and the `clothing_changed` warning are not yet confirmed on a second paid image.
++- `input_fidelity=high` was accepted on that first call. A future key that rejects it still fails the run with no fallback.
++- The quote is an estimate with a 15% image-token margin. The stored actual cost is the provider usage. They will differ.
 +- References are 512×512. Several men's cuts look alike, and several show stubble. Listed above as needing regeneration.
 +- A new guest click uses a new request id and can bill again after a lost response.
 +- Spend reservations and dedupe share state only through the database. The in-process queue is single-process.
@@ -362,10 +392,10 @@ index ab17942..2afbeda 100644
      "prepare": "git config core.hooksPath .githooks || true"
    },
 diff --git a/prisma/schema.prisma b/prisma/schema.prisma
-index 8f77e40..d892197 100644
+index 8f77e40..fc5b802 100644
 --- a/prisma/schema.prisma
 +++ b/prisma/schema.prisma
-@@ -340,6 +340,40 @@ model AiCall {
+@@ -340,6 +340,49 @@ model AiCall {
    @@index([createdAt])
  }
  
@@ -395,12 +425,21 @@ index 8f77e40..d892197 100644
 +  model       String
 +  quality     String
 +  size        String
-+  status      String
-+  estimateInr Float    @default(0)
-+  callId      String   @default("")
-+  dir         String
-+  message     String   @default("")
-+  createdAt   DateTime @default(now())
++  status           String
++  estimateInr      Float    @default(0)
++  estimateUsd      Float    @default(0)
++  actualUsd        Float    @default(0)
++  actualInr        Float    @default(0)
++  inputTokens      Int      @default(0)
++  outputTokens     Int      @default(0)
++  imageTokens      Int      @default(0)
++  textTokens       Int      @default(0)
++  latencyMs        Int      @default(0)
++  clothingWarning  String   @default("")
++  callId           String   @default("")
++  dir              String
++  message          String   @default("")
++  createdAt        DateTime @default(now())
 +}
 +
  model Customer {
@@ -408,7 +447,7 @@ index 8f77e40..d892197 100644
    tenantId     String
 diff --git a/scripts/benchmark-quote.ts b/scripts/benchmark-quote.ts
 new file mode 100644
-index 0000000..7aa9794
+index 0000000..4f0de57
 --- /dev/null
 +++ b/scripts/benchmark-quote.ts
 @@ -0,0 +1,20 @@
@@ -428,7 +467,7 @@ index 0000000..7aa9794
 +    continue;
 +  }
 +  console.log(
-+    `${sample.label} ${sample.width}x${sample.height} -> ${quote.model} ${quote.quality} ${quote.size} fidelity=${quote.inputFidelity} format=${quote.outputFormat} n=${quote.n} output≈$${quote.estimateUsd} ≈₹${quote.estimateInr} cap=₹${quote.capInr}`,
++    `${sample.label} ${sample.width}x${sample.height} -> ${quote.model} ${quote.quality} ${quote.size} fidelity=${quote.inputFidelity} format=${quote.outputFormat} n=${quote.n} mode=${quote.inputSizeMode} estimate≈$${quote.estimateUsd} ≈₹${quote.estimateInr} (output $${quote.outputUsd} + image input $${quote.imageInputUsd} / ${quote.imageInputTokens} tok + text $${quote.textInputUsd}) cap=₹${quote.capInr}`,
 +  );
 +}
 +console.log("No provider call was made. A paid run is the super-admin button on /super/ai.");
@@ -479,22 +518,59 @@ index 0000000..59cfb95
 +    return NextResponse.json({ error: "MISSING", message: "That stage was not saved." }, { status: 404 });
 +  }
 +}
+diff --git a/src/app/api/v1/super/ai/benchmark/[id]/route.ts b/src/app/api/v1/super/ai/benchmark/[id]/route.ts
+new file mode 100644
+index 0000000..d46572b
+--- /dev/null
++++ b/src/app/api/v1/super/ai/benchmark/[id]/route.ts
+@@ -0,0 +1,28 @@
++import { rm } from "node:fs/promises";
++import path from "node:path";
++import { NextResponse } from "next/server";
++import { benchmarkDir } from "@/lib/ai/benchmark";
++import { prisma } from "@/lib/prisma";
++import { requireSuper } from "@/lib/session";
++
++export const runtime = "nodejs";
++export const dynamic = "force-dynamic";
++
++export async function DELETE(_req: Request, context: { params: Promise<{ id: string }> }) {
++  const access = await requireSuper();
++  if ("error" in access && access.error) return access.error;
++  const { id } = await context.params;
++  if (!/^[a-zA-Z0-9-]{8,80}$/.test(id)) {
++    return NextResponse.json({ error: "ID", message: "Unknown benchmark." }, { status: 404 });
++  }
++  const run = await prisma.benchmarkRun.findUnique({ where: { id } });
++  if (!run) return NextResponse.json({ error: "MISSING", message: "That benchmark is already gone." }, { status: 404 });
++  const root = path.resolve(benchmarkDir(id));
++  const stored = path.resolve(run.dir);
++  if (stored === root || stored.startsWith(`${root}${path.sep}`)) {
++    await rm(stored, { recursive: true, force: true }).catch(() => undefined);
++  }
++  await rm(root, { recursive: true, force: true }).catch(() => undefined);
++  await prisma.benchmarkRun.delete({ where: { id } }).catch(() => undefined);
++  return NextResponse.json({ ok: true, id });
++}
 diff --git a/src/app/api/v1/super/ai/benchmark/route.ts b/src/app/api/v1/super/ai/benchmark/route.ts
 new file mode 100644
-index 0000000..368834f
+index 0000000..a71830d
 --- /dev/null
 +++ b/src/app/api/v1/super/ai/benchmark/route.ts
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,287 @@
 +import { randomUUID } from "node:crypto";
 +import { rm } from "node:fs/promises";
 +import { NextResponse } from "next/server";
++import sharp from "sharp";
 +import { benchmarkDir, prepareBenchmark, quoteBenchmark, restoredFromProvider, writeBenchmarkStages } from "@/lib/ai/benchmark";
++import { assessClothing } from "@/lib/ai/clothing-check";
++import { readHairstyleReference } from "@/lib/ai/style-reference";
 +import { resolveOpenAIKey } from "@/lib/ai/credentials";
 +import { editFormFields } from "@/lib/ai/edit-request";
 +import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
 +import { postImageEdit } from "@/lib/ai/openai";
 +import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
-+import { costUsdFromUsage, type UsageNumbers } from "@/lib/ai/tiers";
++import { bufferedInr, costUsdFromUsage, exactInr, type UsageNumbers } from "@/lib/ai/tiers";
 +import { sanitizeSelfie, ImageError } from "@/lib/images";
 +import { numberEnv } from "@/lib/env";
 +import { prisma } from "@/lib/prisma";
@@ -542,7 +618,13 @@ index 0000000..368834f
 +  if (width < 64 || height < 64) {
 +    return NextResponse.json({ error: "SIZE", message: "Width and height are required to quote a benchmark." }, { status: 400 });
 +  }
-+  const quote = quoteBenchmark(width, height);
++  const styleId = url.searchParams.get("styleId") || "";
++  const referenceBytes = styleId ? readHairstyleReference(styleId) : null;
++  const referenceMeta = referenceBytes ? await sharp(referenceBytes, { failOn: "none" }).metadata() : null;
++  const quote = quoteBenchmark(width, height, {
++    width: referenceMeta?.width || 512,
++    height: referenceMeta?.height || 512,
++  });
 +  if (!quote.ok) return NextResponse.json({ error: "QUOTE", message: quote.message }, { status: 400 });
 +  return NextResponse.json(quote);
 +}
@@ -626,6 +708,7 @@ index 0000000..368834f
 +      size: quote.size,
 +      status: "PENDING",
 +      estimateInr: quote.estimateInr,
++      estimateUsd: quote.estimateUsd,
 +      callId: gate.id,
 +      dir,
 +    },
@@ -638,6 +721,7 @@ index 0000000..368834f
 +  body.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
 +
 +  try {
++    const started = Date.now();
 +    const response = await postImageEdit(apiKey, body);
 +    const payload = (await response.json()) as {
 +      data?: { b64_json?: string }[];
@@ -649,10 +733,19 @@ index 0000000..368834f
 +      };
 +    };
 +    const usage = usageFrom(payload);
++    const latencyMs = Date.now() - started;
 +    const b64 = payload.data?.[0]?.b64_json;
 +    if (!b64) throw new BilledProviderError(quote.estimateUsd, usage);
 +    const providerResponse = Buffer.from(b64, "base64");
 +    const restored = await restoredFromProvider(providerResponse, fitted.transform);
++    const clothing = await assessClothing(jpeg, restored).catch((): Awaited<ReturnType<typeof assessClothing>> => ({
++      warning: null,
++      meanDelta: 0,
++      centerMean: 0,
++      registered: false,
++      accepted: false,
++      detail: "clothing check failed. The run is not accepted.",
++    }));
 +    await writeBenchmarkStages(dir, {
 +      original,
 +      sanitized: jpeg,
@@ -660,7 +753,15 @@ index 0000000..368834f
 +      reference,
 +      providerResponse,
 +      restored,
-+      validation: { ...validation, providerResponseBytes: providerResponse.length, restoredBytes: restored.length },
++      validation: {
++        ...validation,
++        providerResponseBytes: providerResponse.length,
++        restoredBytes: restored.length,
++        clothing,
++        accepted: false,
++        latencyMs,
++        usage: usage || null,
++      },
 +      transform: fitted.transform,
 +    });
 +    const usd = costUsdFromUsage(quote.model, usage) ?? quote.estimateUsd;
@@ -671,9 +772,25 @@ index 0000000..368834f
 +      costUsd: usd,
 +      estimateInr: gate.estimateInr,
 +      usage,
++      latencyMs,
 +      imageSize: quote.size,
 +    });
-+    await prisma.benchmarkRun.update({ where: { id }, data: { status: "UNVALIDATED", message: "Unvalidated model output." } });
++    const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
++    await prisma.benchmarkRun.update({
++      where: { id },
++      data: {
++        status: "UNVALIDATED",
++        message: `Unvalidated model output.${clothingNote}`,
++        actualUsd: usd,
++        actualInr: exactInr(usd),
++        inputTokens: usage?.inputTokens || 0,
++        outputTokens: usage?.outputTokens || 0,
++        imageTokens: usage?.imageTokens || 0,
++        textTokens: usage?.textTokens || 0,
++        latencyMs,
++        clothingWarning: clothing.warning || "",
++      },
++    });
 +    return NextResponse.json({
 +      id,
 +      status: "UNVALIDATED",
@@ -681,7 +798,14 @@ index 0000000..368834f
 +      quality: quote.quality,
 +      size: quote.size,
 +      estimateInr: quote.estimateInr,
-+      message: "Unvalidated model output. One provider call. No mask, no face paste, no retry.",
++      estimateUsd: quote.estimateUsd,
++      actualUsd: usd,
++      actualInr: exactInr(usd),
++      bufferedActualInr: bufferedInr(usd),
++      latencyMs,
++      usage: usage || null,
++      clothingWarning: clothing.warning,
++      message: `Unvalidated model output. One provider call. No mask, no face paste, no retry.${clothingNote}`,
 +    });
 +  } catch (error) {
 +    const uncertain = error instanceof UncertainBillingError;
@@ -847,39 +971,88 @@ index 85e0ff6..5b878b0 100644
  }
 diff --git a/src/app/super/ai/benchmark/[id]/page.tsx b/src/app/super/ai/benchmark/[id]/page.tsx
 new file mode 100644
-index 0000000..a778fad
+index 0000000..ce71eae
 --- /dev/null
 +++ b/src/app/super/ai/benchmark/[id]/page.tsx
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,93 @@
 +import Link from "next/link";
 +import { notFound } from "next/navigation";
++import { DeleteBenchmarkButton } from "@/components/admin/DeleteBenchmarkButton";
 +import { BENCHMARK_STAGES } from "@/lib/ai/benchmark";
++import { bufferedInr } from "@/lib/ai/tiers";
++import { numberEnv } from "@/lib/env";
 +import { prisma } from "@/lib/prisma";
 +import { pageSuper } from "@/lib/session";
 +
 +export const dynamic = "force-dynamic";
 +
-+const PICTURES = ["provider-response.png", "restored-output.png", "provider-input.png", "provider-reference.jpg", "sanitized-input.jpg", "original-input.jpg"];
++const EXTRA = ["restored-output.png", "provider-input.png", "provider-reference.jpg", "original-input.jpg"];
 +
 +export default async function BenchmarkReviewPage({ params }: { params: Promise<{ id: string }> }) {
 +  await pageSuper();
 +  const { id } = await params;
 +  const run = await prisma.benchmarkRun.findUnique({ where: { id } });
 +  if (!run) notFound();
++  const retentionHours = Math.max(1, numberEnv("BENCHMARK_RETENTION_HOURS", 72));
++  const hasUsage = run.inputTokens > 0 || run.outputTokens > 0 || run.actualUsd > 0;
++  const bufferedActual = run.actualUsd > 0 ? bufferedInr(run.actualUsd) : 0;
 +  return (
-+    <main className="mx-auto max-w-3xl px-4 py-8">
++    <main className="mx-auto max-w-5xl px-4 py-8">
 +      <p className="text-xs uppercase tracking-[0.16em] text-muted">Super admin</p>
 +      <h1 className="font-serif text-4xl">Unvalidated model output</h1>
 +      <p className="mt-2 text-sm leading-6">
-+        This is the benchmark for {run.styleId}. Model {run.model}, quality {run.quality}, size {run.size}.
-+        Status {run.status}. Estimated output cost ₹{run.estimateInr.toFixed(2)} before input tokens.
-+        The provider response file is the decoded bytes before any crop. The restored file is a separate crop.
-+        Nothing here was accepted as a finished haircut.
++        Hairstyle benchmark for {run.styleId}. Model {run.model}, quality {run.quality}, size {run.size}. Status {run.status}.
++        The right-hand photograph is the raw provider body, before any crop. Nothing here was accepted as a finished haircut.
++      </p>
++      <p className="mt-3 rounded-xl border border-line bg-white p-3 text-sm leading-6">
++        Real family photos are personal data. This run sent them only to OpenAI. The files stay on this server under var/benchmarks
++        and are removed after {retentionHours} hours, or when you press Delete now.
 +      </p>
 +      <p className="mt-3 text-sm"><Link className="underline" href="/super/ai">Back to AI settings</Link></p>
++      {run.clothingWarning === "clothing_changed" && (
++        <p className="mt-3 rounded-xl border border-line bg-white p-3 text-sm leading-6">
++          Warning: clothing_changed. The neckline or shoulder band moved relative to the selfie. This is a finding, not an accepted result.
++        </p>
++      )}
 +      {run.message && <p className="mt-3 text-sm">{run.message}</p>}
-+      <div className="mt-6 grid gap-4">
-+        {PICTURES.map((stage) => (
++      <dl className="mt-4 grid gap-2 text-sm leading-6 sm:grid-cols-2">
++        <div>
++          <dt className="text-muted">Estimate before the call</dt>
++          <dd>₹{run.estimateInr.toFixed(2)} (${run.estimateUsd.toFixed(3)}). Estimate, actual from provider usage.</dd>
++        </div>
++        <div>
++          <dt className="text-muted">Actual from provider usage</dt>
++          <dd>
++            {hasUsage
++              ? `$${run.actualUsd.toFixed(3)}, ₹${run.actualInr.toFixed(2)} at FX with no buffer. With the estimate's 1.08 buffer that usage is ₹${bufferedActual.toFixed(2)}.`
++              : "No usage payload was stored for this run."}
++          </dd>
++        </div>
++        <div>
++          <dt className="text-muted">Usage</dt>
++          <dd>
++            {hasUsage
++              ? `input ${run.inputTokens} (image ${run.imageTokens}, text ${run.textTokens}), output ${run.outputTokens}`
++              : "—"}
++          </dd>
++        </div>
++        <div>
++          <dt className="text-muted">Latency</dt>
++          <dd>{run.latencyMs > 0 ? `${(run.latencyMs / 1000).toFixed(1)} s` : "—"}</dd>
++        </div>
++      </dl>
++      <div className="mt-6 grid grid-cols-2 gap-3">
++        <figure className="rounded-2xl border border-line bg-white p-3">
++          <figcaption className="mb-2 text-sm font-medium">Before · sanitized input</figcaption>
++          <img alt="" src={`/api/v1/super/ai/benchmark/${run.id}/file?stage=sanitized-input.jpg`} className="max-h-[36rem] w-full object-contain" />
++        </figure>
++        <figure className="rounded-2xl border border-line bg-white p-3">
++          <figcaption className="mb-2 text-sm font-medium">UNVALIDATED · provider-response.png</figcaption>
++          <img alt="" src={`/api/v1/super/ai/benchmark/${run.id}/file?stage=provider-response.png`} className="max-h-[36rem] w-full object-contain" />
++        </figure>
++      </div>
++      <div className="mt-4 grid gap-4">
++        {EXTRA.map((stage) => (
 +          <figure key={stage} className="rounded-2xl border border-line bg-white p-3">
 +            <figcaption className="mb-2 text-sm font-medium">{stage}</figcaption>
 +            <img alt="" src={`/api/v1/super/ai/benchmark/${run.id}/file?stage=${stage}`} className="max-h-[32rem] w-full object-contain" />
@@ -891,11 +1064,12 @@ index 0000000..a778fad
 +          <li key={stage}><a className="underline" href={`/api/v1/super/ai/benchmark/${run.id}/file?stage=${stage}`}>{stage}</a></li>
 +        ))}
 +      </ul>
++      <DeleteBenchmarkButton id={run.id} />
 +    </main>
 +  );
 +}
 diff --git a/src/app/super/ai/page.tsx b/src/app/super/ai/page.tsx
-index 6b191bf..a6fe6ec 100644
+index 6b191bf..a60936c 100644
 --- a/src/app/super/ai/page.tsx
 +++ b/src/app/super/ai/page.tsx
 @@ -1,9 +1,12 @@
@@ -926,7 +1100,7 @@ index 6b191bf..a6fe6ec 100644
        <SuperAiForm initial={initial} />
 +      {squareQuote.ok && (
 +        <p className="mt-4 text-sm leading-6">
-+          Reference benchmark, off for guests: {squareQuote.model} quality {squareQuote.quality} at 1024×1024 is about ₹{squareQuote.estimateInr.toFixed(2)} (${squareQuote.estimateUsd}) of published output price, before input tokens. Landscape and portrait sizes are higher. The spend cap includes this call, billed failures, and uncertain timeouts.
++          Reference benchmark, off for guests: {squareQuote.model} quality {squareQuote.quality} at 1024×1024 is about ₹{squareQuote.estimateInr.toFixed(2)} (${squareQuote.estimateUsd.toFixed(3)}), including a conservative image-input allowance. A 1536×1024 canvas is higher, about the mid-teens in rupees. The ₹30 run cap is checked against that full estimate. The spend cap includes this call, billed failures, and uncertain timeouts.
 +        </p>
 +      )}
 +      <BenchmarkPanel styles={styles} />
@@ -935,10 +1109,10 @@ index 6b191bf..a6fe6ec 100644
    );
 diff --git a/src/components/admin/BenchmarkPanel.tsx b/src/components/admin/BenchmarkPanel.tsx
 new file mode 100644
-index 0000000..7efa784
+index 0000000..5941238
 --- /dev/null
 +++ b/src/components/admin/BenchmarkPanel.tsx
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,143 @@
 +"use client";
 +
 +import { useRef, useState } from "react";
@@ -953,6 +1127,13 @@ index 0000000..7efa784
 +  estimateInr: number;
 +  estimateUsd: number;
 +  capInr: number;
++  outputTokens: number;
++  outputUsd: number;
++  imageInputTokens: number;
++  imageInputUsd: number;
++  textInputTokens: number;
++  textInputUsd: number;
++  inputSizeMode: string;
 +  note: string;
 +};
 +
@@ -1012,9 +1193,13 @@ index 0000000..7efa784
 +    <section className="mt-8 rounded-2xl border border-line bg-white p-4">
 +      <h2 className="font-serif text-2xl">Reference benchmark</h2>
 +      <p className="mt-2 text-sm leading-6">
-+        One OpenAI edit of the uploaded selfie plus the selected hairstyle reference. Guests never use this path.
++        One OpenAI hairstyle edit of a selfie from this computer, plus the selected reference. Guests never use this path.
 +        The result is labelled unvalidated model output. There is no mask, no pasted face, and no automatic retry.
-+        The run cap is ₹{quote?.capInr ?? 30} for the output estimate. Input tokens can add more.
++        The run cap is ₹{quote?.capInr ?? 30}, checked against the estimate below, which includes input tokens.
++      </p>
++      <p className="mt-2 text-sm leading-6">
++        Real family photos are personal data. They are sent only to OpenAI, stored privately under var/benchmarks, and deleted after 72 hours
++        or when you press Delete now on the result page.
 +      </p>
 +      <label className="mt-3 block text-sm">
 +        Style
@@ -1033,7 +1218,7 @@ index 0000000..7efa784
 +        </select>
 +      </label>
 +      <label className="mt-3 block text-sm">
-+        Selfie, one file, not stored in git
++        Selfie from this computer
 +        <input
 +          className="mt-1 block text-sm"
 +          type="file"
@@ -1050,7 +1235,9 @@ index 0000000..7efa784
 +      {quote && (
 +        <p className="mt-3 text-sm leading-6">
 +          {quote.model}, quality {quote.quality}, size {quote.size}, input_fidelity high, output png, n=1.
-+          Estimated output cost about ₹{quote.estimateInr.toFixed(2)} (${quote.estimateUsd}). {quote.note}
++          Input size {quote.inputSizeMode}. Estimate ₹{quote.estimateInr.toFixed(2)} (${quote.estimateUsd.toFixed(3)}).
++          Output ${quote.outputUsd.toFixed(3)} ({quote.outputTokens} tokens), image input ${quote.imageInputUsd.toFixed(3)} ({quote.imageInputTokens} tokens),
++          text input ${quote.textInputUsd.toFixed(3)} ({quote.textInputTokens} tokens). {quote.note}
 +        </p>
 +      )}
 +      <label className="mt-3 flex items-start gap-2 text-sm">
@@ -1067,6 +1254,47 @@ index 0000000..7efa784
 +        </p>
 +      )}
 +    </section>
++  );
++}
+diff --git a/src/components/admin/DeleteBenchmarkButton.tsx b/src/components/admin/DeleteBenchmarkButton.tsx
+new file mode 100644
+index 0000000..4850aa0
+--- /dev/null
++++ b/src/components/admin/DeleteBenchmarkButton.tsx
+@@ -0,0 +1,35 @@
++"use client";
++
++import { useState } from "react";
++
++export function DeleteBenchmarkButton({ id }: { id: string }) {
++  const [busy, setBusy] = useState(false);
++  const [message, setMessage] = useState("");
++
++  async function remove() {
++    if (busy) return;
++    if (!window.confirm("Delete this benchmark and its photos now?")) return;
++    setBusy(true);
++    setMessage("");
++    try {
++      const res = await fetch(`/api/v1/super/ai/benchmark/${id}`, { method: "DELETE" });
++      if (!res.ok) {
++        const data = await res.json().catch(() => ({}));
++        setMessage(data.message || "The photos were not deleted.");
++        return;
++      }
++      window.location.href = "/super/ai";
++    } finally {
++      setBusy(false);
++    }
++  }
++
++  return (
++    <div className="mt-4">
++      <button className="btn" type="button" disabled={busy} onClick={() => void remove()}>
++        {busy ? "Deleting..." : "Delete now"}
++      </button>
++      {message && <p className="mt-2 text-sm">{message}</p>}
++    </div>
 +  );
 +}
 diff --git a/src/components/tryon/TryOnApp.tsx b/src/components/tryon/TryOnApp.tsx
@@ -1285,10 +1513,10 @@ index fb6f536..1c9f825 100644
  
 diff --git a/src/lib/ai/benchmark.ts b/src/lib/ai/benchmark.ts
 new file mode 100644
-index 0000000..da48b30
+index 0000000..b2bcedd
 --- /dev/null
 +++ b/src/lib/ai/benchmark.ts
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,213 @@
 +import { mkdir, writeFile } from "node:fs/promises";
 +import path from "node:path";
 +import sharp from "sharp";
@@ -1306,8 +1534,47 @@ index 0000000..da48b30
 +} from "@/lib/ai/edit-request";
 +import { fitInsideCanvas, restoreFrame, type FrameTransform } from "@/lib/ai/frame";
 +import { buildReferencePrompt } from "@/lib/prompts";
-+import { bufferedInr } from "@/lib/ai/tiers";
++import { bufferedInr, usdFromTokenCounts } from "@/lib/ai/tiers";
 +import { numberEnv } from "@/lib/env";
++
++/**
++ * First paid run, 4 Oct 2026: gpt-image-1.5 medium, 1536×1024 selfie canvas plus a 512×512 reference.
++ * The response reported 10,885 image-input tokens. Output tokens were 1,899 against the guide's 1,568
++ * for medium landscape. The margin below keeps the quote on the high side of that run.
++ */
++export const CALIBRATED_IMAGE_INPUT_TOKENS = 10_885;
++export const CALIBRATED_INPUT_PIXELS = 1536 * 1024 + 512 * 512;
++const IMAGE_TOKEN_MARGIN = 1.15;
++const OUTPUT_TOKEN_MARGIN = 1899 / 1568;
++const TEXT_INPUT_TOKEN_ALLOWANCE = 400;
++
++/** Guide table for models prior to gpt-image-2. https://developers.openai.com/api/docs/guides/image-generation */
++const OUTPUT_TOKEN_TABLE: Record<EditQuality, Record<EditSize, number>> = {
++  low: { "1024x1024": 272, "1024x1536": 408, "1536x1024": 400 },
++  medium: { "1024x1024": 1056, "1024x1536": 1584, "1536x1024": 1568 },
++  high: { "1024x1024": 4160, "1024x1536": 6240, "1536x1024": 6208 },
++};
++
++export function benchmarkInputSizeMode(): "full" | "tight" {
++  const raw = (process.env.BENCHMARK_INPUT_SIZE || "").trim().toLowerCase();
++  if (raw === "1024" || raw === "tight") return "tight";
++  return "full";
++}
++
++/** Full mode uses the closest supported canvas, including 1536×1024. Tight mode stays on a 1024 edge. */
++export function benchmarkCanvasSize(width: number, height: number, allowed: readonly EditSize[]): EditSize {
++  if (benchmarkInputSizeMode() === "tight") {
++    const ratio = width / Math.max(1, height);
++    if (ratio < 1 / 1.15 && allowed.includes("1024x1536")) return "1024x1536";
++    if (allowed.includes("1024x1024")) return "1024x1024";
++  }
++  return editSizeForAspect(width, height, allowed);
++}
++
++export function estimateImageInputTokens(canvasPixels: number, referencePixels: number) {
++  const pixels = Math.max(1, canvasPixels + referencePixels);
++  return Math.ceil(pixels * (CALIBRATED_IMAGE_INPUT_TOKENS / CALIBRATED_INPUT_PIXELS) * IMAGE_TOKEN_MARGIN);
++}
 +
 +export function benchmarkRunCapInr() {
 +  return Math.max(0, numberEnv("BENCHMARK_RUN_CAP_INR", 30));
@@ -1323,7 +1590,7 @@ index 0000000..da48b30
 +  return BENCHMARK_QUALITY;
 +}
 +
-+export function quoteBenchmark(width: number, height: number) {
++export function quoteBenchmark(width: number, height: number, reference = { width: 512, height: 512 }) {
 +  const model = benchmarkModelId();
 +  const quality = benchmarkQuality();
 +  const caps = imageEditModel(model);
@@ -1333,19 +1600,30 @@ index 0000000..da48b30
 +  if (!caps.inputFidelity?.includes("high")) {
 +    return { ok: false as const, message: `${model} does not accept input_fidelity=high. Benchmark mode did not send the request.` };
 +  }
-+  const size = editSizeForAspect(width, height, caps.sizes);
-+  const usd = outputListUsd(model, quality, size);
-+  if (usd == null) {
++  const size = benchmarkCanvasSize(width, height, caps.sizes);
++  const [canvasWidth, canvasHeight] = size.split("x").map((part) => Number(part));
++  const outputTokens = Math.ceil(OUTPUT_TOKEN_TABLE[quality][size] * OUTPUT_TOKEN_MARGIN);
++  const imageInputTokens = estimateImageInputTokens(canvasWidth * canvasHeight, Math.max(1, reference.width) * Math.max(1, reference.height));
++  const textInputTokens = TEXT_INPUT_TOKEN_ALLOWANCE;
++  const outputUsd = usdFromTokenCounts(model, { textIn: 0, imageIn: 0, output: outputTokens });
++  const imageInputUsd = usdFromTokenCounts(model, { textIn: 0, imageIn: imageInputTokens, output: 0 });
++  const textInputUsd = usdFromTokenCounts(model, { textIn: textInputTokens, imageIn: 0, output: 0 });
++  const estimateUsd = usdFromTokenCounts(model, { textIn: textInputTokens, imageIn: imageInputTokens, output: outputTokens });
++  if (outputUsd == null || imageInputUsd == null || textInputUsd == null || estimateUsd == null) {
++    return { ok: false as const, message: `No token rates for ${model}. The request was not sent.` };
++  }
++  if (outputListUsd(model, quality, size) == null) {
 +    return { ok: false as const, message: `No published output price for ${model} ${quality} ${size}. The request was not sent.` };
 +  }
-+  const estimateInr = bufferedInr(usd);
++  const estimateInr = bufferedInr(estimateUsd);
 +  const capInr = benchmarkRunCapInr();
 +  if (estimateInr > capInr) {
 +    return {
 +      ok: false as const,
-+      message: `This benchmark is about ₹${estimateInr.toFixed(2)} before input tokens, above the ₹${capInr.toFixed(0)} run cap. It was not sent.`,
++      message: `This benchmark is about ₹${estimateInr.toFixed(2)} including input tokens, above the ₹${capInr.toFixed(0)} run cap. It was not sent.`,
 +    };
 +  }
++  const inputSizeMode = benchmarkInputSizeMode();
 +  return {
 +    ok: true as const,
 +    model,
@@ -1354,10 +1632,19 @@ index 0000000..da48b30
 +    outputFormat: "png" as const,
 +    inputFidelity: "high" as const,
 +    n: 1 as const,
-+    estimateUsd: usd,
++    estimateUsd,
 +    estimateInr,
 +    capInr,
-+    note: "List-price output estimate from the OpenAI image table. Image and text input tokens are extra and unknown until the response. Not an invoice.",
++    outputTokens,
++    outputUsd,
++    imageInputTokens,
++    imageInputUsd,
++    textInputTokens,
++    textInputUsd,
++    inputSizeMode,
++    note: inputSizeMode === "tight"
++      ? "Estimate, actual from provider usage. Tight input (BENCHMARK_INPUT_SIZE) sends a 1024-edge selfie. A wide photo gets side bars and a smaller subject. The reference stays at its native size. Not an invoice."
++      : "Estimate, actual from provider usage. Image-input tokens are scaled from the first 1536×1024 run (10,885 image tokens for that canvas plus a 512 reference) with a 15% margin. Not an invoice.",
 +  };
 +}
 +
@@ -1376,7 +1663,7 @@ index 0000000..da48b30
 +  const width = selfieMeta.width || 0;
 +  const height = selfieMeta.height || 0;
 +  if (!width || !height) return { ok: false as const, message: "The selfie could not be read." };
-+  const quote = quoteBenchmark(width, height);
++  const quote = quoteBenchmark(width, height, { width: referenceMeta.width || 512, height: referenceMeta.height || 512 });
 +  if (!quote.ok) return quote;
 +  const planned = planImageEdit({
 +    model: quote.model,
@@ -1443,6 +1730,114 @@ index 0000000..da48b30
 +}
 +
 +export type { EditSize };
+diff --git a/src/lib/ai/clothing-check.ts b/src/lib/ai/clothing-check.ts
+new file mode 100644
+index 0000000..bec50ae
+--- /dev/null
++++ b/src/lib/ai/clothing-check.ts
+@@ -0,0 +1,102 @@
++import sharp from "sharp";
++import { primaryFace, type FaceBox } from "@/lib/face/region";
++import { registerProviderFrame } from "@/lib/face/register";
++
++const MEAN_DELTA = 22;
++
++export type NecklineRect = { x0: number; y0: number; x1: number; y1: number };
++
++export type ClothingFinding = {
++  warning: "clothing_changed" | null;
++  meanDelta: number;
++  centerMean: number;
++  registered: boolean;
++  /** Always false. A quiet neckline is not an accepted haircut. */
++  accepted: false;
++  detail: string;
++};
++
++/** Shoulder and collar band just below the chin. Hair above this band is ignored. */
++export function necklineRect(face: { x: number; y: number; w: number; h: number }, width: number, height: number): NecklineRect {
++  const y0 = Math.min(height - 1, Math.max(0, Math.round(face.y + face.h * 0.98)));
++  const y1 = Math.min(height, Math.max(y0 + 1, y0 + Math.max(6, Math.round(face.h * 0.4))));
++  const x0 = Math.min(width - 1, Math.max(0, Math.round(face.x - face.w * 0.2)));
++  const x1 = Math.min(width, Math.max(x0 + 1, Math.round(face.x + face.w * 1.2)));
++  return { x0, y0, x1, y1 };
++}
++
++export function clothingBandDelta(
++  original: Buffer,
++  edited: Buffer,
++  width: number,
++  height: number,
++  face: { x: number; y: number; w: number; h: number },
++) {
++  const band = necklineRect(face, width, height);
++  const center0 = band.x0 + Math.floor((band.x1 - band.x0) * 0.3);
++  const center1 = band.x0 + Math.ceil((band.x1 - band.x0) * 0.7);
++  let sum = 0;
++  let centerSum = 0;
++  let samples = 0;
++  let centerSamples = 0;
++  let hot = 0;
++  for (let y = band.y0; y < band.y1; y += 1) {
++    for (let x = band.x0; x < band.x1; x += 1) {
++      const i = (y * width + x) * 3;
++      const delta = (Math.abs(original[i] - edited[i]) + Math.abs(original[i + 1] - edited[i + 1]) + Math.abs(original[i + 2] - edited[i + 2])) / 3;
++      sum += delta;
++      samples += 1;
++      if (delta >= 30) hot += 1;
++      if (x >= center0 && x < center1) {
++        centerSum += delta;
++        centerSamples += 1;
++      }
++    }
++  }
++  const mean = samples ? sum / samples : 0;
++  const centerMean = centerSamples ? centerSum / centerSamples : 0;
++  const changedFraction = samples ? hot / samples : 0;
++  const warning = mean >= MEAN_DELTA || centerMean >= MEAN_DELTA || changedFraction >= 0.12 ? "clothing_changed" as const : null;
++  return { warning, mean, centerMean, changedFraction, samples, band };
++}
++
++/**
++ * Align the provider frame to the sanitized selfie, then compare the neckline band.
++ * A large change is a warning. It does not accept or reject the haircut.
++ */
++export async function assessClothing(originalImage: Buffer, editedImage: Buffer): Promise<ClothingFinding> {
++  const decoded = await sharp(originalImage, { failOn: "none" }).rotate().removeAlpha().raw().toBuffer({ resolveWithObject: true });
++  const width = decoded.info.width;
++  const height = decoded.info.height;
++  const edited = await sharp(editedImage, { failOn: "none" })
++    .rotate()
++    .removeAlpha()
++    .resize(width, height, { fit: "fill" })
++    .raw()
++    .toBuffer();
++  const face = primaryFace(decoded.data, width, height);
++  if (!face) {
++    return {
++      warning: null,
++      meanDelta: 0,
++      centerMean: 0,
++      registered: false,
++      accepted: false,
++      detail: "clothing check skipped: no face to register. The run is not accepted.",
++    };
++  }
++  const aligned = await registerProviderFrame(decoded.data, edited, width, height, face as FaceBox);
++  const delta = clothingBandDelta(decoded.data, aligned.rgb, width, height, face);
++  const meanDelta = Math.round(delta.mean * 10) / 10;
++  const centerMean = Math.round(delta.centerMean * 10) / 10;
++  return {
++    warning: delta.warning,
++    meanDelta,
++    centerMean,
++    registered: true,
++    accepted: false,
++    detail: delta.warning
++      ? `clothing_changed mean ${meanDelta.toFixed(1)} center ${centerMean.toFixed(1)} after registration (${aligned.registration.detail}). Warning only. The run is not accepted.`
++      : `neckline band mean ${meanDelta.toFixed(1)} after registration (${aligned.registration.detail}). No clothing warning. The run is still unvalidated.`,
++  };
++}
 diff --git a/src/lib/ai/cost-report.ts b/src/lib/ai/cost-report.ts
 index d1e70fa..7c8563d 100644
 --- a/src/lib/ai/cost-report.ts
@@ -2281,7 +2676,7 @@ index f225ca0..3170eaa 100644
 +  return readFileSync(file);
 +}
 diff --git a/src/lib/ai/tiers.ts b/src/lib/ai/tiers.ts
-index 903e2ae..abf9a4f 100644
+index 903e2ae..e64171e 100644
 --- a/src/lib/ai/tiers.ts
 +++ b/src/lib/ai/tiers.ts
 @@ -129,7 +129,8 @@ export function resolveGuestTier(args: {
@@ -2294,6 +2689,21 @@ index 903e2ae..abf9a4f 100644
    if (model === "gpt-image-1") return { textIn: 5, imageIn: 10, imageOut: 40, textOut: 40 };
    if (model.includes("flash-lite-image")) return { textIn: 0.25, imageIn: 0.25, imageOut: 30, textOut: 1.5 };
    if (model.includes("flash-image")) return { textIn: 0.5, imageIn: 0.5, imageOut: 60, textOut: 3 };
+@@ -156,6 +157,14 @@ export function costUsdFromUsage(model: string, usage: UsageNumbers | undefined)
+   return Math.round(usd * 1_000_000) / 1_000_000;
+ }
+ 
++/** Same rates as costUsdFromUsage, for a quote that has not called the provider yet. */
++export function usdFromTokenCounts(model: string, counts: { textIn: number; imageIn: number; output: number }): number | null {
++  const rates = tokenRates(model);
++  if (!rates) return null;
++  const usd = (counts.textIn * rates.textIn + counts.imageIn * rates.imageIn + counts.output * rates.imageOut) / 1_000_000;
++  return Math.round(usd * 1_000_000) / 1_000_000;
++}
++
+ export function ledgerTool(kind?: string, colour?: string | null): "hair" | "colour" | "brows" | "beard" | "nails" {
+   if (kind === "brows" || kind === "beard" || kind === "nails") return kind;
+   return colour ? "colour" : "hair";
 diff --git a/src/lib/capture.ts b/src/lib/capture.ts
 new file mode 100644
 index 0000000..0f91059
@@ -2384,7 +2794,7 @@ index edfa7f3..5d501d0 100644
    if (!last) return { ok: false, calls, reason: "provider", message: TRY_ANOTHER_PHOTO };
  
 diff --git a/src/lib/prompts.ts b/src/lib/prompts.ts
-index 41ef6a6..02b54d6 100644
+index 41ef6a6..8705cb0 100644
 --- a/src/lib/prompts.ts
 +++ b/src/lib/prompts.ts
 @@ -1,7 +1,7 @@
@@ -2396,7 +2806,7 @@ index 41ef6a6..02b54d6 100644
  
  export function buildStylePrompt(style: StyleDef, colourName?: string) {
    return [
-@@ -21,6 +21,36 @@ export function buildStylePrompt(style: StyleDef, colourName?: string) {
+@@ -21,6 +21,37 @@ export function buildStylePrompt(style: StyleDef, colourName?: string) {
    ].join(" ");
  }
  
@@ -2421,6 +2831,7 @@ index 41ef6a6..02b54d6 100644
 +    `Produce one photorealistic edited photograph of the person in Image 1 wearing ${style.name}. ${style.prompt}`,
 +    "Transfer the haircut's silhouette, length, layering, fringe and parting from Image 2, adapted naturally to the person's head and existing hair texture.",
 +    "Preserve the identity, facial features, expression, pose, head size, camera position, clothing, jewellery, background and lighting from Image 1.",
++    "Keep the clothing, neckline shape, collar, sleeves, garment colour and straps exactly as in Image 1. If Image 1 shows a crew-neck t-shirt, the t-shirt keeps its exact crew neckline. Only the hair region, and skin or background that the old hair was covering, may change.",
 +    colour,
 +    "Do not transfer the reference person's face, skin, clothing, pose or background.",
 +    lengthInstruction(style),
@@ -2495,15 +2906,16 @@ index c371951..094bd18 100644
  });
 diff --git a/tests/unit/reference-mode.test.ts b/tests/unit/reference-mode.test.ts
 new file mode 100644
-index 0000000..79b93b0
+index 0000000..79a9b45
 --- /dev/null
 +++ b/tests/unit/reference-mode.test.ts
-@@ -0,0 +1,219 @@
+@@ -0,0 +1,289 @@
 +import { readFileSync } from "node:fs";
 +import sharp from "sharp";
 +import { describe, expect, it } from "vitest";
 +import { STYLES } from "@/data/styles";
 +import { prepareBenchmark, quoteBenchmark } from "@/lib/ai/benchmark";
++import { assessClothing, clothingBandDelta } from "@/lib/ai/clothing-check";
 +import { claimGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
 +import { editFormFields, FORBIDDEN_EDIT_FIELDS, planImageEdit } from "@/lib/ai/edit-request";
 +import { UncertainBillingError } from "@/lib/ai/errors";
@@ -2546,6 +2958,8 @@ index 0000000..79b93b0
 +    expect(fields.size).toBe("1536x1024");
 +    for (const name of FORBIDDEN_EDIT_FIELDS) expect(fields[name]).toBeUndefined();
 +    expect(prompt).not.toMatch(/mask/i);
++    expect(prompt).toContain("exact crew neckline");
++    expect(prompt).toContain("Only the hair region");
 +    expect(prompt).toContain("Image 1 is the person to edit");
 +    expect(prompt).toContain("Image 2 is a hairstyle reference only");
 +    expect(prompt).toContain("long-to-short");
@@ -2691,6 +3105,56 @@ index 0000000..79b93b0
 +    if (!result.ok) expect(result.reason).toBe("uncertain");
 +  });
 +
++  it("flags a changed neckline and leaves an unchanged shirt alone", async () => {
++    const scene = drawFrontal(320, 420);
++    const face = scene.face!;
++    const shirt = Buffer.from(scene.data);
++    const yShirt = face.y + face.h;
++    for (let y = yShirt; y < scene.height; y += 1) {
++      for (let x = Math.max(0, face.x - 8); x < Math.min(scene.width, face.x + face.w + 8); x += 1) {
++        const i = (y * scene.width + x) * 3;
++        shirt[i] = 248;
++        shirt[i + 1] = 248;
++        shirt[i + 2] = 248;
++      }
++    }
++    const same = clothingBandDelta(shirt, Buffer.from(shirt), scene.width, scene.height, face);
++    expect(same.warning).toBeNull();
++    const scooped = Buffer.from(shirt);
++    const y1 = Math.min(scene.height, yShirt + Math.round(face.h * 0.35));
++    const x0 = face.x + Math.round(face.w * 0.25);
++    const x1 = face.x + Math.round(face.w * 0.75);
++    for (let y = yShirt; y < y1; y += 1) {
++      for (let x = x0; x < x1; x += 1) {
++        const i = (y * scene.width + x) * 3;
++        scooped[i] = 18;
++        scooped[i + 1] = 32;
++        scooped[i + 2] = 96;
++      }
++    }
++    const changed = clothingBandDelta(shirt, scooped, scene.width, scene.height, face);
++    expect(changed.warning).toBe("clothing_changed");
++    const hairOnly = Buffer.from(shirt);
++    for (let y = 0; y < face.y; y += 1) {
++      for (let x = 0; x < scene.width; x += 1) {
++        const i = (y * scene.width + x) * 3;
++        hairOnly[i] = 180;
++        hairOnly[i + 1] = 40;
++        hairOnly[i + 2] = 40;
++      }
++    }
++    expect(clothingBandDelta(shirt, hairOnly, scene.width, scene.height, face).warning).toBeNull();
++    const original = await sharp(shirt, { raw: { width: scene.width, height: scene.height, channels: 3 } }).png().toBuffer();
++    const edited = await sharp(scooped, { raw: { width: scene.width, height: scene.height, channels: 3 } }).png().toBuffer();
++    const finding = await assessClothing(original, edited);
++    expect(finding.accepted).toBe(false);
++    expect(finding.registered).toBe(true);
++    expect(finding.warning).toBe("clothing_changed");
++    const quiet = await assessClothing(original, original);
++    expect(quiet.warning).toBeNull();
++    expect(quiet.accepted).toBe(false);
++  });
++
 +  it("does not treat a mock result as a paid success", () => {
 +    expect(salonOutcome("no-key")).toEqual({ status: "DEMO", commit: false, placement: false });
 +    expect(salonOutcome("spend-cap").commit).toBe(false);
@@ -2704,7 +3168,24 @@ index 0000000..79b93b0
 +    if (!quote.ok) return;
 +    expect(quote.model).toBe("gpt-image-1.5");
 +    expect(quote.size).toBe("1536x1024");
++    expect(quote.estimateInr).toBeGreaterThanOrEqual(15);
++    expect(quote.estimateInr).toBeLessThanOrEqual(17);
++    expect(quote.imageInputTokens).toBeGreaterThan(10_000);
++    expect(quote.note).toMatch(/estimate, actual from provider usage/i);
++    expect(quote.outputUsd + quote.imageInputUsd + quote.textInputUsd).toBeCloseTo(quote.estimateUsd, 5);
 +    expect(quote.estimateInr).toBeLessThanOrEqual(quote.capInr);
++    process.env.BENCHMARK_INPUT_SIZE = "1024";
++    const tight = quoteBenchmark(1280, 720);
++    delete process.env.BENCHMARK_INPUT_SIZE;
++    expect(tight.ok).toBe(true);
++    if (tight.ok) {
++      expect(tight.size).toBe("1024x1024");
++      expect(tight.estimateInr).toBeLessThan(quote.estimateInr);
++    }
++    process.env.BENCHMARK_QUALITY = "high";
++    const high = quoteBenchmark(1280, 720);
++    delete process.env.BENCHMARK_QUALITY;
++    expect(high.ok).toBe(false);
 +    expect(quote.inputFidelity).toBe("high");
 +    const before = readFileSync("tests/fixtures/replay/long-layers-before.jpg");
 +    const raw = readFileSync("tests/fixtures/replay/long-layers-raw.jpg");

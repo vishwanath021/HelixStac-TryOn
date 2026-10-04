@@ -14,7 +14,7 @@ for (const sample of samples) {
     continue;
   }
   console.log(
-    `${sample.label} ${sample.width}x${sample.height} -> ${quote.model} ${quote.quality} ${quote.size} fidelity=${quote.inputFidelity} format=${quote.outputFormat} n=${quote.n} output≈$${quote.estimateUsd} ≈₹${quote.estimateInr} cap=₹${quote.capInr}`,
+    `${sample.label} ${sample.width}x${sample.height} -> ${quote.model} ${quote.quality} ${quote.size} fidelity=${quote.inputFidelity} format=${quote.outputFormat} n=${quote.n} mode=${quote.inputSizeMode} estimate≈$${quote.estimateUsd} ≈₹${quote.estimateInr} (output $${quote.outputUsd} + image input $${quote.imageInputUsd} / ${quote.imageInputTokens} tok + text $${quote.textInputUsd}) cap=₹${quote.capInr}`,
   );
 }
 console.log("No provider call was made. A paid run is the super-admin button on /super/ai.");

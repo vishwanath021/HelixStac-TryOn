@@ -35,7 +35,7 @@ export default async function SuperAiPage() {
       <SuperAiForm initial={initial} />
       {squareQuote.ok && (
         <p className="mt-4 text-sm leading-6">
-          Reference benchmark, off for guests: {squareQuote.model} quality {squareQuote.quality} at 1024×1024 is about ₹{squareQuote.estimateInr.toFixed(2)} (${squareQuote.estimateUsd}) of published output price, before input tokens. Landscape and portrait sizes are higher. The spend cap includes this call, billed failures, and uncertain timeouts.
+          Reference benchmark, off for guests: {squareQuote.model} quality {squareQuote.quality} at 1024×1024 is about ₹{squareQuote.estimateInr.toFixed(2)} (${squareQuote.estimateUsd.toFixed(3)}), including a conservative image-input allowance. A 1536×1024 canvas is higher, about the mid-teens in rupees. The ₹30 run cap is checked against that full estimate. The spend cap includes this call, billed failures, and uncertain timeouts.
         </p>
       )}
       <BenchmarkPanel styles={styles} />

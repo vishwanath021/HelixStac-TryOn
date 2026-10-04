@@ -12,6 +12,13 @@ type Quote = {
   estimateInr: number;
   estimateUsd: number;
   capInr: number;
+  outputTokens: number;
+  outputUsd: number;
+  imageInputTokens: number;
+  imageInputUsd: number;
+  textInputTokens: number;
+  textInputUsd: number;
+  inputSizeMode: string;
   note: string;
 };
 
@@ -71,9 +78,13 @@ export function BenchmarkPanel({ styles }: { styles: StyleOption[] }) {
     <section className="mt-8 rounded-2xl border border-line bg-white p-4">
       <h2 className="font-serif text-2xl">Reference benchmark</h2>
       <p className="mt-2 text-sm leading-6">
-        One OpenAI edit of the uploaded selfie plus the selected hairstyle reference. Guests never use this path.
+        One OpenAI hairstyle edit of a selfie from this computer, plus the selected reference. Guests never use this path.
         The result is labelled unvalidated model output. There is no mask, no pasted face, and no automatic retry.
-        The run cap is ₹{quote?.capInr ?? 30} for the output estimate. Input tokens can add more.
+        The run cap is ₹{quote?.capInr ?? 30}, checked against the estimate below, which includes input tokens.
+      </p>
+      <p className="mt-2 text-sm leading-6">
+        Real family photos are personal data. They are sent only to OpenAI, stored privately under var/benchmarks, and deleted after 72 hours
+        or when you press Delete now on the result page.
       </p>
       <label className="mt-3 block text-sm">
         Style
@@ -92,7 +103,7 @@ export function BenchmarkPanel({ styles }: { styles: StyleOption[] }) {
         </select>
       </label>
       <label className="mt-3 block text-sm">
-        Selfie, one file, not stored in git
+        Selfie from this computer
         <input
           className="mt-1 block text-sm"
           type="file"
@@ -109,7 +120,9 @@ export function BenchmarkPanel({ styles }: { styles: StyleOption[] }) {
       {quote && (
         <p className="mt-3 text-sm leading-6">
           {quote.model}, quality {quote.quality}, size {quote.size}, input_fidelity high, output png, n=1.
-          Estimated output cost about ₹{quote.estimateInr.toFixed(2)} (${quote.estimateUsd}). {quote.note}
+          Input size {quote.inputSizeMode}. Estimate ₹{quote.estimateInr.toFixed(2)} (${quote.estimateUsd.toFixed(3)}).
+          Output ${quote.outputUsd.toFixed(3)} ({quote.outputTokens} tokens), image input ${quote.imageInputUsd.toFixed(3)} ({quote.imageInputTokens} tokens),
+          text input ${quote.textInputUsd.toFixed(3)} ({quote.textInputTokens} tokens). {quote.note}
         </p>
       )}
       <label className="mt-3 flex items-start gap-2 text-sm">

@@ -12,7 +12,7 @@ Guest production is unchanged in shape: sanitize the selfie, place a heuristic h
 
 A separate super-admin path now sends a full-frame edit: the sanitized selfie first, the selected catalogue reference second, and a prompt that names those roles. It does not send a mask, does not paste the original face back, and does not call Gemini or a mock if OpenAI fails.
 
-No paid generation was run for this change. Offline tests do not establish likeness, haircut match, or reconstruction quality.
+This follow-up did not place a new paid call. The owner's first paid benchmark is recorded below. Offline tests still do not establish likeness or haircut match.
 
 ## Exact request
 
@@ -25,7 +25,7 @@ No paid generation was run for this change. Offline tests do not establish liken
 | n | `1` | Fixed. |
 | input_fidelity | `high` | Sent only when the capability table lists it for that exact model id. |
 | output_format | `png` | Lossless inspection file. |
-| size | `1024x1024`, `1536x1024`, or `1024x1536` | Chosen from the selfie aspect. Ratio above 1.15 is landscape. Ratio below 1/1.15 is portrait. Otherwise square. |
+| size | `1024x1024`, `1536x1024`, or `1024x1536` | Chosen from the selfie aspect. Ratio above 1.15 is landscape. Ratio below 1/1.15 is portrait. Otherwise square. `BENCHMARK_INPUT_SIZE=1024` is off by default and forces a 1024 edge (square, or `1024x1536` for a tall photo). |
 | image[0] | `selfie.png` | Sanitized selfie, uniform-scaled into the chosen size. Bars use the border mean. No stretch. |
 | image[1] | `style-reference.jpg` | `public/styles/{id}@2x.jpg`, else `{id}-large.jpg`, else `{id}.jpg`. |
 | mask | omitted | The prompt has no mask sentence on this path. |
@@ -37,7 +37,7 @@ If the API rejects `gpt-image-1.5` or `input_fidelity`, the run returns that err
 
 One `fetch`, `AbortSignal.timeout(55_000)`, no OpenAI SDK. `@google/genai` 1.21.0 retries chunked file uploads only (`MAX_RETRY_COUNT = 3` inside `uploadBlob`). `generateContent` is a single request. The hair pipeline's `MAX_PROVIDER_ATTEMPTS` is 1. HTTP 429 and 5xx are recorded as an unknown bill and are not sent again, including where the image guide suggests retrying rate limits. A timeout, a dropped connection, a rejected output, and a lost client connection follow the same rule.
 
-`quoteBenchmark` refuses the run before any HTTP call when the model is unknown, when that model cannot take `input_fidelity=high`, when the price cell is missing, or when the buffered output estimate exceeds `BENCHMARK_RUN_CAP_INR` (default 30). The global `AI_SPEND_CAP_INR` still applies inside `beginPaidCall`.
+`quoteBenchmark` refuses the run before any HTTP call when the model is unknown, when that model cannot take `input_fidelity=high`, when the price cell is missing, or when the buffered full estimate (output tokens plus image-input and text-input allowances) exceeds `BENCHMARK_RUN_CAP_INR` (default 30). The global `AI_SPEND_CAP_INR` still applies inside `beginPaidCall`.
 
 ## Documentation checked
 
@@ -60,23 +60,37 @@ The image guide says output format defaults to png and also accepts jpeg and web
 
 On fidelity, the guide says: “The `input_fidelity` parameter controls how strongly a model preserves details from input images during edits and reference-image workflows. For `gpt-image-2`, omit this parameter; the API doesn’t allow changing it because the model processes every image input at high fidelity automatically.”
 
-`gpt-image-1.5` is treated as a model prior to `gpt-image-2`, so the benchmark sends `input_fidelity=high`. That support was not confirmed with a live call. A rejection fails the run. `gpt-image-1-mini` and `gpt-image-2` have `inputFidelity: null` in `src/lib/ai/edit-request.ts` and the parameter is not posted. Capability checks use the exact model id. A substring of the id is not enough.
+`gpt-image-1.5` is treated as a model prior to `gpt-image-2`, so the benchmark sends `input_fidelity=high`. The first paid run accepted that parameter. A later rejection still fails the run. `gpt-image-1-mini` and `gpt-image-2` have `inputFidelity: null` in `src/lib/ai/edit-request.ts` and the parameter is not posted. Capability checks use the exact model id. A substring of the id is not enough.
 
 The Images API reference page timed out on fetch. Parameter names used here (`model`, `prompt`, `image[]`, `mask`, `quality`, `size`, `output_format`, `n`, `input_fidelity`) are the ones in the image guide's edit examples and the existing production client.
 
+## First paid run
+
+The owner ran one real benchmark. This agent did not repeat it.
+
+- Model `gpt-image-1.5`, quality `medium`, `input_fidelity=high` (accepted), size `1536x1024`, selfie plus the pixie reference.
+- Latency 21.2 s.
+- Usage: input 11,180 tokens (10,885 image + 295 text), output 1,899 tokens. The guide's medium-landscape cell is 1,568 image-output tokens. Charging the reported 1,899 output tokens at $32 / 1M, the 10,885 image-input tokens at $8 / 1M, and the 295 text tokens at $5 / 1M comes to $0.149.
+- At FX 96 that is ₹14.30 with no buffer, and about ₹15.50 with the 1.08 testing buffer. The old quote of ₹5.20 was the output list price only ($0.05) and left out the image-input tokens (about $0.087).
+- The haircut, face, and background were judged good. The white crew-neck tee became a shallow V or scoop. That is a clothing failure, not a hair failure.
+
+The quote now prices output tokens at the image-output rate ($32 / 1M), image-input tokens at $8 / 1M, and a 400-token text allowance at $5 / 1M. Image-input tokens scale from 10,885 per (1536×1024 + 512×512) pixels, times 1.15. Output tokens scale from the guide table by 1899/1568. The page says “estimate, actual from provider usage.” After a run, `BenchmarkRun` stores the provider usage, latency, and the computed actual USD and INR separately from the estimate.
+
 ## Cost
 
-These are published list prices, not invoices. `bufferedInr` is USD × `FX_INR_PER_USD` (default 96) × 1.08, rounded up to ₹0.1. `npm run benchmark:quote` printed, with no network call:
+These are published rates plus that calibration, not invoices. `bufferedInr` is USD × `FX_INR_PER_USD` (default 96) × 1.08, rounded up to ₹0.1. `npm run benchmark:quote` printed, with no network call:
 
-| Selfie | Size sent | Output list price | Buffered estimate | Run cap |
-|---|---|---|---|---|
-| 1024×1024 | 1024×1024 | $0.034 | ₹3.6 | ₹30 |
-| 1280×720 | 1536×1024 | $0.05 | ₹5.2 | ₹30 |
-| 720×1280 | 1024×1536 | $0.05 | ₹5.2 | ₹30 |
+| Selfie | Size sent | Estimate USD | Buffered estimate | Breakdown | Run cap |
+|---|---|---|---|---|---|
+| 1024×1024 | 1024×1024 | $0.114 | ₹11.9 | output $0.041 + image input $0.072 (8,942 tok) + text $0.002 | ₹30 |
+| 1280×720 | 1536×1024 | $0.163 | ₹16.9 | output $0.061 + image input $0.100 (12,518 tok) + text $0.002 | ₹30 |
+| 720×1280 | 1024×1536 | $0.164 | ₹17.0 | output $0.061 + image input $0.100 (12,518 tok) + text $0.002 | ₹30 |
 
-Input tokens are extra. Two images plus the prompt will add image-input and text-input charges that this estimate does not include. The ledger stores `costSource=usage` from `costUsdFromUsage` when the response includes token counts, at FX with no 1.08 buffer. Image-edit output tokens are priced at the image-output rate ($32 / 1M for `gpt-image-1.5`). The Images response does not split text output from image output, so that usage figure can sit above the legacy per-image table. The cap itself still reserves the buffered output estimate.
+The ₹30 cap is checked against this full estimate. High quality at 1536×1024 is above the cap and is refused before the call. `BENCHMARK_INPUT_SIZE=1024` is unset by default. It sends a 1024-edge selfie (square, or 1024×1536 when the photo is tall) and leaves the reference at 512. A wide photo then has side bars and a smaller subject, in exchange for fewer image-input tokens. Compare one tight run with one full run before relying on it.
 
-The benchmark tier is visible on `/super/ai` next to the cost ledger. It is not a guest tier. Guest Test stays `gpt-image-1-mini` low at about ₹0.60. Turning this mode on for guests would replace that with roughly ₹3.60–₹5.20 of output price per image before input tokens, plus the fidelity and reference-image input. It is not enabled for guests.
+The ledger stores `costSource=usage` from `costUsdFromUsage` when the response includes token counts, at FX with no 1.08 buffer. Image-edit output tokens are priced at the image-output rate ($32 / 1M for `gpt-image-1.5`). The cap itself still reserves the buffered estimate.
+
+The benchmark tier is visible on `/super/ai` next to the cost ledger. It is not a guest tier. Guest Test stays `gpt-image-1-mini` low at about ₹0.60. Turning this mode on for guests would replace that with roughly ₹12–₹17 per image at medium quality. It is not enabled for guests.
 
 ## Spend and duplicate requests
 
@@ -188,29 +202,40 @@ What the unit tests cover:
 
 `npm run test` is the broader suite. Playwright e2e was not re-run.
 
-Browser check against the production build on `127.0.0.1:3000`, with no provider call: an anonymous `GET /super/ai` returned 307, and an anonymous benchmark quote returned 403 `FORBIDDEN`. Signed in as the super-admin, the Reference benchmark section showed the style list, a disabled **Run benchmark** button, and after a synthetic 720×1280 JPEG the quote `gpt-image-1.5, quality medium, size 1024x1536, input_fidelity high, output png, n=1`, about ₹5.20. The confirmation checkbox enabled the button. The button was not clicked. `/super/ai/benchmark/does-not-exist` rendered the not-found page. Guest style-button disabling was not exercised in the browser; the lock and `disabled={busy}` are in `TryOnApp`.
+The clothing check compares the neckline band of the restored frame with the sanitized selfie after `registerProviderFrame`. A large change is `clothing_changed` in `validation.json` and on the run row. `accepted` stays false. Synthetic tests cover an unchanged shirt, a hair-only change above the band, and a recolored neckline.
+
+Browser check against the production build on `127.0.0.1:3000`, with no provider call: an anonymous `GET /super/ai` returned 307, and an anonymous benchmark quote returned 403 `FORBIDDEN`. Signed in as the super-admin, the Reference benchmark section showed the style list, a disabled **Run benchmark** button, and after a synthetic 720×1280 JPEG the quote `gpt-image-1.5, quality medium, size 1024x1536, input_fidelity high, output png, n=1`, about ₹5.20. That ₹5.20 figure is the old output-only quote, from before this follow-up. The confirmation checkbox enabled the button. The button was not clicked. `/super/ai/benchmark/does-not-exist` rendered the not-found page. Guest style-button disabling was not exercised in the browser; the lock and `disabled={busy}` are in `TryOnApp`.
 
 ## Implemented, and still visually unverified
 
 Implemented and checked offline: the request builder, reference lookup, prompt roles, length sentences, spend statuses, dedupe, single attempt, demo accounting, super-admin quote and confirm UI, private stage files, and the production face-guard still rejecting the saved bad frame.
 
-Not established: that `gpt-image-1.5` accepts `input_fidelity=high` on this key; that the output preserves identity, pose, framing, clothing, and lighting; that a long-to-short cut reconstructs neck, ears, or background; that the reference cut is actually transferred; that edges look natural; latency; token usage; or the rupee cost of an accepted result. The six-row sheet `docs/benchmark-score-sheet.csv` is empty on purpose.
+The first paid pixie run showed a usable haircut with the face and background kept, and it also changed a crew neck into a shallow V. The prompt now tells the model to keep neckline, collar, sleeves, garment colour, and straps, including the exact crew neckline of a t-shirt. That sentence has not been tried on a second paid image. The six-row sheet `docs/benchmark-score-sheet.csv` is still empty.
 
-## How to run one controlled paid test
+## How to run a controlled paid test locally
 
-1. Leave the key out of git. Sign in as the super-admin and set the platform provider to OpenAI on `/super/ai`, or export `OPENAI_API_KEY` only in the process environment.
-2. `npm run benchmark:quote` prints the estimate and does not call the API.
-3. On `/super/ai`, under Reference benchmark, choose one style and one local selfie. The page quotes model, quality, size, fidelity, png, and the rupee estimate. Tick “I understand this makes one paid OpenAI call and does not retry.” Press **Run benchmark**. The button stays disabled until a file, a quote, and the tick are present. The server also requires `confirm=yes`, the ₹30 run cap, and the global spend cap. It makes one call.
-4. Open the link to `/super/ai/benchmark/{id}`. Read `provider-response.png` as the decoded provider body. Read `restored-output.png` only as the crop. `validation.json` stays `accepted: false`.
-5. Score that single run in the CSV. Do not treat it as the six-run matrix. The matrix is three selfies you keep off git, two styles each, including at least one long-to-short (`pixie` or another short id) and one short-to-long (`long-layers`). Commands and the column list are in the README section “Reference benchmark”.
+```bash
+git pull
+npm install
+npm run db:push
+npm run seed
+npm run dev
+```
 
-Suggested first pair, one call only: a portrait selfie and `pixie` (short, long-to-short sentence). Expect about ₹5.2 of output list price for a portrait, plus input tokens, under the ₹30 cap.
+1. Open http://localhost:3000/login and sign in as `super@helixstac.app` / `SuperAdmin#2026`.
+2. Open http://localhost:3000/super/ai. If the platform provider is not already OpenAI, paste the key there. Do not put the key in git.
+3. Optional, no charge: `npm run benchmark:quote`.
+4. In Reference benchmark, pick a hairstyle, choose a selfie from this computer, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick the confirmation, and press **Run benchmark**. The note on the form says family photos are personal data and are sent only to OpenAI.
+5. Open the result link. The left image is the sanitized selfie. The right image is `provider-response.png`, labelled UNVALIDATED. The page shows usage, latency, the estimate, and the actual cost from provider usage. `validation.json` stays `accepted: false`. A neckline shift is `clothing_changed`.
+6. Press **Delete now** when you are finished, or leave the files for the 72-hour retention. Do not commit the photos.
+
+`BENCHMARK_INPUT_SIZE=1024` in `.env`, then restart `npm run dev`, if you want a second run on a smaller canvas to compare cost. Leave it unset for the same 1536-class request as the first pixie run.
 
 ## Remaining limitations
 
-- Visual quality is unverified. Mocks and unit tests do not measure a haircut.
-- `input_fidelity=high` on `gpt-image-1.5` is inferred from the guide's `gpt-image-2` exception. A live rejection is fatal and has not been observed.
-- Input-token cost is unknown until a usage payload exists. The confirmation number is the output estimate only.
+- One paid pixie frame looked right in the hair and wrong in the neckline. The stronger clothing sentence and the `clothing_changed` warning are not yet confirmed on a second paid image.
+- `input_fidelity=high` was accepted on that first call. A future key that rejects it still fails the run with no fallback.
+- The quote is an estimate with a 15% image-token margin. The stored actual cost is the provider usage. They will differ.
 - References are 512×512. Several men's cuts look alike, and several show stubble. Listed above as needing regeneration.
 - A new guest click uses a new request id and can bill again after a lost response.
 - Spend reservations and dedupe share state only through the database. The in-process queue is single-process.

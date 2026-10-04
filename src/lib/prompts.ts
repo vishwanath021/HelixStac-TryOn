@@ -42,6 +42,7 @@ export function buildReferencePrompt(style: StyleDef, colourName?: string) {
     `Produce one photorealistic edited photograph of the person in Image 1 wearing ${style.name}. ${style.prompt}`,
     "Transfer the haircut's silhouette, length, layering, fringe and parting from Image 2, adapted naturally to the person's head and existing hair texture.",
     "Preserve the identity, facial features, expression, pose, head size, camera position, clothing, jewellery, background and lighting from Image 1.",
+    "Keep the clothing, neckline shape, collar, sleeves, garment colour and straps exactly as in Image 1. If Image 1 shows a crew-neck t-shirt, the t-shirt keeps its exact crew neckline. Only the hair region, and skin or background that the old hair was covering, may change.",
     colour,
     "Do not transfer the reference person's face, skin, clothing, pose or background.",
     lengthInstruction(style),
