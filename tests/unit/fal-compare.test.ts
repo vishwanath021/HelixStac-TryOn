@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { COMPARISON_MODELS, comparisonModel, quoteComparisonModel } from "@/lib/ai/compare-models";
 import { resolveFalKey, resolveOpenAIKey } from "@/lib/ai/credentials";
 import { BilledProviderError, UncertainBillingError } from "@/lib/ai/errors";
-import { buildFalEditBody, falModel } from "@/lib/ai/fal-models";
+import { FAL_NUMBERED_IMAGE_PROMPT, buildFalEditBody, falModel } from "@/lib/ai/fal-models";
+import { bufferedInr } from "@/lib/ai/tiers";
 import { falSubmitHeaders, falTimeoutMs, postFalReferenceEdit } from "@/lib/ai/fal-reference";
 import { productionModelNotice } from "@/lib/ai/model-notices";
 import { executeReferenceEdit } from "@/lib/ai/reference-run";
@@ -121,6 +122,47 @@ describe("fal and shutdown catalogue", () => {
     expect(seedream?.image_size).toEqual({ width: 1024, height: 1536 });
     expect(seedream?.max_images).toBe(1);
     expect(falModel("fal-ai/qwen-image-edit-plus")).toBeNull();
+  });
+
+  it("prices the newer fal edits first and leaves their size to the endpoint", () => {
+    const falIds = COMPARISON_MODELS.filter((row) => row.provider === "fal").map((row) => row.id);
+    expect(falIds.slice(0, 5)).toEqual([
+      "blackforestlabs/flux-3/edit-image",
+      "fal-ai/nano-banana-pro/edit",
+      "fal-ai/nano-banana-2/edit",
+      "bytedance/seedream/v5/lite/edit",
+      "openai/gpt-image-2/edit",
+    ]);
+    expect(falIds.at(-1)).toBe("fal-ai/bytedance/seedream/v4/edit");
+    expect(comparisonModel("fal-ai/bytedance/seedream/v4/edit")?.label).toContain("old, slow, not recommended");
+    expect(comparisonModel("fal-ai/nano-banana/edit")?.label).toContain("older, superseded");
+    expect(comparisonModel("gpt-image-2")?.provider).toBe("openai");
+    expect(comparisonModel("openai/gpt-image-2/edit")?.provider).toBe("fal");
+    const usd: Record<string, number> = {
+      "blackforestlabs/flux-3/edit-image": (1024 * 1536) / 1_000_000 * 0.048,
+      "fal-ai/nano-banana-pro/edit": 0.15,
+      "fal-ai/nano-banana-2/edit": 0.08,
+      "bytedance/seedream/v5/lite/edit": 0.035,
+      "openai/gpt-image-2/edit": 0.054,
+    };
+    for (const id of falIds.slice(0, 5)) {
+      const body = buildFalEditBody(id, {
+        prompt: FAL_NUMBERED_IMAGE_PROMPT,
+        selfieUrl: "https://cdn.example/selfie.png",
+        referenceUrl: "https://cdn.example/reference.jpg",
+        size: "1024x1536",
+      });
+      expect(Object.keys(body ?? {}).sort()).toEqual(id === "openai/gpt-image-2/edit" ? ["image_urls", "prompt", "quality"] : ["image_urls", "prompt"]);
+      expect(body?.image_urls).toEqual(["https://cdn.example/selfie.png", "https://cdn.example/reference.jpg"]);
+      expect(body?.prompt).toBe(FAL_NUMBERED_IMAGE_PROMPT);
+      expect(body?.quality).toBe(id === "openai/gpt-image-2/edit" ? "medium" : undefined);
+      const quote = quoteComparisonModel(id, 480, 640, portrait);
+      expect(quote.ok, id).toBe(true);
+      if (!quote.ok) continue;
+      expect(quote.estimateUsd).toBeCloseTo(usd[id]!, 6);
+      expect(quote.estimateInr).toBe(bufferedInr(usd[id]!));
+      expect(quote.estimateInr).toBeLessThanOrEqual(30);
+    }
   });
 
   it("refuses a missing fal key before any request", async () => {

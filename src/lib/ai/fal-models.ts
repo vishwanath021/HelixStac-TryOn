@@ -8,7 +8,7 @@ import { bufferedInr, exactInr } from "@/lib/ai/tiers";
  */
 const OUTPUT_SIZES = ["1024x1024", "1024x1536", "1536x1024"] as const;
 
-export type FalSizeMode = "image_size" | "aspect_ratio";
+export type FalSizeMode = "image_size" | "aspect_ratio" | "defaults";
 
 export type FalModelRow = {
   id: string;
@@ -21,7 +21,63 @@ export type FalModelRow = {
   maxInputs: number;
 };
 
+/** Newest fal edits. The request names the two images by number and does not reuse the older reference prompt. */
+export const FAL_NUMBERED_PROMPT_IDS = [
+  "blackforestlabs/flux-3/edit-image",
+  "fal-ai/nano-banana-pro/edit",
+  "fal-ai/nano-banana-2/edit",
+  "bytedance/seedream/v5/lite/edit",
+  "openai/gpt-image-2/edit",
+] as const;
+
+export const FAL_NUMBERED_IMAGE_PROMPT =
+  "Image 1 is the selfie, image 2 is the hairstyle reference. Change only the hairstyle of the person in image 1 to match image 2. Keep the face, clothes, glasses and background identical.";
+
+export function falUsesNumberedPrompt(id: string) {
+  return (FAL_NUMBERED_PROMPT_IDS as readonly string[]).includes(id);
+}
+
 export const FAL_COMPARISON_MODELS: readonly FalModelRow[] = [
+  {
+    id: "blackforestlabs/flux-3/edit-image",
+    label: "blackforestlabs/flux-3/edit-image (size left to the endpoint default)",
+    experimental: false,
+    safetyChecker: false,
+    sizeMode: "defaults",
+    maxInputs: 10,
+  },
+  {
+    id: "fal-ai/nano-banana-pro/edit",
+    label: "fal-ai/nano-banana-pro/edit (size left to the endpoint default)",
+    experimental: false,
+    safetyChecker: false,
+    sizeMode: "defaults",
+    maxInputs: 0,
+  },
+  {
+    id: "fal-ai/nano-banana-2/edit",
+    label: "fal-ai/nano-banana-2/edit (1K price; resolution left to the endpoint default)",
+    experimental: false,
+    safetyChecker: false,
+    sizeMode: "defaults",
+    maxInputs: 0,
+  },
+  {
+    id: "bytedance/seedream/v5/lite/edit",
+    label: "bytedance/seedream/v5/lite/edit (size left to the endpoint default)",
+    experimental: false,
+    safetyChecker: false,
+    sizeMode: "defaults",
+    maxInputs: 0,
+  },
+  {
+    id: "openai/gpt-image-2/edit",
+    label: "openai/gpt-image-2/edit (quality medium; size left to the endpoint default)",
+    experimental: false,
+    safetyChecker: false,
+    sizeMode: "defaults",
+    maxInputs: 0,
+  },
   {
     id: "fal-ai/flux-2/edit",
     label: "fal-ai/flux-2/edit",
@@ -47,14 +103,6 @@ export const FAL_COMPARISON_MODELS: readonly FalModelRow[] = [
     maxInputs: 0,
   },
   {
-    id: "fal-ai/bytedance/seedream/v4/edit",
-    label: "fal-ai/bytedance/seedream/v4/edit (experimental)",
-    experimental: true,
-    safetyChecker: true,
-    sizeMode: "image_size",
-    maxInputs: 10,
-  },
-  {
     id: "fal-ai/flux-2/klein/9b/edit",
     label: "fal-ai/flux-2/klein/9b/edit (experimental)",
     experimental: true,
@@ -72,11 +120,19 @@ export const FAL_COMPARISON_MODELS: readonly FalModelRow[] = [
   },
   {
     id: "fal-ai/nano-banana/edit",
-    label: "fal-ai/nano-banana/edit (experimental)",
+    label: "fal-ai/nano-banana/edit (older, superseded)",
     experimental: true,
     safetyChecker: false,
     sizeMode: "aspect_ratio",
     maxInputs: 0,
+  },
+  {
+    id: "fal-ai/bytedance/seedream/v4/edit",
+    label: "fal-ai/bytedance/seedream/v4/edit (old, slow, not recommended)",
+    experimental: true,
+    safetyChecker: true,
+    sizeMode: "image_size",
+    maxInputs: 10,
   },
 ];
 
@@ -143,6 +199,41 @@ export function falUsdRange(
       detail: `$${rate} per megapixel. The page does not say whether inputs are included. The low end is the output only. The high end bills the larger of actual input pixels or 1MP for each input.`,
     };
   }
+  if (id === "blackforestlabs/flux-3/edit-image") {
+    return {
+      lowUsd: outMp * 0.024,
+      highUsd: outMp * 0.048,
+      detail: "$0.024 per output megapixel is the launch price until 8 Oct 2026, then $0.048. The cap uses $0.048. image_urls accepts 1–10 images. Output size is left to the endpoint default, and this cap prices the app's portrait reading of that size.",
+    };
+  }
+  if (id === "fal-ai/nano-banana-pro/edit") {
+    return {
+      lowUsd: 0.15,
+      highUsd: 0.15,
+      detail: "$0.15 per image. Output size is left to the endpoint default. The request sends image_urls and prompt only.",
+    };
+  }
+  if (id === "fal-ai/nano-banana-2/edit") {
+    return {
+      lowUsd: 0.08,
+      highUsd: 0.08,
+      detail: "$0.08 per image at 1K. Resolution is left to the endpoint default. The request sends image_urls and prompt only.",
+    };
+  }
+  if (id === "bytedance/seedream/v5/lite/edit") {
+    return {
+      lowUsd: 0.035,
+      highUsd: 0.035,
+      detail: "$0.035 per image. Output size is left to the endpoint default. The request sends image_urls and prompt only.",
+    };
+  }
+  if (id === "openai/gpt-image-2/edit") {
+    return {
+      lowUsd: 0.054,
+      highUsd: 0.054,
+      detail: "Token billed. The estimate is $0.054 for a 1024x1536 image at quality medium. quality is hard-set to medium and is never high. Output size is left to the endpoint default.",
+    };
+  }
   if (id === "fal-ai/bytedance/seedream/v4/edit") {
     return {
       lowUsd: 0.03,
@@ -189,7 +280,7 @@ export function quoteFalModel(id: string, width: number, height: number, referen
     ok: true as const,
     provider: "fal" as const,
     model: row.id,
-    quality: "edit",
+    quality: id === "openai/gpt-image-2/edit" ? "medium" : "edit",
     size,
     outputFormat: "png" as const,
     inputFidelity: null,
@@ -221,6 +312,14 @@ export function buildFalEditBody(id: string, args: { prompt: string; selfieUrl: 
   const row = falModel(id);
   if (!row) return null;
   if (row.maxInputs > 0 && row.maxInputs < 2) return null;
+  if (row.sizeMode === "defaults") {
+    const minimal: Record<string, unknown> = {
+      prompt: args.prompt,
+      image_urls: [args.selfieUrl, args.referenceUrl],
+    };
+    if (row.id === "openai/gpt-image-2/edit") minimal.quality = "medium";
+    return minimal;
+  }
   const [width, height] = args.size.split("x").map((part) => Number(part));
   const body: Record<string, unknown> = {
     prompt: args.prompt,
