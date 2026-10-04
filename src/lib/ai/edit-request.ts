@@ -23,8 +23,13 @@ export type ImageEditCaps = {
   outputFormats: readonly EditFormat[];
   /** Null means the parameter must not be sent. */
   inputFidelity: readonly ("high" | "low")[] | null;
-  /** Published output price in USD for one image. Null when this table has no cell. Input tokens are extra. */
+  /** Published output price in USD for one image. Empty when the page has no per-image cell. Input tokens are extra. */
   outputUsd: Partial<Record<EditQuality, Partial<Record<EditSize, number>>>>;
+  /**
+   * The model page publishes token rates and no per-image output cell.
+   * A quote then uses token rates only. Do not invent a per-image dollar cell.
+   */
+  tokenOnly?: boolean;
 };
 
 const SIZES = ["1024x1024", "1024x1536", "1536x1024"] as const;
@@ -71,6 +76,31 @@ export const IMAGE_EDIT_MODELS: Record<string, ImageEditCaps> = {
     outputFormats: FORMATS,
     inputFidelity: null,
     outputUsd: cells(0.006, 0.053, 0.211, { low: 0.005, medium: 0.041, high: 0.165 }),
+  },
+  /**
+   * https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst (4 Oct 2026)
+   * Image edit is listed. Token rates match GPT Image 2: image input $8/1M, image output $30/1M, text input $5/1M.
+   * The page does not publish a per-image output cell. Quality also includes xhigh and max; this table keeps low/medium/high.
+   * The image prompting guide's 2.5 parameter table lists model, quality, size, and background. It does not list input_fidelity.
+   * The explicit "omit input_fidelity" sentence is written for gpt-image-2. This row omits the field because it is not in the 2.5 table.
+   */
+  "gpt-image-2.5-sunburst": {
+    id: "gpt-image-2.5-sunburst",
+    qualities: QUALITIES,
+    sizes: SIZES,
+    outputFormats: FORMATS,
+    inputFidelity: null,
+    outputUsd: {},
+    tokenOnly: true,
+  },
+  "gpt-image-2.5-flare": {
+    id: "gpt-image-2.5-flare",
+    qualities: QUALITIES,
+    sizes: SIZES,
+    outputFormats: FORMATS,
+    inputFidelity: null,
+    outputUsd: {},
+    tokenOnly: true,
   },
 };
 

@@ -49,8 +49,8 @@ export class BilledProviderError extends Error {
   readonly costUsd: number;
   readonly usage?: UsageNumbers;
 
-  constructor(costUsd: number, usage?: UsageNumbers) {
-    super("The provider billed the call and returned no image.");
+  constructor(costUsd: number, usage?: UsageNumbers, message = "The provider billed the call and returned no image.") {
+    super(message);
     this.name = "BilledProviderError";
     this.costUsd = costUsd;
     this.usage = usage;

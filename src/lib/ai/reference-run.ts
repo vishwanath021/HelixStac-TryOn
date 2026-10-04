@@ -9,7 +9,9 @@ import { composeHairOnly, reviewProviderFace } from "@/lib/face/compose-hair";
 import { assertVisionReady } from "@/lib/face/vision-assets";
 import type { DriftReport } from "@/lib/face/hair-composite";
 import { assessClothing } from "@/lib/ai/clothing-check";
-import { resolveGeminiKey, resolveOpenAIKey } from "@/lib/ai/credentials";
+import { resolveFalKey, resolveGeminiKey, resolveOpenAIKey } from "@/lib/ai/credentials";
+import { postFalReferenceEdit } from "@/lib/ai/fal-reference";
+import type { EditSize } from "@/lib/ai/edit-request";
 import { editFormFields } from "@/lib/ai/edit-request";
 import { postGeminiReferenceEdit } from "@/lib/ai/gemini-reference";
 import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
@@ -53,7 +55,7 @@ export type ReferenceSuccess = {
   ok: true;
   id: string;
   callId: string;
-  provider: "openai" | "gemini";
+  provider: "openai" | "gemini" | "fal";
   model: string;
   quality: string;
   size: string;
@@ -115,7 +117,23 @@ export async function executeReferenceEdit(args: {
     return { ok: false, httpStatus: 400, error: "QUOTE", message: prepared.message, outcome: "quote" };
   }
   const provider = "provider" in prepared ? prepared.provider : "openai";
-  const apiKey = provider === "gemini" ? await resolveGeminiKey() : await resolveOpenAIKey();
+  let apiKey: string | null = null;
+  if (provider === "gemini") apiKey = await resolveGeminiKey();
+  else if (provider === "fal") {
+    const fal = await resolveFalKey();
+    if (!fal.ok) {
+      return {
+        ok: false,
+        httpStatus: 400,
+        error: "NO_FAL_KEY",
+        outcome: "key",
+        message: fal.reason === "off"
+          ? "The fal key is saved and comparisons are off. Enable it on AI settings. This comparison does not call OpenAI or Gemini instead."
+          : "Add a fal key on AI settings and enable it. This comparison does not call OpenAI or Gemini instead.",
+      };
+    }
+    apiKey = fal.apiKey;
+  } else apiKey = await resolveOpenAIKey();
   if (!apiKey) {
     return provider === "gemini"
       ? {
@@ -231,6 +249,19 @@ export async function executeReferenceEdit(args: {
       });
       usage = gemini.usage;
       providerResponse = gemini.image;
+    } else if (provider === "fal") {
+      const prompt = "prompt" in prepared ? prepared.prompt : planned?.prompt || "";
+      const fal = await postFalReferenceEdit({
+        apiKey,
+        endpointId: quote.model,
+        prompt,
+        selfiePng: inputPng,
+        referenceJpeg: reference,
+        size: quote.size as EditSize,
+        estimateUsd: quote.estimateUsd,
+      });
+      usage = undefined;
+      providerResponse = fal.image;
     } else {
       if (!planned) {
         throw new UnknownModelError(`${quote.model} is not a configured image-edit model. No other model was called.`);
@@ -256,9 +287,9 @@ export async function executeReferenceEdit(args: {
       providerResponse = Buffer.from(b64, "base64");
     }
     const latencyMs = Date.now() - started;
-    const restored = provider === "gemini"
-      ? await sharp(providerResponse, { failOn: "none" }).rotate().png().toBuffer()
-      : await restoredFromProvider(providerResponse, transform);
+    const restored = provider === "openai"
+      ? await restoredFromProvider(providerResponse, transform)
+      : await sharp(providerResponse, { failOn: "none" }).rotate().png().toBuffer();
     const clothing = await assessClothing(args.jpeg, restored).catch((): Awaited<ReturnType<typeof assessClothing>> => ({
       warning: null,
       meanDelta: 0,
@@ -334,7 +365,9 @@ export async function executeReferenceEdit(args: {
       hairComposite: compositePng || undefined,
       faceCheck: faceCheckPng,
     });
-    const usd = costUsdFromUsage(quote.model, usage) ?? quote.estimateUsd;
+    const reported = costUsdFromUsage(quote.model, usage);
+    const usd = reported ?? quote.estimateUsd;
+    const costIsEstimate = reported == null;
     await finalizePaidCall(gate.id, {
       model: quote.model,
       billed: true,
@@ -347,6 +380,7 @@ export async function executeReferenceEdit(args: {
     });
     const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
     let message = `Unvalidated model output. The raw provider image is the result. One provider call. No mask, no face paste, no retry.${clothingNote}`;
+    if (costIsEstimate && provider === "fal") message += " The shown cost is the conservative estimate. fal did not report usage.";
     if (rawDrift?.flagged) message += " Face may differ from your photo.";
     if (args.hairComposite && compositePng) {
       message += " Hair-only composite saved separately as an optional fallback. It is not the download.";

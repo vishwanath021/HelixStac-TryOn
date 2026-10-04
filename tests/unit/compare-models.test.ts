@@ -57,6 +57,28 @@ describe("comparison models", () => {
       expect(gemini.estimateInr).toBeLessThan(10);
     }
     expect(usdFromTokenCounts("gpt-image-2", { textIn: 400, imageIn: 1000, output: 1000 })).not.toBeNull();
+    const sunburst = quoteComparisonModel("gpt-image-2.5-sunburst", 480, 640);
+    expect(sunburst.ok).toBe(true);
+    if (sunburst.ok) {
+      expect(sunburst.model).toBe("gpt-image-2.5-sunburst");
+      expect(sunburst.inputFidelity).toBeNull();
+      expect(sunburst.size).toBe("1024x1536");
+      expect(sunburst.estimateInr).toBeLessThanOrEqual(sunburst.capInr);
+      const planned = planImageEdit({
+        model: sunburst.model,
+        prompt: "edit",
+        quality: "medium",
+        size: sunburst.size,
+        outputFormat: "png",
+        inputFidelity: sunburst.inputFidelity,
+        imageOrder: ["selfie.png", "style-reference.jpg"],
+        mask: false,
+      });
+      expect(planned.ok).toBe(true);
+      if (planned.ok) expect(editFormFields(planned.plan).input_fidelity).toBeUndefined();
+    }
+    expect(comparisonModel("gpt-image-2.5-sunburst")?.id).toBe("gpt-image-2.5-sunburst");
+    expect(comparisonModel("gpt-image-2.5-flare")?.id).toBe("gpt-image-2.5-flare");
   });
 
   it("prepares gpt-image-2 without input_fidelity and keeps the reference prompt", async () => {

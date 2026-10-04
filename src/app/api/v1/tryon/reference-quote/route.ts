@@ -33,5 +33,8 @@ export async function GET(req: Request) {
     rupees: quote.estimateInr,
     dollars: quote.estimateUsd,
     note: quote.note,
+    warning: "warning" in quote ? quote.warning || "" : "",
+    rangeLowInr: "rangeLowInr" in quote ? quote.rangeLowInr : null,
+    rangeHighInr: "rangeHighInr" in quote ? quote.rangeHighInr : null,
   });
 }

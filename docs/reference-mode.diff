@@ -1,8 +1,16 @@
 diff --git a/.env.example b/.env.example
-index 6ec3dab..446aaab 100644
+index 6ec3dab..a0944cd 100644
 --- a/.env.example
 +++ b/.env.example
-@@ -67,7 +67,29 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
+@@ -44,6 +44,7 @@ GEMINI_TEXT_MODEL="gemini-3.1-flash-lite"
+ # Optional failover. Leave blank to keep the stub inactive.
+ # REPLICATE_API_TOKEN=""
+ # REPLICATE_MODEL="flux-kontext-apps/change-haircut"
++# Optional fallback only. Reference comparisons use the encrypted fal key saved on /super/ai.
+ # FAL_KEY=""
+ # FAL_MODEL="fal-ai/flux-pro/kontext"
+ # Set to gemini to allow the concierge to call a text model. Default is rules.
+@@ -67,7 +68,29 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
  # Hard testing guard for paid image calls, in INR estimates (not a provider invoice).
  # Default ₹500. At the cap the app returns a labelled sample instead of calling the provider.
  AI_SPEND_CAP_INR="500"
@@ -182,10 +190,10 @@ index c5ef9e0..6faa9da 100644
  
 diff --git a/docs/REFERENCE-MODE-REVIEW.md b/docs/REFERENCE-MODE-REVIEW.md
 new file mode 100644
-index 0000000..03d2a13
+index 0000000..14260f2
 --- /dev/null
 +++ b/docs/REFERENCE-MODE-REVIEW.md
-@@ -0,0 +1,326 @@
+@@ -0,0 +1,374 @@
 +# Reference-mode review
 +
 +Date: 4 Oct 2026. Baseline before this work: `8a3a244` (`docs: record which image-edit parameters the hair path never sends`) on `cursor/feat-initial-build-5096`. The shareable diff against that commit is `docs/reference-mode.diff`.
@@ -219,7 +227,7 @@ index 0000000..03d2a13
 +| mask | omitted | The prompt has no mask sentence on this path. |
 +| seed, strength, guidance, guidance_scale | omitted | `FORBIDDEN_EDIT_FIELDS`. |
 +
-+Authorization is the platform OpenAI key from `/super/ai` when `platform_ai_provider` is `openai`, otherwise `OPENAI_API_KEY`. The key is not written to the repo, logs, or this review. A missing key returns `NO_OPENAI_KEY` and makes no call.
++Authorization for an OpenAI comparison is the dedicated OpenAI key on `/super/ai`, then the older single slot when that slot is an OpenAI key, then `OPENAI_API_KEY`. A Gemini key is not used for an OpenAI model. A fal comparison uses the fal key and refuses before any call when that key is missing or comparisons are off. The key is not written to the repo, logs, or this review. A missing OpenAI key returns `NO_OPENAI_KEY` and makes no call.
 +
 +If the API rejects `gpt-image-1.5` or `input_fidelity`, the run returns that error (`UNKNOWN_MODEL` or `BENCHMARK`, HTTP 422) and stops. There is no second model.
 +
@@ -480,6 +488,54 @@ index 0000000..03d2a13
 +
 +Each result stays on the page. A second model appears beside the first with that model's usage, latency, and actual cost. The actual cost is shown only to the super-admin.
 +
++## Shutdown dates and fal comparison
++
++Fetched 4 Oct 2026 from the live pages. Anything not on those pages is marked unverified.
++
++Official deprecations, https://developers.openai.com/api/docs/deprecations :
++
++| Model | Shutdown | Replacement named on that page |
++|---|---|---|
++| `gpt-image-1.5` | 1 Dec 2026 | `gpt-image-2.5-sunburst` or `gpt-image-2.5-flare` |
++| `gpt-image-1-mini` | 1 Dec 2026 | `gpt-image-2.5-sunburst` or `gpt-image-2.5-flare` |
++| `chatgpt-image-latest` | 1 Dec 2026 | `gpt-image-2.5-sunburst` or `gpt-image-2.5-flare` |
++| `gpt-image-1` | 23 Oct 2026 | `gpt-image-2.5-sunburst` or `gpt-image-2.5-flare` |
++
++This app does not send `chatgpt-image-latest`. Guest Test and Medium still send `gpt-image-1-mini`. Guest High still sends `gpt-image-1`. `/super/ai` shows those shutdown dates next to the tiers. The tier request, quality, size, and rupee estimate were not changed.
++
++`gpt-image-2` is still a documented edit model (`v1/images/edits`). The prompting guide says to omit `input_fidelity` for it. Third-party posts that name only `gpt-image-2` are older than the deprecations page, which names the 2.5 models as the replacement.
++
++Both 2.5 model pages list Image edit and the same token rates as GPT Image 2 (text input $5/1M, image input $8/1M, image output $30/1M). Snapshots: `gpt-image-2.5-sunburst-2026-09-08` and `gpt-image-2.5-flare-2026-09-08`. Neither id is on the shutdown table. The image generation guide says to select `gpt-image-2.5-sunburst` for precise editing, so that id is the comparison default. `gpt-image-2.5-flare` is also in the dropdown. Quality on those pages includes `xhigh` and `max`. This comparison keeps `medium` so the ₹30 cap still applies. The 2.5 pages do not publish a per-image output dollar cell. The quote uses the token rates and the existing output-token allowance. That allowance is not a published 2.5 token count.
++
++`input_fidelity`: the GPT Image 2 parameter table says omit it. The GPT Image 2.5 parameter table lists `model`, `quality`, `size`, and `background`. It does not list `input_fidelity`, so this comparison omits the field. The guide does not contain a separate sentence that says the 2.5 API rejects the field. That rejection was not tested, because no paid call was made.
++
++### Production migration plan
++
++Do not switch a guest tier in this change.
++
++1. Leave Test and Medium on `gpt-image-1-mini` and High on `gpt-image-1` until one reviewed change updates the model id and the list price together.
++2. High shuts down first, on 23 Oct 2026. Mini shuts down on 1 Dec 2026.
++3. Use the comparison dropdown to look at `gpt-image-2.5-sunburst` (precise editing) and `gpt-image-2.5-flare` (faster) at quality medium before any guest tier moves.
++4. A later change can point `OPENAI_IMAGE_MODEL_HIGH` and `OPENAI_IMAGE_MODEL_TEST` / `OPENAI_IMAGE_MODEL_MEDIUM` at a 2.5 id only after the ₹ estimate for that tier is recalculated. Pointing High at sunburst while the estimate still uses the `gpt-image-1` high cell would understate the bill.
++
++### fal queue
++
++Every fal comparison is `POST https://queue.fal.run/<endpoint-id>` with `Authorization: Key …` and `X-Fal-No-Retry: 1`. fal otherwise retries a failed queue request up to 10 times. The client submits once, polls `…/requests/{id}/status`, then `GET …/requests/{id}`. Output is `images[].url`. A timeout after submit is an unknown bill and is not sent again. `image_urls` is the selfie, then the hairstyle reference. The same reference prompt is used. No mask. Images are uploaded with `POST https://rest.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3`, then `PUT` to the returned `upload_url`. The initiate request sets `expiration_duration_seconds` to 3600. The payloads delete API does not delete input CDN files, so there is no delete call. A dedicated input-file delete endpoint was not verified.
++
++`enable_safety_checker` is sent `true` where the schema has that field. nano-banana has `safety_tolerance` instead, so the field is omitted and the default stands. A black frame, or `has_nsfw_concepts` true, is an error: the safety checker blocked the image. That completed call counts as billed. It is not shown as a haircut and it is not retried.
++
++`fal-ai/qwen-image-edit-plus` was verified ($0.03 per megapixel, `image_urls` required) and is not in the dropdown. The add list did not include it.
++
++The flux-2-pro page did not state a maximum of 9 references. That maximum is unverified. Two images are sent.
++
++Price range for a `1024x1536` output, FX 96, before the 8% buffer. The cap uses the higher end after the buffer. Input readings follow each page: flux-2 and klein 9b resize inputs to 1MP (low end treats the inputs as 1MP together, high end as 1MP each). Pro rounds each input up. Qwen 2511 and klein 4b do not say whether inputs are billed, so the high end is the larger of actual pixels or 1MP per input.
++
++### Keys on /super/ai
++
++OpenAI, Gemini, and fal each have their own encrypted slot. The guest provider dropdown chooses which of the OpenAI or Gemini keys guests use. Changing that dropdown does not erase the other key. A saved OpenAI key stays available for OpenAI comparisons. Enable high quality only unlocks the High tier. A greyed High row is that tier, not the key.
++
++The fal box is separate. Save fal key stores it. Enable fal comparisons must be on or the comparison refuses before `beginPaidCall` and does not call OpenAI or Gemini. Remove fal key clears that slot. `FAL_KEY` in the environment is only a fallback when no fal key is saved. A saved key that is turned off does not use the environment value.
++
 +## How to run a controlled paid test locally
 +
 +```bash
@@ -491,9 +547,9 @@ index 0000000..03d2a13
 +```
 +
 +1. Open http://localhost:3000/login and sign in as `super@helixstac.app` / `SuperAdmin#2026`.
-+2. Open http://localhost:3000/super/ai. If the platform provider is not already OpenAI, paste the key there. Do not put the key in git.
++2. Open http://localhost:3000/super/ai. The page lists which provider keys are saved. Paste an OpenAI key in **Provider key** with the provider set to OpenAI, then Save. Paste a fal key in the **fal key** box, tick **Enable fal comparisons**, then **Save fal key**. Do not put either key in git. A greyed High tier means high quality is off. It does not turn a saved OpenAI key off.
 +3. Optional, no charge: `npm run benchmark:quote`.
-+4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. Leave **Hair-only composite** off unless you want the smaller fallback. Set **Hair texture** to **Curly** when the selfie is curly and the catalogue JPEG is straight. Pick **Comparison model**. Those controls are absent until Reference mode is on, and they are absent for a guest. Upload or take a selfie, pick a style, read the texture warning if Image 2 does not match, read that model's estimate, tick **I understand this makes one paid call for this model and does not retry**, and press **Try this hairstyle**. To compare a second model, change **Comparison model**, read the new estimate, tick the box again, and press **Try this hairstyle** once more. That is a separate call.
++4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. Leave **Hair-only composite** off unless you want the smaller fallback. Set **Hair texture** to **Curly** when the selfie is curly and the catalogue JPEG is straight. **Comparison model** opens on `gpt-image-2.5-sunburst (recommended)`. `gpt-image-1.5` stays in the list and is labelled as shutting down on 1 Dec 2026. fal models are further down the same list. Those controls are absent until Reference mode is on, and they are absent for a guest. Upload or take a selfie, pick a style, read the texture warning if Image 2 does not match, read that model's estimate (fal shows a range; the rupee figure is the higher end plus the 8% buffer), tick **I understand this makes one paid call for this model and does not retry**, and press **Try this hairstyle**. To compare a second model, change **Comparison model**, read the new estimate, tick the box again, and press **Try this hairstyle** once more. That is a separate call.
 +5. The large image is the raw provider output. The download is that raw image. A hair-only composite, when the fallback was on, is the smaller image and is not the download. The raw image stays labelled unvalidated. A neckline shift shows a clothing warning. A face warning says the face may differ and, for the super-admin, shows the landmark score. Open **saved stages** and look at `face-check.png` (green selfie landmarks, red aligned generated landmarks). **Delete now** removes that run, or leave the files for 72 hours. Do not commit the photos. The face check and the optional composite need `pip install -r scripts/requirements-vision.txt`. A missing vision install still returns the raw image after a paid call when the composite box is off. With the composite box on, a missing install is refused before the paid call.
 +6. The benchmark form still works: on `/super/ai`, pick a hairstyle, choose a selfie, tick the confirmation, and press **Run benchmark**. Open the result link. The right image is `provider-response.png`, labelled UNVALIDATED. `validation.json` stays `accepted: false`.
 +
@@ -1022,6 +1078,60 @@ index 0000000..d67207c
 +    message: executed.message,
 +  });
 +}
+diff --git a/src/app/api/v1/super/ai/route.ts b/src/app/api/v1/super/ai/route.ts
+index b5ba519..0618313 100644
+--- a/src/app/api/v1/super/ai/route.ts
++++ b/src/app/api/v1/super/ai/route.ts
+@@ -1,14 +1,18 @@
+ import { NextResponse } from "next/server";
+ import { z } from "zod";
+-import { platformAiView, savePlatformAi } from "@/lib/ai/settings-store";
++import { platformAiView, saveFalKey, savePlatformAi } from "@/lib/ai/settings-store";
+ import { requireSuper } from "@/lib/session";
+ 
+ const schema = z.object({
+-  provider: z.enum(["openai", "gemini"]),
++  provider: z.enum(["openai", "gemini"]).optional(),
+   apiKey: z.string().max(300).optional().default(""),
+-  allowByo: z.boolean(),
++  allowByo: z.boolean().optional(),
+   tier: z.enum(["test", "medium", "high"]).optional().default("test"),
+   highEnabled: z.boolean().optional().default(false),
++  falOnly: z.boolean().optional(),
++  falKey: z.string().max(400).optional().default(""),
++  falEnabled: z.boolean().optional().default(false),
++  removeFalKey: z.boolean().optional().default(false),
+ });
+ 
+ export async function GET() {
+@@ -24,7 +28,26 @@ export async function PUT(req: Request) {
+   const parsed = schema.safeParse(await req.json().catch(() => null));
+   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
+   try {
+-    await savePlatformAi(parsed.data, access.session.user.id);
++    if (parsed.data.falOnly) {
++      await saveFalKey(
++        { apiKey: parsed.data.falKey, enabled: parsed.data.falEnabled, remove: parsed.data.removeFalKey },
++        access.session.user.id,
++      );
++    } else {
++      if (!parsed.data.provider || parsed.data.allowByo === undefined) {
++        return NextResponse.json({ error: "INVALID" }, { status: 400 });
++      }
++      await savePlatformAi(
++        {
++          provider: parsed.data.provider,
++          apiKey: parsed.data.apiKey,
++          allowByo: parsed.data.allowByo,
++          tier: parsed.data.tier,
++          highEnabled: parsed.data.highEnabled,
++        },
++        access.session.user.id,
++      );
++    }
+   } catch (error) {
+     if (error instanceof Error && error.message === "INVALID_KEY") {
+       return NextResponse.json({ error: "INVALID_KEY", message: "Paste the provider key. It is stored encrypted and is not shown again." }, { status: 400 });
 diff --git a/src/app/api/v1/tryon/generate/route.ts b/src/app/api/v1/tryon/generate/route.ts
 index 85e0ff6..ed37b0b 100644
 --- a/src/app/api/v1/tryon/generate/route.ts
@@ -1207,10 +1317,10 @@ index 85e0ff6..ed37b0b 100644
  }
 diff --git a/src/app/api/v1/tryon/reference-quote/route.ts b/src/app/api/v1/tryon/reference-quote/route.ts
 new file mode 100644
-index 0000000..8135ee7
+index 0000000..80688e0
 --- /dev/null
 +++ b/src/app/api/v1/tryon/reference-quote/route.ts
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,40 @@
 +import { NextResponse } from "next/server";
 +import sharp from "sharp";
 +import { quoteBenchmark } from "@/lib/ai/benchmark";
@@ -1246,6 +1356,9 @@ index 0000000..8135ee7
 +    rupees: quote.estimateInr,
 +    dollars: quote.estimateUsd,
 +    note: quote.note,
++    warning: "warning" in quote ? quote.warning || "" : "",
++    rangeLowInr: "rangeLowInr" in quote ? quote.rangeLowInr : null,
++    rangeHighInr: "rangeHighInr" in quote ? quote.rangeHighInr : null,
 +  });
 +}
 diff --git a/src/app/s/[slug]/page.tsx b/src/app/s/[slug]/page.tsx
@@ -1410,7 +1523,7 @@ index 0000000..645eff9
 +  );
 +}
 diff --git a/src/app/super/ai/page.tsx b/src/app/super/ai/page.tsx
-index 6b191bf..a60936c 100644
+index 6b191bf..dc90809 100644
 --- a/src/app/super/ai/page.tsx
 +++ b/src/app/super/ai/page.tsx
 @@ -1,9 +1,12 @@
@@ -1435,8 +1548,11 @@ index 6b191bf..a60936c 100644
    return (
      <main className="mx-auto max-w-3xl px-4 py-8">
        <div className="mb-4 flex items-center justify-between gap-3">
-@@ -28,6 +33,12 @@ export default async function SuperAiPage() {
+@@ -26,8 +31,15 @@ export default async function SuperAiPage() {
+       </p>
+       <p className="mb-4 max-w-xl text-sm leading-6">
          Test is the default for a new key and for every calibration run. Medium turns on only after you approve it. High stays off until you enable it. Guests use Test until a salon or this page selects a higher tier that is allowed.
++        Guest Test and Medium still send gpt-image-1-mini, which shuts down on 1 Dec 2026. Guest High still sends gpt-image-1, which shuts down on 23 Oct 2026. Those prices and requests are unchanged. Move a tier only in a later change that updates the estimate and the request together, after the comparison dropdown has been checked. The proposed replacement for new edits is gpt-image-2.5-sunburst, with gpt-image-2.5-flare as the faster check.
        </p>
        <SuperAiForm initial={initial} />
 +      {squareQuote.ok && (
@@ -1638,6 +1754,141 @@ index 0000000..4850aa0
 +    </div>
 +  );
 +}
+diff --git a/src/components/admin/SuperAiForm.tsx b/src/components/admin/SuperAiForm.tsx
+index f6985df..49143bf 100644
+--- a/src/components/admin/SuperAiForm.tsx
++++ b/src/components/admin/SuperAiForm.tsx
+@@ -2,6 +2,7 @@
+ 
+ import { useState } from "react";
+ import type { PlatformAiSettings } from "@/lib/ai/settings-store";
++import { productionModelNotice } from "@/lib/ai/model-notices";
+ import type { ImageProviderName, TierRequest } from "@/lib/ai/tiers";
+ 
+ type Panel = {
+@@ -28,6 +29,11 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+   const [calibrationOk, setCalibrationOk] = useState(initial.calibrationOk);
+   const [hint, setHint] = useState(initial.hint);
+   const [hasKey, setHasKey] = useState(initial.hasKey);
++  const [openaiKey, setOpenaiKey] = useState(initial.openaiKey);
++  const [geminiKey, setGeminiKey] = useState(initial.geminiKey);
++  const [falKey, setFalKey] = useState(initial.falKey);
++  const [falDraft, setFalDraft] = useState("");
++  const [falEnabled, setFalEnabled] = useState(initial.falKey.enabled);
+   const [message, setMessage] = useState("");
+   const [busy, setBusy] = useState(false);
+   const [panels, setPanels] = useState<Panel[]>([]);
+@@ -37,6 +43,10 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+   function applyView(data: PlatformAiSettings) {
+     setHint(data.hint || "");
+     setHasKey(Boolean(data.hasKey));
++    setOpenaiKey(data.openaiKey);
++    setGeminiKey(data.geminiKey);
++    setFalKey(data.falKey);
++    setFalEnabled(Boolean(data.falKey?.enabled));
+     setAllowByo(data.allowByo);
+     setHighEnabled(data.highEnabled);
+     setMediumApproved(data.mediumApproved);
+@@ -107,6 +117,25 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+     setMessage(data.message || (res.ok ? "Connected." : "The provider rejected that key."));
+   }
+ 
++  async function saveFal(remove: boolean) {
++    setBusy(true);
++    setMessage("");
++    const res = await fetch("/api/v1/super/ai", {
++      method: "PUT",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify({ falOnly: true, falKey: falDraft, falEnabled, removeFalKey: remove }),
++    });
++    const data = await res.json().catch(() => ({}));
++    setBusy(false);
++    if (!res.ok) {
++      setMessage(data.message || "Could not save the fal key.");
++      return;
++    }
++    applyView(data);
++    setFalDraft("");
++    setMessage(remove ? "The fal key was removed." : "The fal key was saved.");
++  }
++
+   return (
+     <form
+       className="card grid max-w-3xl gap-4 p-5"
+@@ -118,6 +147,19 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+       <p role="status">
+         Charged against the cap: ₹{initial.spend.spentInr.toFixed(2)} of ₹{initial.spend.capInr.toFixed(0)} ({initial.spend.calls} calls).
+       </p>
++      <div className="grid gap-1 text-sm">
++        <p className="font-medium">Saved provider keys</p>
++        <p>
++          OpenAI: {openaiKey.saved ? `saved as ${openaiKey.hint}. This key is available for OpenAI guest try-on and for OpenAI comparison models.` : "not saved."}
++          {" "}Saving a Gemini key or a fal key does not remove it. Enable high quality only unlocks the High tier. A greyed High row means that tier is off. It does not turn the OpenAI key off.
++        </p>
++        <p>Gemini: {geminiKey.saved ? `saved as ${geminiKey.hint}. Used when the guest provider is Gemini, and for Gemini comparison models.` : "not saved."}</p>
++        <p>
++          fal: {falKey.saved
++            ? `saved as ${falKey.hint}. ${falKey.enabled ? "Comparison calls are on." : "Comparison calls are off until you enable them."}`
++            : "not saved."}
++        </p>
++      </div>
+       <label className="text-sm">
+         Provider
+         <select className="field mt-1" value={provider} onChange={(event) => setProvider(event.target.value === "gemini" ? "gemini" : "openai")}>
+@@ -151,6 +193,7 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+                 {choice.estimateInr.toFixed(2)}
+                 {" / image"}
+                 {choice.tier === "test" && choice.inputLongSide > 0 ? ` · input long side ${choice.inputLongSide}px` : ""}
++                {productionModelNotice(choice.model) ? ` · ${productionModelNotice(choice.model)}` : ""}
+               </span>
+             </label>
+           );
+@@ -176,8 +219,8 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+         />
+       </label>
+       <p className="text-xs text-muted">
+-        {hasKey ? `Saved as ${hint}. ` : ""}
+-        The key is encrypted on the server. Pasting a new key returns the tier to Test. This page never shows the key again.
++        {hasKey ? `Guest provider key saved as ${hint}. ` : "No key is stored for the guest provider selected above. "}
++        The key is encrypted with the server secret. Pasting a new key returns the tier to Test. This page never shows the key again. The guest dropdown chooses which saved key guests use. It does not erase the other provider&apos;s key.
+       </p>
+       <label className="flex items-center gap-2 text-sm">
+         <input type="checkbox" checked={allowByo} onChange={(event) => setAllowByo(event.target.checked)} />
+@@ -192,6 +235,34 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+         </button>
+       </div>
+       {mediumApproved && <p className="text-sm">Medium quality is approved.</p>}
++      <div className="grid gap-2 border-t border-line pt-4">
++        <p className="text-sm font-medium">fal key</p>
++        <p className="text-xs text-muted">
++          Separate from the OpenAI and Gemini keys. Paste it here, tick Enable fal comparisons, then Save fal key. Reference comparisons that use fal read this key. They do not call OpenAI or Gemini if it is missing or off.
++        </p>
++        <label className="text-sm">
++          fal key
++          <input
++            className="field mt-1 font-mono"
++            type="password"
++            name="fal-key"
++            autoComplete="off"
++            spellCheck={false}
++            aria-label="fal key"
++            placeholder={falKey.saved ? falKey.hint || "A fal key is saved" : "Paste the fal key"}
++            value={falDraft}
++            onChange={(event) => setFalDraft(event.target.value)}
++          />
++        </label>
++        <label className="flex items-center gap-2 text-sm">
++          <input type="checkbox" checked={falEnabled} onChange={(event) => setFalEnabled(event.target.checked)} />
++          Enable fal comparisons
++        </label>
++        <div className="flex flex-wrap gap-2">
++          <button className="btn secondary" type="button" disabled={busy} onClick={() => void saveFal(false)}>Save fal key</button>
++          <button className="btn secondary" type="button" disabled={busy || !falKey.saved} onClick={() => void saveFal(true)}>Remove fal key</button>
++        </div>
++      </div>
+       {message && <p role="status">{message}</p>}
+       {total && <p className="text-sm font-medium">{total}</p>}
+       {panels.length > 0 && (
 diff --git a/src/components/tryon/ReferenceTextureWarning.tsx b/src/components/tryon/ReferenceTextureWarning.tsx
 new file mode 100644
 index 0000000..24e01a4
@@ -1671,7 +1922,7 @@ index 0000000..24e01a4
 +  return <p className="mt-2 text-amber-900" role="status">{choice.warning}</p>;
 +}
 diff --git a/src/components/tryon/TryOnApp.tsx b/src/components/tryon/TryOnApp.tsx
-index b7bfc58..ce4304a 100644
+index b7bfc58..92b428d 100644
 --- a/src/components/tryon/TryOnApp.tsx
 +++ b/src/components/tryon/TryOnApp.tsx
 @@ -3,9 +3,12 @@
@@ -1718,7 +1969,7 @@ index b7bfc58..ce4304a 100644
    salonMode?: boolean;
    demoMode?: boolean;
 +  referenceModeAvailable?: boolean;
-+  comparisonModels?: { id: string; label: string }[];
++  comparisonModels?: { id: string; label: string; warning?: string }[];
  }) {
    const lang = config.defaultLang || "en";
    const [sid, setSid] = useState("");
@@ -1730,7 +1981,7 @@ index b7bfc58..ce4304a 100644
 +  const [hairComposite, setHairComposite] = useState(false);
 +  const [hairTexture, setHairTexture] = useState<AskedTexture>("natural");
 +  const [referenceAck, setReferenceAck] = useState(false);
-+  const [referenceQuote, setReferenceQuote] = useState<{ model: string; provider: string; quality: string; size: string; rupees: number; dollars: number; note: string } | null>(null);
++  const [referenceQuote, setReferenceQuote] = useState<{ model: string; provider: string; quality: string; size: string; rupees: number; dollars: number; note: string; warning: string } | null>(null);
 +  const [compareModel, setCompareModel] = useState(comparisonModels[0]?.id ?? "");
 +  const [comparisons, setComparisons] = useState<Look[]>([]);
 +  const [referenceChoice, setReferenceChoice] = useState<{ id: string; name: string; serviceKeys: string[]; tool: Look["tool"] } | null>(null);
@@ -1747,7 +1998,7 @@ index b7bfc58..ce4304a 100644
        ctx.translate(width, 0);
        ctx.scale(-1, 1);
      }
-@@ -320,9 +346,79 @@ export function TryOnApp({
+@@ -320,9 +346,80 @@ export function TryOnApp({
      await applyBlob(blob);
    }
  
@@ -1789,6 +2040,7 @@ index b7bfc58..ce4304a 100644
 +        rupees: Number(data.rupees || 0),
 +        dollars: Number(data.dollars || 0),
 +        note: String(data.note || ""),
++        warning: String(data.warning || ""),
 +      });
 +    } finally {
 +      setBusy(false);
@@ -1828,7 +2080,7 @@ index b7bfc58..ce4304a 100644
      const shot = chosen.tool === "nails" ? handShot : faceShot;
      if (!shot) {
        setError(t(lang, chosen.tool === "nails" ? "uploadHand" : "addPhotoFirst"));
-@@ -335,49 +431,107 @@ export function TryOnApp({
+@@ -335,49 +432,107 @@ export function TryOnApp({
        return;
      }
      consentRef.current = consent;
@@ -1974,7 +2226,7 @@ index b7bfc58..ce4304a 100644
    }
  
    function pickShade(id: string) {
-@@ -421,7 +575,7 @@ export function TryOnApp({
+@@ -421,7 +576,7 @@ export function TryOnApp({
      const url = URL.createObjectURL(blob);
      const anchor = document.createElement("a");
      anchor.href = url;
@@ -1983,7 +2235,7 @@ index b7bfc58..ce4304a 100644
      document.body.appendChild(anchor);
      anchor.click();
      anchor.remove();
-@@ -476,7 +630,27 @@ export function TryOnApp({
+@@ -476,7 +631,27 @@ export function TryOnApp({
        </div>
  
        <section ref={frameRef} className="mt-4 overflow-hidden rounded-[28px] bg-[#14110e] shadow-lg" aria-label="Photo">
@@ -2012,7 +2264,7 @@ index b7bfc58..ce4304a 100644
            <div>
              <BeforeAfter before={active.before} after={active.after} beforeLabel={t(lang, "before")} afterLabel={t(lang, "after")} />
              {active.demo && <p className="bg-[#241c16] px-4 py-3 text-center text-sm leading-6 text-white" role="status">{t(lang, active.tool === "nails" ? "demoNailBanner" : "demoStyleBanner")}</p>}
-@@ -571,6 +745,47 @@ export function TryOnApp({
+@@ -571,6 +746,47 @@ export function TryOnApp({
        {showResult && active && (
          <div className="mt-4 grid gap-2">
            <h3 className="text-center font-serif text-2xl">{active.styleName}</h3>
@@ -2060,7 +2312,7 @@ index b7bfc58..ce4304a 100644
            <p className="text-center text-sm text-muted">{t(lang, active.tool === "brows" ? "browDisclaimer" : active.tool === "beard" ? "beardDisclaimer" : active.tool === "nails" ? "nailDisclaimer" : "disclaimer")}</p>
            <button className="btn" type="button" onClick={() => void downloadLook()}>{t(lang, "downloadLook")}</button>
            <button className="btn" type="button" onClick={() => void book()}>{t(lang, "bookLook")}</button>
-@@ -581,6 +796,122 @@ export function TryOnApp({
+@@ -581,6 +797,128 @@ export function TryOnApp({
        <section ref={gridRef} className="mt-6" aria-label={tool === "style" ? t(lang, "styles") : tool === "colour" ? t(lang, "shades") : tool === "brows" ? t(lang, "brows") : tool === "beard" ? t(lang, "beards") : t(lang, "nails")}>
          {tool === "style" && (
            <>
@@ -2107,6 +2359,11 @@ index b7bfc58..ce4304a 100644
 +                      ))}
 +                    </select>
 +                  </label>
++                )}
++                {referenceMode && comparisonModels.find((model) => model.id === compareModel)?.warning && (
++                  <p className="mt-2 text-sm font-medium" role="status">
++                    {comparisonModels.find((model) => model.id === compareModel)?.warning}
++                  </p>
 +                )}
 +                {referenceMode && comparisonModels.length > 0 && (
 +                  <p className="mt-2 text-muted">
@@ -2168,6 +2425,7 @@ index b7bfc58..ce4304a 100644
 +                    <p>
 +                      {referenceChoice.name}. {referenceQuote.model}, quality {referenceQuote.quality}, size {referenceQuote.size}. About ₹{referenceQuote.rupees.toFixed(2)} (${referenceQuote.dollars.toFixed(3)}).
 +                    </p>
++                    {referenceQuote.warning && <p className="mt-1 font-medium" role="status">{referenceQuote.warning}</p>}
 +                    <p className="mt-1 text-muted">{referenceQuote.note}</p>
 +                    <label className="mt-2 flex items-start gap-2">
 +                      <input type="checkbox" className="mt-1" checked={referenceAck} onChange={(event) => setReferenceAck(event.target.checked)} />
@@ -2183,7 +2441,7 @@ index b7bfc58..ce4304a 100644
              <div className="mb-3 inline-flex flex-wrap gap-1 rounded-full bg-[#241c16] p-1" role="group" aria-label="Style audience">
                {config.showWomen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "women" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "women"} onClick={() => chooseGender("women")}>{t(lang, "women")}</button>}
                {config.showMen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "men" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
-@@ -593,7 +924,7 @@ export function TryOnApp({
+@@ -593,7 +931,7 @@ export function TryOnApp({
                    type="button"
                    aria-pressed={style.id === styleId}
                    className={`overflow-hidden rounded-2xl border bg-white text-left ${style.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
@@ -2192,7 +2450,7 @@ index b7bfc58..ce4304a 100644
                  >
                    <StyleCard id={style.id} name={style.name} />
                    <span className="block px-2 py-2 text-center text-sm font-medium">{style.name}</span>
-@@ -623,7 +954,7 @@ export function TryOnApp({
+@@ -623,7 +961,7 @@ export function TryOnApp({
          {tool === "brows" && (
            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
              {config.brows.map((brow) => (
@@ -2201,7 +2459,7 @@ index b7bfc58..ce4304a 100644
                  <StyleCard id={brow.id} name={brow.name} folder="brows" />
                  <span className="block px-2 py-2 text-center text-sm font-medium">{brow.name}</span>
                </button>
-@@ -634,7 +965,7 @@ export function TryOnApp({
+@@ -634,7 +972,7 @@ export function TryOnApp({
          {tool === "beard" && (
            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
              {config.beards.map((beard) => (
@@ -2210,7 +2468,7 @@ index b7bfc58..ce4304a 100644
                  <StyleCard id={beard.id} name={beard.name} folder="beards" />
                  <span className="block px-2 py-2 text-center text-sm font-medium">{beard.name}</span>
                </button>
-@@ -645,7 +976,7 @@ export function TryOnApp({
+@@ -645,7 +983,7 @@ export function TryOnApp({
          {tool === "nails" && (
            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
              {config.nails.map((nail) => (
@@ -2304,7 +2562,7 @@ index fb6f536..5c3f8d0 100644
  
 diff --git a/src/lib/ai/benchmark.ts b/src/lib/ai/benchmark.ts
 new file mode 100644
-index 0000000..ccd9f51
+index 0000000..973b248
 --- /dev/null
 +++ b/src/lib/ai/benchmark.ts
 @@ -0,0 +1,272 @@
@@ -2418,7 +2676,7 @@ index 0000000..ccd9f51
 +  if (outputUsd == null || imageInputUsd == null || textInputUsd == null || estimateUsd == null) {
 +    return { ok: false as const, message: `No token rates for ${args.model}. The request was not sent.` };
 +  }
-+  if (outputListUsd(args.model, args.quality, size) == null) {
++  if (outputListUsd(args.model, args.quality, size) == null && !caps.tokenOnly) {
 +    return { ok: false as const, message: `No published output price for ${args.model} ${args.quality} ${size}. The request was not sent.` };
 +  }
 +  const estimateInr = bufferedInr(estimateUsd);
@@ -2690,10 +2948,10 @@ index 0000000..bec50ae
 +}
 diff --git a/src/lib/ai/compare-models.ts b/src/lib/ai/compare-models.ts
 new file mode 100644
-index 0000000..5a8a997
+index 0000000..b34a492
 --- /dev/null
 +++ b/src/lib/ai/compare-models.ts
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,237 @@
 +import path from "node:path";
 +import sharp from "sharp";
 +import { styleById } from "@/data/styles";
@@ -2703,33 +2961,68 @@ index 0000000..5a8a997
 +import { parseAskedTexture, selectReferenceVariant, type AskedTexture } from "@/lib/ai/reference-texture";
 +import { existingHairstyleFiles, hairstyleReferenceFile, readHairstyleReference } from "@/lib/ai/style-reference";
 +import { buildReferencePrompt } from "@/lib/prompts";
++import { FAL_COMPARISON_MODELS, quoteFalModel } from "@/lib/ai/fal-models";
++import { productionModelNotice } from "@/lib/ai/model-notices";
 +import { bufferedInr, usdFromTokenCounts } from "@/lib/ai/tiers";
 +
 +/**
 + * Explicit comparison catalogue. Match the full id. Do not accept a prefix or a substring.
-+ * Gemini is not an OpenAI image-edit model and is not in IMAGE_EDIT_MODELS.
++ * The first row is the recommended default. TryOnApp selects comparisonModels[0].
 + *
-+ * gpt-image-2: https://developers.openai.com/api/docs/guides/image-prompting (4 Oct 2026)
-+ * says omit input_fidelity. Image inputs are always high fidelity.
++ * Checked 4 Oct 2026:
++ * - Deprecations: gpt-image-1.5 and gpt-image-1-mini shut down 1 Dec 2026. gpt-image-1 shuts down 23 Oct 2026.
++ *   Replacement named on that page: gpt-image-2.5-sunburst or gpt-image-2.5-flare.
++ * - Both 2.5 model pages list Image edit. Snapshots are dated 2026-09-08. Neither is deprecated.
++ *   Sunburst is first because the image generation guide says to select it for precise editing.
++ * - gpt-image-2: the prompting guide says omit input_fidelity.
++ * - The 2.5 parameter table does not list input_fidelity. The explicit omit sentence is only for gpt-image-2.
 + * gemini-3.1-flash-image is the stable image model (Nano Banana 2), preferred over the lite id.
++ * fal-ai/qwen-image-edit-plus is documented ($0.03 per megapixel, image_urls) and is not in this list.
 + */
-+export const COMPARISON_MODELS = [
++const OPENAI_AND_GEMINI = [
 +  {
-+    id: "gpt-image-1.5",
++    id: "gpt-image-2.5-sunburst",
 +    provider: "openai" as const,
-+    label: "gpt-image-1.5",
++    label: "gpt-image-2.5-sunburst (recommended)",
++    warning: "",
++  },
++  {
++    id: "gpt-image-2.5-flare",
++    provider: "openai" as const,
++    label: "gpt-image-2.5-flare",
++    warning: "",
 +  },
 +  {
 +    id: "gpt-image-2",
 +    provider: "openai" as const,
 +    label: "gpt-image-2",
++    warning: "",
++  },
++  {
++    id: "gpt-image-1.5",
++    provider: "openai" as const,
++    label: "gpt-image-1.5 (shuts down 1 Dec 2026)",
++    warning: productionModelNotice("gpt-image-1.5"),
 +  },
 +  {
 +    id: "gemini-3.1-flash-image",
 +    provider: "gemini" as const,
 +    label: "gemini-3.1-flash-image",
++    warning: "",
 +  },
 +] as const;
++
++export const COMPARISON_MODELS = [
++  ...OPENAI_AND_GEMINI,
++  ...FAL_COMPARISON_MODELS.map((row) => ({
++    id: row.id,
++    provider: "fal" as const,
++    label: row.label,
++    warning: row.experimental
++      ? "Experimental. The cap uses the higher price reading. A timeout is an unknown bill and is not sent again."
++      : "A timeout is an unknown bill and is not sent again.",
++  })),
++];
 +
 +export type ComparisonProvider = (typeof COMPARISON_MODELS)[number]["provider"];
 +
@@ -2738,7 +3031,7 @@ index 0000000..5a8a997
 +const GEMINI_TEXT_ALLOWANCE = 400;
 +
 +export function comparisonChoices() {
-+  return COMPARISON_MODELS.map((row) => ({ id: row.id, label: row.label, provider: row.provider }));
++  return COMPARISON_MODELS.map((row) => ({ id: row.id, label: row.label, provider: row.provider, warning: row.warning }));
 +}
 +
 +export function comparisonModel(id: string) {
@@ -2792,15 +3085,27 @@ index 0000000..5a8a997
 +  if (!row) {
 +    return { ok: false as const, message: `${modelId} is not a configured comparison model. No other model was substituted.` };
 +  }
-+  if (row.provider === "gemini") return quoteGemini(row.id);
++  if (row.provider === "gemini") {
++    const quoted = quoteGemini(row.id);
++    if (!quoted.ok) return quoted;
++    return { ...quoted, warning: row.warning, rangeLowInr: null as number | null, rangeHighInr: null as number | null };
++  }
++  if (row.provider === "fal") {
++    const quoted = quoteFalModel(row.id, width, height, reference);
++    if (!quoted.ok) return quoted;
++    return { ...quoted, warning: row.warning };
++  }
 +  const caps = imageEditModel(row.id);
 +  if (!caps) {
 +    return { ok: false as const, message: `${row.id} has no image-edit capability row. No other model was substituted.` };
 +  }
 +  const inputFidelity = caps.inputFidelity?.includes("high") ? "high" as const : null;
++  const tokenOnly = Boolean(caps.tokenOnly);
 +  const note = inputFidelity
 +    ? benchmarkQuoteNote()
-+    : "Estimate, actual from provider usage. input_fidelity is omitted for this model. Image-input tokens use the 1536×1024 calibration with a 15% margin. Output tokens use the pre-gpt-image-2 guide table as an allowance, priced at this model's own rates. Not an invoice.";
++    : tokenOnly
++      ? "Estimate from the model page token rates (text input $5/1M, image input $8/1M, image output $30/1M). That page has no per-image output cell, and it says the GPT Image 2 calculator does not estimate 2.5 token counts. Output tokens use the gpt-image-2 allowance. input_fidelity is omitted because the GPT Image 2.5 parameter table does not list it. The explicit omit sentence is written for gpt-image-2. Not an invoice."
++      : "Estimate, actual from provider usage. input_fidelity is omitted for this model. Image-input tokens use the 1536×1024 calibration with a 15% margin. Output tokens use the pre-gpt-image-2 guide table as an allowance, priced at this model's own rates. Not an invoice.";
 +  const quoted = quoteModelEdit({
 +    model: row.id,
 +    quality: benchmarkQuality(),
@@ -2811,7 +3116,7 @@ index 0000000..5a8a997
 +    note,
 +  });
 +  if (!quoted.ok) return quoted;
-+  return { ...quoted, provider: "openai" as const };
++  return { ...quoted, provider: "openai" as const, warning: row.warning, rangeLowInr: null as number | null, rangeHighInr: null as number | null };
 +}
 +
 +export async function prepareComparison(args: { jpeg: Buffer; styleId: string; colourName?: string; texture?: AskedTexture; modelId: string }) {
@@ -2858,9 +3163,9 @@ index 0000000..5a8a997
 +    textureWarning: textureChoice.warning,
 +    prompt,
 +  };
-+  if (row.provider === "gemini") {
++  if (row.provider === "gemini" || row.provider === "fal") {
 +    const selfiePng = await sharp(args.jpeg, { failOn: "none" }).rotate().png().toBuffer();
-+    return { ok: true as const, provider: "gemini" as const, planned: null, selfiePng, fitted: null, ...shared };
++    return { ok: true as const, provider: row.provider, planned: null, selfiePng, fitted: null, ...shared };
 +  }
 +  const quality = quote.quality as EditQuality;
 +  const planned = planImageEdit({
@@ -2914,42 +3219,82 @@ index d1e70fa..7c8563d 100644
    const ids = [...new Set(recent.map((row) => row.tenantId).filter((id) => id.length > 8))];
    const tenants = ids.length
 diff --git a/src/lib/ai/credentials.ts b/src/lib/ai/credentials.ts
-index e1a5dd8..458c81f 100644
+index e1a5dd8..aa7358c 100644
 --- a/src/lib/ai/credentials.ts
 +++ b/src/lib/ai/credentials.ts
-@@ -39,3 +39,33 @@ export async function resolveProviderChoice(tenantId: string): Promise<ProviderC
+@@ -39,3 +39,73 @@ export async function resolveProviderChoice(tenantId: string): Promise<ProviderC
    if (platform) return platform;
    return { name: aiProviderName() };
  }
 +
++function keyKind(plain: string): "openai" | "gemini" | "" {
++  if (plain.startsWith("sk-")) return "openai";
++  if (plain.startsWith("AIza")) return "gemini";
++  return "";
++}
++
++async function dedicatedKey(slot: "openai" | "gemini") {
++  const cipher = await setting(slot === "openai" ? "platform_openai_key_cipher" : "platform_gemini_key_cipher");
++  if (!cipher) return "";
++  try {
++    return decryptSecret(cipher);
++  } catch {
++    return "";
++  }
++}
++
++/** Legacy single slot. A saved OpenAI key stays an OpenAI key even if the guest provider dropdown moved. */
++async function legacyKey(slot: "openai" | "gemini") {
++  const cipher = await setting("platform_ai_key_cipher");
++  if (!cipher) return "";
++  let plain = "";
++  try {
++    plain = decryptSecret(cipher);
++  } catch {
++    return "";
++  }
++  const kind = keyKind(plain);
++  if (kind === slot) return plain;
++  if (!kind && (await setting("platform_ai_provider")) === slot) return plain;
++  return "";
++}
++
 +/** Gemini key only. A comparison does not borrow the OpenAI key. */
 +export async function resolveGeminiKey() {
-+  const provider = await setting("platform_ai_provider");
-+  const cipher = await setting("platform_ai_key_cipher");
-+  if (provider === "gemini" && cipher) {
-+    try {
-+      const apiKey = decryptSecret(cipher);
-+      if (apiKey) return apiKey;
-+    } catch {
-+      return null;
-+    }
-+  }
++  const dedicated = await dedicatedKey("gemini");
++  if (dedicated) return dedicated;
++  const legacy = await legacyKey("gemini");
++  if (legacy) return legacy;
 +  return process.env.GEMINI_API_KEY || null;
 +}
 +
 +/** OpenAI key only. Benchmark mode does not use a Gemini key or a mock. */
 +export async function resolveOpenAIKey() {
-+  const provider = await setting("platform_ai_provider");
-+  const cipher = await setting("platform_ai_key_cipher");
-+  if (provider === "openai" && cipher) {
++  const dedicated = await dedicatedKey("openai");
++  if (dedicated) return dedicated;
++  const legacy = await legacyKey("openai");
++  if (legacy) return legacy;
++  return process.env.OPENAI_API_KEY || null;
++}
++
++/**
++ * fal key from its own cipher. A saved key that is not enabled does not fall back to the environment.
++ * No saved key may use FAL_KEY. This comparison does not borrow an OpenAI or Gemini key.
++ */
++export async function resolveFalKey(): Promise<{ ok: true; apiKey: string } | { ok: false; reason: "missing" | "off" }> {
++  const cipher = await setting("platform_fal_key_cipher");
++  if (cipher) {
++    if ((await setting("platform_fal_enabled")) !== "true") return { ok: false, reason: "off" };
 +    try {
 +      const apiKey = decryptSecret(cipher);
-+      if (apiKey) return apiKey;
++      if (apiKey) return { ok: true, apiKey };
 +    } catch {
-+      return null;
++      return { ok: false, reason: "missing" };
 +    }
 +  }
-+  return process.env.OPENAI_API_KEY || null;
++  const envKey = process.env.FAL_KEY?.trim() || "";
++  if (envKey) return { ok: true, apiKey: envKey };
++  return { ok: false, reason: "missing" };
 +}
 diff --git a/src/lib/ai/dedupe.ts b/src/lib/ai/dedupe.ts
 new file mode 100644
@@ -3106,10 +3451,10 @@ index 0000000..0dd0a92
 +}
 diff --git a/src/lib/ai/edit-request.ts b/src/lib/ai/edit-request.ts
 new file mode 100644
-index 0000000..0420e73
+index 0000000..cd2e1fd
 --- /dev/null
 +++ b/src/lib/ai/edit-request.ts
-@@ -0,0 +1,171 @@
+@@ -0,0 +1,201 @@
 +/**
 + * Explicit image-edit capabilities. Do not infer support from a substring of the model id.
 + *
@@ -3135,8 +3480,13 @@ index 0000000..0420e73
 +  outputFormats: readonly EditFormat[];
 +  /** Null means the parameter must not be sent. */
 +  inputFidelity: readonly ("high" | "low")[] | null;
-+  /** Published output price in USD for one image. Null when this table has no cell. Input tokens are extra. */
++  /** Published output price in USD for one image. Empty when the page has no per-image cell. Input tokens are extra. */
 +  outputUsd: Partial<Record<EditQuality, Partial<Record<EditSize, number>>>>;
++  /**
++   * The model page publishes token rates and no per-image output cell.
++   * A quote then uses token rates only. Do not invent a per-image dollar cell.
++   */
++  tokenOnly?: boolean;
 +};
 +
 +const SIZES = ["1024x1024", "1024x1536", "1536x1024"] as const;
@@ -3183,6 +3533,31 @@ index 0000000..0420e73
 +    outputFormats: FORMATS,
 +    inputFidelity: null,
 +    outputUsd: cells(0.006, 0.053, 0.211, { low: 0.005, medium: 0.041, high: 0.165 }),
++  },
++  /**
++   * https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst (4 Oct 2026)
++   * Image edit is listed. Token rates match GPT Image 2: image input $8/1M, image output $30/1M, text input $5/1M.
++   * The page does not publish a per-image output cell. Quality also includes xhigh and max; this table keeps low/medium/high.
++   * The image prompting guide's 2.5 parameter table lists model, quality, size, and background. It does not list input_fidelity.
++   * The explicit "omit input_fidelity" sentence is written for gpt-image-2. This row omits the field because it is not in the 2.5 table.
++   */
++  "gpt-image-2.5-sunburst": {
++    id: "gpt-image-2.5-sunburst",
++    qualities: QUALITIES,
++    sizes: SIZES,
++    outputFormats: FORMATS,
++    inputFidelity: null,
++    outputUsd: {},
++    tokenOnly: true,
++  },
++  "gpt-image-2.5-flare": {
++    id: "gpt-image-2.5-flare",
++    qualities: QUALITIES,
++    sizes: SIZES,
++    outputFormats: FORMATS,
++    inputFidelity: null,
++    outputUsd: {},
++    tokenOnly: true,
 +  },
 +};
 +
@@ -3282,7 +3657,7 @@ index 0000000..0420e73
 +  return caps?.outputUsd[quality]?.[size] ?? null;
 +}
 diff --git a/src/lib/ai/errors.ts b/src/lib/ai/errors.ts
-index 3c73025..cd3680d 100644
+index 3c73025..815befb 100644
 --- a/src/lib/ai/errors.ts
 +++ b/src/lib/ai/errors.ts
 @@ -4,8 +4,8 @@ import type { UsageNumbers } from "@/lib/ai/tiers";
@@ -3296,7 +3671,7 @@ index 3c73025..cd3680d 100644
      this.name = "UnknownModelError";
    }
  }
-@@ -20,6 +20,29 @@ export class SpendCapError extends Error {
+@@ -20,14 +20,37 @@ export class SpendCapError extends Error {
    }
  }
  
@@ -3326,6 +3701,16 @@ index 3c73025..cd3680d 100644
  /** The provider accepted the call (and may have billed it) but returned no usable image. */
  export class BilledProviderError extends Error {
    readonly code = "BILLED_PROVIDER" as const;
+   readonly costUsd: number;
+   readonly usage?: UsageNumbers;
+ 
+-  constructor(costUsd: number, usage?: UsageNumbers) {
+-    super("The provider billed the call and returned no image.");
++  constructor(costUsd: number, usage?: UsageNumbers, message = "The provider billed the call and returned no image.") {
++    super(message);
+     this.name = "BilledProviderError";
+     this.costUsd = costUsd;
+     this.usage = usage;
 diff --git a/src/lib/ai/frame.ts b/src/lib/ai/frame.ts
 new file mode 100644
 index 0000000..f576f12
@@ -3667,10 +4052,10 @@ index 0000000..776a70d
 +}
 diff --git a/src/lib/ai/reference-run.ts b/src/lib/ai/reference-run.ts
 new file mode 100644
-index 0000000..51792a8
+index 0000000..ce6339d
 --- /dev/null
 +++ b/src/lib/ai/reference-run.ts
-@@ -0,0 +1,541 @@
+@@ -0,0 +1,575 @@
 +import { randomUUID } from "node:crypto";
 +import { rm } from "node:fs/promises";
 +import { NextResponse } from "next/server";
@@ -3682,7 +4067,9 @@ index 0000000..51792a8
 +import { assertVisionReady } from "@/lib/face/vision-assets";
 +import type { DriftReport } from "@/lib/face/hair-composite";
 +import { assessClothing } from "@/lib/ai/clothing-check";
-+import { resolveGeminiKey, resolveOpenAIKey } from "@/lib/ai/credentials";
++import { resolveFalKey, resolveGeminiKey, resolveOpenAIKey } from "@/lib/ai/credentials";
++import { postFalReferenceEdit } from "@/lib/ai/fal-reference";
++import type { EditSize } from "@/lib/ai/edit-request";
 +import { editFormFields } from "@/lib/ai/edit-request";
 +import { postGeminiReferenceEdit } from "@/lib/ai/gemini-reference";
 +import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
@@ -3726,7 +4113,7 @@ index 0000000..51792a8
 +  ok: true;
 +  id: string;
 +  callId: string;
-+  provider: "openai" | "gemini";
++  provider: "openai" | "gemini" | "fal";
 +  model: string;
 +  quality: string;
 +  size: string;
@@ -3788,7 +4175,23 @@ index 0000000..51792a8
 +    return { ok: false, httpStatus: 400, error: "QUOTE", message: prepared.message, outcome: "quote" };
 +  }
 +  const provider = "provider" in prepared ? prepared.provider : "openai";
-+  const apiKey = provider === "gemini" ? await resolveGeminiKey() : await resolveOpenAIKey();
++  let apiKey: string | null = null;
++  if (provider === "gemini") apiKey = await resolveGeminiKey();
++  else if (provider === "fal") {
++    const fal = await resolveFalKey();
++    if (!fal.ok) {
++      return {
++        ok: false,
++        httpStatus: 400,
++        error: "NO_FAL_KEY",
++        outcome: "key",
++        message: fal.reason === "off"
++          ? "The fal key is saved and comparisons are off. Enable it on AI settings. This comparison does not call OpenAI or Gemini instead."
++          : "Add a fal key on AI settings and enable it. This comparison does not call OpenAI or Gemini instead.",
++      };
++    }
++    apiKey = fal.apiKey;
++  } else apiKey = await resolveOpenAIKey();
 +  if (!apiKey) {
 +    return provider === "gemini"
 +      ? {
@@ -3904,6 +4307,19 @@ index 0000000..51792a8
 +      });
 +      usage = gemini.usage;
 +      providerResponse = gemini.image;
++    } else if (provider === "fal") {
++      const prompt = "prompt" in prepared ? prepared.prompt : planned?.prompt || "";
++      const fal = await postFalReferenceEdit({
++        apiKey,
++        endpointId: quote.model,
++        prompt,
++        selfiePng: inputPng,
++        referenceJpeg: reference,
++        size: quote.size as EditSize,
++        estimateUsd: quote.estimateUsd,
++      });
++      usage = undefined;
++      providerResponse = fal.image;
 +    } else {
 +      if (!planned) {
 +        throw new UnknownModelError(`${quote.model} is not a configured image-edit model. No other model was called.`);
@@ -3929,9 +4345,9 @@ index 0000000..51792a8
 +      providerResponse = Buffer.from(b64, "base64");
 +    }
 +    const latencyMs = Date.now() - started;
-+    const restored = provider === "gemini"
-+      ? await sharp(providerResponse, { failOn: "none" }).rotate().png().toBuffer()
-+      : await restoredFromProvider(providerResponse, transform);
++    const restored = provider === "openai"
++      ? await restoredFromProvider(providerResponse, transform)
++      : await sharp(providerResponse, { failOn: "none" }).rotate().png().toBuffer();
 +    const clothing = await assessClothing(args.jpeg, restored).catch((): Awaited<ReturnType<typeof assessClothing>> => ({
 +      warning: null,
 +      meanDelta: 0,
@@ -4007,7 +4423,9 @@ index 0000000..51792a8
 +      hairComposite: compositePng || undefined,
 +      faceCheck: faceCheckPng,
 +    });
-+    const usd = costUsdFromUsage(quote.model, usage) ?? quote.estimateUsd;
++    const reported = costUsdFromUsage(quote.model, usage);
++    const usd = reported ?? quote.estimateUsd;
++    const costIsEstimate = reported == null;
 +    await finalizePaidCall(gate.id, {
 +      model: quote.model,
 +      billed: true,
@@ -4020,6 +4438,7 @@ index 0000000..51792a8
 +    });
 +    const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
 +    let message = `Unvalidated model output. The raw provider image is the result. One provider call. No mask, no face paste, no retry.${clothingNote}`;
++    if (costIsEstimate && provider === "fal") message += " The shown cost is the conservative estimate. fal did not report usage.";
 +    if (rawDrift?.flagged) message += " Face may differ from your photo.";
 +    if (args.hairComposite && compositePng) {
 +      message += " Hair-only composite saved separately as an optional fallback. It is not the download.";
@@ -4353,6 +4772,176 @@ index ce5b6c1..bc33dcc 100644
      }
      return demoFallback(input, "mock:placement", "placement");
    }
+diff --git a/src/lib/ai/settings-store.ts b/src/lib/ai/settings-store.ts
+index f1bd932..0526113 100644
+--- a/src/lib/ai/settings-store.ts
++++ b/src/lib/ai/settings-store.ts
+@@ -17,10 +17,15 @@ export type SalonAiSettings = {
+   highEnabled: boolean;
+ };
+ 
++export type StoredKeyStatus = { saved: boolean; hint: string };
++
+ export type PlatformAiSettings = SalonAiSettings & {
+   calibrationOk: boolean;
+   choices: Record<ImageProviderName, TierRequest[]>;
+   spend: { spentInr: number; capInr: number; calls: number };
++  openaiKey: StoredKeyStatus;
++  geminiKey: StoredKeyStatus;
++  falKey: StoredKeyStatus & { enabled: boolean };
+ };
+ 
+ /** @deprecated Salon pages use SalonAiSettings. Super pages use PlatformAiSettings. */
+@@ -54,14 +59,44 @@ export async function readTierFlags(tenantId: string) {
+   return { stored, highEnabled: gate.highEnabled, mediumApproved: gate.mediumApproved };
+ }
+ 
++async function storedStatus(cipherKey: string, hintKey: string): Promise<StoredKeyStatus> {
++  const cipher = await setting(cipherKey);
++  return { saved: Boolean(cipher), hint: cipher ? await setting(hintKey) : "" };
++}
++
++/** The old single slot, classified so an OpenAI key is not shown as a Gemini key. */
++async function legacyKeyStatus(): Promise<{ kind: "openai" | "gemini" | ""; hint: string }> {
++  const cipher = await setting("platform_ai_key_cipher");
++  if (!cipher) return { kind: "", hint: "" };
++  const hint = await setting("platform_ai_key_hint");
++  try {
++    const plain = decryptSecret(cipher);
++    if (plain.startsWith("sk-")) return { kind: "openai", hint };
++    if (plain.startsWith("AIza")) return { kind: "gemini", hint };
++  } catch {
++    return { kind: "", hint };
++  }
++  const provider = await setting("platform_ai_provider");
++  if (provider === "openai" || provider === "gemini") return { kind: provider, hint };
++  return { kind: "", hint };
++}
++
+ export async function platformAiView(): Promise<PlatformAiSettings> {
+   const provider = providerSchema.safeParse(await setting("platform_ai_provider"));
+-  const cipher = await setting("platform_ai_key_cipher");
++  const active = provider.success ? provider.data : "openai";
++  const legacyCipher = await setting("platform_ai_key_cipher");
+   const gate = await tierGate();
++  const fal = await storedStatus("platform_fal_key_cipher", "platform_fal_key_hint");
++  const openaiDedicated = await storedStatus("platform_openai_key_cipher", "platform_openai_key_hint");
++  const geminiDedicated = await storedStatus("platform_gemini_key_cipher", "platform_gemini_key_hint");
++  const legacy = await legacyKeyStatus();
++  const openaiKey = openaiDedicated.saved ? openaiDedicated : legacy.kind === "openai" ? { saved: true, hint: legacy.hint } : openaiDedicated;
++  const geminiKey = geminiDedicated.saved ? geminiDedicated : legacy.kind === "gemini" ? { saved: true, hint: legacy.hint } : geminiDedicated;
++  const activeStatus = active === "openai" ? openaiKey : geminiKey;
+   return {
+-    provider: provider.success ? provider.data : "openai",
+-    hasKey: Boolean(cipher),
+-    hint: await setting("platform_ai_key_hint"),
++    provider: active,
++    hasKey: activeStatus.saved || Boolean(legacyCipher),
++    hint: activeStatus.hint || (await setting("platform_ai_key_hint")),
+     allowByo: await allowByoKey(),
+     tier: gate.platformTier,
+     mediumApproved: gate.mediumApproved,
+@@ -69,6 +104,9 @@ export async function platformAiView(): Promise<PlatformAiSettings> {
+     calibrationOk: gate.calibrationOk,
+     choices: { openai: tierCatalog("openai"), gemini: tierCatalog("gemini") },
+     spend: await spendSummary(),
++    openaiKey,
++    geminiKey,
++    falKey: { ...fal, enabled: fal.saved && (await setting("platform_fal_enabled")) === "true" },
+   };
+ }
+ 
+@@ -99,18 +137,73 @@ function freshKey(raw: string) {
+   return trimmed;
+ }
+ 
++function freshFalKey(raw: string) {
++  const trimmed = raw.trim();
++  if (!trimmed || trimmed.startsWith("•")) return null;
++  if (!/^[A-Za-z0-9_\-.:]{12,400}$/.test(trimmed)) throw new Error("INVALID_KEY");
++  return trimmed;
++}
++
++async function migrateLegacySlot() {
++  const legacy = await legacyKeyStatus();
++  if (!legacy.kind) return;
++  const cipherKey = legacy.kind === "openai" ? "platform_openai_key_cipher" : "platform_gemini_key_cipher";
++  const hintKey = legacy.kind === "openai" ? "platform_openai_key_hint" : "platform_gemini_key_hint";
++  if (await setting(cipherKey)) return;
++  const cipher = await setting("platform_ai_key_cipher");
++  if (!cipher) return;
++  await putSetting(cipherKey, cipher);
++  await putSetting(hintKey, legacy.hint);
++}
++
++export async function saveFalKey(
++  input: { apiKey: string; enabled: boolean; remove: boolean },
++  actorId: string,
++) {
++  if (input.remove) {
++    await putSetting("platform_fal_key_cipher", "");
++    await putSetting("platform_fal_key_hint", "");
++    await putSetting("platform_fal_enabled", "false");
++  } else {
++    const next = freshFalKey(input.apiKey);
++    if (next) {
++      await putSetting("platform_fal_key_cipher", encryptSecret(next));
++      await putSetting("platform_fal_key_hint", keyHint(next));
++    } else if (!(await setting("platform_fal_key_cipher")) && input.apiKey.trim()) {
++      throw new Error("INVALID_KEY");
++    }
++    const saved = Boolean(await setting("platform_fal_key_cipher"));
++    await putSetting("platform_fal_enabled", saved && input.enabled ? "true" : "false");
++  }
++  await prisma.auditLog.create({
++    data: {
++      actorId,
++      action: "AI_KEY_UPDATE",
++      target: "platform",
++      meta: JSON.stringify({ provider: "fal", rotated: Boolean(input.apiKey.trim()), removed: input.remove, enabled: input.enabled }),
++    },
++  });
++}
++
+ export async function savePlatformAi(
+   input: { provider: "openai" | "gemini"; apiKey: string; allowByo: boolean; tier: ModelTier; highEnabled: boolean },
+   actorId: string,
+ ) {
++  await migrateLegacySlot();
+   const next = freshKey(input.apiKey);
+   const gate = await tierGate();
+   await putSetting("platform_ai_provider", input.provider);
+   await putSetting("allow_byo_key", input.allowByo ? "true" : "false");
+   await putSetting("platform_ai_high_enabled", input.highEnabled ? "true" : "false");
++  const cipherKey = input.provider === "openai" ? "platform_openai_key_cipher" : "platform_gemini_key_cipher";
++  const hintKey = input.provider === "openai" ? "platform_openai_key_hint" : "platform_gemini_key_hint";
+   if (next) {
+-    await putSetting("platform_ai_key_cipher", encryptSecret(next));
+-    await putSetting("platform_ai_key_hint", keyHint(next));
++    const cipher = encryptSecret(next);
++    const hint = keyHint(next);
++    await putSetting(cipherKey, cipher);
++    await putSetting(hintKey, hint);
++    await putSetting("platform_ai_key_cipher", cipher);
++    await putSetting("platform_ai_key_hint", hint);
+     await putSetting("platform_ai_tier", "test");
+     await putSetting("platform_ai_medium_approved", "false");
+     await putSetting("platform_ai_calibration_ok", "false");
+@@ -119,6 +212,14 @@ export async function savePlatformAi(
+     if (tier === "high" && !input.highEnabled) tier = "test";
+     if (tier === "medium" && !gate.mediumApproved) tier = "test";
+     await putSetting("platform_ai_tier", tier);
++    const kept = await setting(cipherKey);
++    if (kept) {
++      await putSetting("platform_ai_key_cipher", kept);
++      await putSetting("platform_ai_key_hint", await setting(hintKey));
++    } else {
++      await putSetting("platform_ai_key_cipher", "");
++      await putSetting("platform_ai_key_hint", "");
++    }
+   }
+   await prisma.auditLog.create({
+     data: {
 diff --git a/src/lib/ai/spend.ts b/src/lib/ai/spend.ts
 index 84ade50..bdd1d93 100644
 --- a/src/lib/ai/spend.ts
@@ -4476,10 +5065,10 @@ index f225ca0..0c9e069 100644
 +  return readFileSync(file);
 +}
 diff --git a/src/lib/ai/tiers.ts b/src/lib/ai/tiers.ts
-index 903e2ae..1a88342 100644
+index 903e2ae..39f4c17 100644
 --- a/src/lib/ai/tiers.ts
 +++ b/src/lib/ai/tiers.ts
-@@ -129,8 +129,12 @@ export function resolveGuestTier(args: {
+@@ -129,8 +129,14 @@ export function resolveGuestTier(args: {
  type TokenRates = { textIn: number; imageIn: number; imageOut: number; textOut: number };
  
  function tokenRates(model: string): TokenRates | null {
@@ -4489,11 +5078,13 @@ index 903e2ae..1a88342 100644
    if (model === "gpt-image-1") return { textIn: 5, imageIn: 10, imageOut: 40, textOut: 40 };
 +  // Exact id. Guide checked 4 Oct 2026: image output $30/1M, text input $5/1M, image input $8/1M.
 +  if (model === "gpt-image-2") return { textIn: 5, imageIn: 8, imageOut: 30, textOut: 30 };
++  // Exact ids. Model pages checked 4 Oct 2026: image input $8/1M, image output $30/1M, text input $5/1M. Text output is not billed.
++  if (model === "gpt-image-2.5-sunburst" || model === "gpt-image-2.5-flare") return { textIn: 5, imageIn: 8, imageOut: 30, textOut: 0 };
 +  if (model === "gemini-3.1-flash-image") return { textIn: 0.5, imageIn: 0.5, imageOut: 60, textOut: 3 };
    if (model.includes("flash-lite-image")) return { textIn: 0.25, imageIn: 0.25, imageOut: 30, textOut: 1.5 };
    if (model.includes("flash-image")) return { textIn: 0.5, imageIn: 0.5, imageOut: 60, textOut: 3 };
    return null;
-@@ -156,6 +160,14 @@ export function costUsdFromUsage(model: string, usage: UsageNumbers | undefined)
+@@ -156,6 +162,14 @@ export function costUsdFromUsage(model: string, usage: UsageNumbers | undefined)
    return Math.round(usd * 1_000_000) / 1_000_000;
  }
  
@@ -5976,10 +6567,10 @@ index be0b8ad..9afe4ab 100644
    if (!session?.user?.isSuperAdmin) {
 diff --git a/tests/unit/compare-models.test.ts b/tests/unit/compare-models.test.ts
 new file mode 100644
-index 0000000..1d67bee
+index 0000000..f36d143
 --- /dev/null
 +++ b/tests/unit/compare-models.test.ts
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,107 @@
 +import sharp from "sharp";
 +import { describe, expect, it } from "vitest";
 +import { quoteBenchmark } from "@/lib/ai/benchmark";
@@ -6039,6 +6630,28 @@ index 0000000..1d67bee
 +      expect(gemini.estimateInr).toBeLessThan(10);
 +    }
 +    expect(usdFromTokenCounts("gpt-image-2", { textIn: 400, imageIn: 1000, output: 1000 })).not.toBeNull();
++    const sunburst = quoteComparisonModel("gpt-image-2.5-sunburst", 480, 640);
++    expect(sunburst.ok).toBe(true);
++    if (sunburst.ok) {
++      expect(sunburst.model).toBe("gpt-image-2.5-sunburst");
++      expect(sunburst.inputFidelity).toBeNull();
++      expect(sunburst.size).toBe("1024x1536");
++      expect(sunburst.estimateInr).toBeLessThanOrEqual(sunburst.capInr);
++      const planned = planImageEdit({
++        model: sunburst.model,
++        prompt: "edit",
++        quality: "medium",
++        size: sunburst.size,
++        outputFormat: "png",
++        inputFidelity: sunburst.inputFidelity,
++        imageOrder: ["selfie.png", "style-reference.jpg"],
++        mask: false,
++      });
++      expect(planned.ok).toBe(true);
++      if (planned.ok) expect(editFormFields(planned.plan).input_fidelity).toBeUndefined();
++    }
++    expect(comparisonModel("gpt-image-2.5-sunburst")?.id).toBe("gpt-image-2.5-sunburst");
++    expect(comparisonModel("gpt-image-2.5-flare")?.id).toBe("gpt-image-2.5-flare");
 +  });
 +
 +  it("prepares gpt-image-2 without input_fidelity and keeps the reference prompt", async () => {

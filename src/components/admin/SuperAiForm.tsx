@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { PlatformAiSettings } from "@/lib/ai/settings-store";
+import { productionModelNotice } from "@/lib/ai/model-notices";
 import type { ImageProviderName, TierRequest } from "@/lib/ai/tiers";
 
 type Panel = {
@@ -28,6 +29,11 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
   const [calibrationOk, setCalibrationOk] = useState(initial.calibrationOk);
   const [hint, setHint] = useState(initial.hint);
   const [hasKey, setHasKey] = useState(initial.hasKey);
+  const [openaiKey, setOpenaiKey] = useState(initial.openaiKey);
+  const [geminiKey, setGeminiKey] = useState(initial.geminiKey);
+  const [falKey, setFalKey] = useState(initial.falKey);
+  const [falDraft, setFalDraft] = useState("");
+  const [falEnabled, setFalEnabled] = useState(initial.falKey.enabled);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [panels, setPanels] = useState<Panel[]>([]);
@@ -37,6 +43,10 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
   function applyView(data: PlatformAiSettings) {
     setHint(data.hint || "");
     setHasKey(Boolean(data.hasKey));
+    setOpenaiKey(data.openaiKey);
+    setGeminiKey(data.geminiKey);
+    setFalKey(data.falKey);
+    setFalEnabled(Boolean(data.falKey?.enabled));
     setAllowByo(data.allowByo);
     setHighEnabled(data.highEnabled);
     setMediumApproved(data.mediumApproved);
@@ -107,6 +117,25 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
     setMessage(data.message || (res.ok ? "Connected." : "The provider rejected that key."));
   }
 
+  async function saveFal(remove: boolean) {
+    setBusy(true);
+    setMessage("");
+    const res = await fetch("/api/v1/super/ai", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ falOnly: true, falKey: falDraft, falEnabled, removeFalKey: remove }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setMessage(data.message || "Could not save the fal key.");
+      return;
+    }
+    applyView(data);
+    setFalDraft("");
+    setMessage(remove ? "The fal key was removed." : "The fal key was saved.");
+  }
+
   return (
     <form
       className="card grid max-w-3xl gap-4 p-5"
@@ -118,6 +147,19 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
       <p role="status">
         Charged against the cap: ₹{initial.spend.spentInr.toFixed(2)} of ₹{initial.spend.capInr.toFixed(0)} ({initial.spend.calls} calls).
       </p>
+      <div className="grid gap-1 text-sm">
+        <p className="font-medium">Saved provider keys</p>
+        <p>
+          OpenAI: {openaiKey.saved ? `saved as ${openaiKey.hint}. This key is available for OpenAI guest try-on and for OpenAI comparison models.` : "not saved."}
+          {" "}Saving a Gemini key or a fal key does not remove it. Enable high quality only unlocks the High tier. A greyed High row means that tier is off. It does not turn the OpenAI key off.
+        </p>
+        <p>Gemini: {geminiKey.saved ? `saved as ${geminiKey.hint}. Used when the guest provider is Gemini, and for Gemini comparison models.` : "not saved."}</p>
+        <p>
+          fal: {falKey.saved
+            ? `saved as ${falKey.hint}. ${falKey.enabled ? "Comparison calls are on." : "Comparison calls are off until you enable them."}`
+            : "not saved."}
+        </p>
+      </div>
       <label className="text-sm">
         Provider
         <select className="field mt-1" value={provider} onChange={(event) => setProvider(event.target.value === "gemini" ? "gemini" : "openai")}>
@@ -151,6 +193,7 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
                 {choice.estimateInr.toFixed(2)}
                 {" / image"}
                 {choice.tier === "test" && choice.inputLongSide > 0 ? ` · input long side ${choice.inputLongSide}px` : ""}
+                {productionModelNotice(choice.model) ? ` · ${productionModelNotice(choice.model)}` : ""}
               </span>
             </label>
           );
@@ -176,8 +219,8 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
         />
       </label>
       <p className="text-xs text-muted">
-        {hasKey ? `Saved as ${hint}. ` : ""}
-        The key is encrypted on the server. Pasting a new key returns the tier to Test. This page never shows the key again.
+        {hasKey ? `Guest provider key saved as ${hint}. ` : "No key is stored for the guest provider selected above. "}
+        The key is encrypted with the server secret. Pasting a new key returns the tier to Test. This page never shows the key again. The guest dropdown chooses which saved key guests use. It does not erase the other provider&apos;s key.
       </p>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={allowByo} onChange={(event) => setAllowByo(event.target.checked)} />
@@ -192,6 +235,34 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
         </button>
       </div>
       {mediumApproved && <p className="text-sm">Medium quality is approved.</p>}
+      <div className="grid gap-2 border-t border-line pt-4">
+        <p className="text-sm font-medium">fal key</p>
+        <p className="text-xs text-muted">
+          Separate from the OpenAI and Gemini keys. Paste it here, tick Enable fal comparisons, then Save fal key. Reference comparisons that use fal read this key. They do not call OpenAI or Gemini if it is missing or off.
+        </p>
+        <label className="text-sm">
+          fal key
+          <input
+            className="field mt-1 font-mono"
+            type="password"
+            name="fal-key"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="fal key"
+            placeholder={falKey.saved ? falKey.hint || "A fal key is saved" : "Paste the fal key"}
+            value={falDraft}
+            onChange={(event) => setFalDraft(event.target.value)}
+          />
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={falEnabled} onChange={(event) => setFalEnabled(event.target.checked)} />
+          Enable fal comparisons
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn secondary" type="button" disabled={busy} onClick={() => void saveFal(false)}>Save fal key</button>
+          <button className="btn secondary" type="button" disabled={busy || !falKey.saved} onClick={() => void saveFal(true)}>Remove fal key</button>
+        </div>
+      </div>
       {message && <p role="status">{message}</p>}
       {total && <p className="text-sm font-medium">{total}</p>}
       {panels.length > 0 && (

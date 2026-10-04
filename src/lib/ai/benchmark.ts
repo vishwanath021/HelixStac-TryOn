@@ -108,7 +108,7 @@ export function quoteModelEdit(args: {
   if (outputUsd == null || imageInputUsd == null || textInputUsd == null || estimateUsd == null) {
     return { ok: false as const, message: `No token rates for ${args.model}. The request was not sent.` };
   }
-  if (outputListUsd(args.model, args.quality, size) == null) {
+  if (outputListUsd(args.model, args.quality, size) == null && !caps.tokenOnly) {
     return { ok: false as const, message: `No published output price for ${args.model} ${args.quality} ${size}. The request was not sent.` };
   }
   const estimateInr = bufferedInr(estimateUsd);

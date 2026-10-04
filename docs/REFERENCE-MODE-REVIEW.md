@@ -31,7 +31,7 @@ This follow-up did not place a new paid call. The owner's first paid benchmark i
 | mask | omitted | The prompt has no mask sentence on this path. |
 | seed, strength, guidance, guidance_scale | omitted | `FORBIDDEN_EDIT_FIELDS`. |
 
-Authorization is the platform OpenAI key from `/super/ai` when `platform_ai_provider` is `openai`, otherwise `OPENAI_API_KEY`. The key is not written to the repo, logs, or this review. A missing key returns `NO_OPENAI_KEY` and makes no call.
+Authorization for an OpenAI comparison is the dedicated OpenAI key on `/super/ai`, then the older single slot when that slot is an OpenAI key, then `OPENAI_API_KEY`. A Gemini key is not used for an OpenAI model. A fal comparison uses the fal key and refuses before any call when that key is missing or comparisons are off. The key is not written to the repo, logs, or this review. A missing OpenAI key returns `NO_OPENAI_KEY` and makes no call.
 
 If the API rejects `gpt-image-1.5` or `input_fidelity`, the run returns that error (`UNKNOWN_MODEL` or `BENCHMARK`, HTTP 422) and stops. There is no second model.
 
@@ -292,6 +292,54 @@ A wide selfie uses `1536x1024` instead: about ₹16.90 for `gpt-image-1.5` and �
 
 Each result stays on the page. A second model appears beside the first with that model's usage, latency, and actual cost. The actual cost is shown only to the super-admin.
 
+## Shutdown dates and fal comparison
+
+Fetched 4 Oct 2026 from the live pages. Anything not on those pages is marked unverified.
+
+Official deprecations, https://developers.openai.com/api/docs/deprecations :
+
+| Model | Shutdown | Replacement named on that page |
+|---|---|---|
+| `gpt-image-1.5` | 1 Dec 2026 | `gpt-image-2.5-sunburst` or `gpt-image-2.5-flare` |
+| `gpt-image-1-mini` | 1 Dec 2026 | `gpt-image-2.5-sunburst` or `gpt-image-2.5-flare` |
+| `chatgpt-image-latest` | 1 Dec 2026 | `gpt-image-2.5-sunburst` or `gpt-image-2.5-flare` |
+| `gpt-image-1` | 23 Oct 2026 | `gpt-image-2.5-sunburst` or `gpt-image-2.5-flare` |
+
+This app does not send `chatgpt-image-latest`. Guest Test and Medium still send `gpt-image-1-mini`. Guest High still sends `gpt-image-1`. `/super/ai` shows those shutdown dates next to the tiers. The tier request, quality, size, and rupee estimate were not changed.
+
+`gpt-image-2` is still a documented edit model (`v1/images/edits`). The prompting guide says to omit `input_fidelity` for it. Third-party posts that name only `gpt-image-2` are older than the deprecations page, which names the 2.5 models as the replacement.
+
+Both 2.5 model pages list Image edit and the same token rates as GPT Image 2 (text input $5/1M, image input $8/1M, image output $30/1M). Snapshots: `gpt-image-2.5-sunburst-2026-09-08` and `gpt-image-2.5-flare-2026-09-08`. Neither id is on the shutdown table. The image generation guide says to select `gpt-image-2.5-sunburst` for precise editing, so that id is the comparison default. `gpt-image-2.5-flare` is also in the dropdown. Quality on those pages includes `xhigh` and `max`. This comparison keeps `medium` so the ₹30 cap still applies. The 2.5 pages do not publish a per-image output dollar cell. The quote uses the token rates and the existing output-token allowance. That allowance is not a published 2.5 token count.
+
+`input_fidelity`: the GPT Image 2 parameter table says omit it. The GPT Image 2.5 parameter table lists `model`, `quality`, `size`, and `background`. It does not list `input_fidelity`, so this comparison omits the field. The guide does not contain a separate sentence that says the 2.5 API rejects the field. That rejection was not tested, because no paid call was made.
+
+### Production migration plan
+
+Do not switch a guest tier in this change.
+
+1. Leave Test and Medium on `gpt-image-1-mini` and High on `gpt-image-1` until one reviewed change updates the model id and the list price together.
+2. High shuts down first, on 23 Oct 2026. Mini shuts down on 1 Dec 2026.
+3. Use the comparison dropdown to look at `gpt-image-2.5-sunburst` (precise editing) and `gpt-image-2.5-flare` (faster) at quality medium before any guest tier moves.
+4. A later change can point `OPENAI_IMAGE_MODEL_HIGH` and `OPENAI_IMAGE_MODEL_TEST` / `OPENAI_IMAGE_MODEL_MEDIUM` at a 2.5 id only after the ₹ estimate for that tier is recalculated. Pointing High at sunburst while the estimate still uses the `gpt-image-1` high cell would understate the bill.
+
+### fal queue
+
+Every fal comparison is `POST https://queue.fal.run/<endpoint-id>` with `Authorization: Key …` and `X-Fal-No-Retry: 1`. fal otherwise retries a failed queue request up to 10 times. The client submits once, polls `…/requests/{id}/status`, then `GET …/requests/{id}`. Output is `images[].url`. A timeout after submit is an unknown bill and is not sent again. `image_urls` is the selfie, then the hairstyle reference. The same reference prompt is used. No mask. Images are uploaded with `POST https://rest.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3`, then `PUT` to the returned `upload_url`. The initiate request sets `expiration_duration_seconds` to 3600. The payloads delete API does not delete input CDN files, so there is no delete call. A dedicated input-file delete endpoint was not verified.
+
+`enable_safety_checker` is sent `true` where the schema has that field. nano-banana has `safety_tolerance` instead, so the field is omitted and the default stands. A black frame, or `has_nsfw_concepts` true, is an error: the safety checker blocked the image. That completed call counts as billed. It is not shown as a haircut and it is not retried.
+
+`fal-ai/qwen-image-edit-plus` was verified ($0.03 per megapixel, `image_urls` required) and is not in the dropdown. The add list did not include it.
+
+The flux-2-pro page did not state a maximum of 9 references. That maximum is unverified. Two images are sent.
+
+Price range for a `1024x1536` output, FX 96, before the 8% buffer. The cap uses the higher end after the buffer. Input readings follow each page: flux-2 and klein 9b resize inputs to 1MP (low end treats the inputs as 1MP together, high end as 1MP each). Pro rounds each input up. Qwen 2511 and klein 4b do not say whether inputs are billed, so the high end is the larger of actual pixels or 1MP per input.
+
+### Keys on /super/ai
+
+OpenAI, Gemini, and fal each have their own encrypted slot. The guest provider dropdown chooses which of the OpenAI or Gemini keys guests use. Changing that dropdown does not erase the other key. A saved OpenAI key stays available for OpenAI comparisons. Enable high quality only unlocks the High tier. A greyed High row is that tier, not the key.
+
+The fal box is separate. Save fal key stores it. Enable fal comparisons must be on or the comparison refuses before `beginPaidCall` and does not call OpenAI or Gemini. Remove fal key clears that slot. `FAL_KEY` in the environment is only a fallback when no fal key is saved. A saved key that is turned off does not use the environment value.
+
 ## How to run a controlled paid test locally
 
 ```bash
@@ -303,9 +351,9 @@ npm run dev
 ```
 
 1. Open http://localhost:3000/login and sign in as `super@helixstac.app` / `SuperAdmin#2026`.
-2. Open http://localhost:3000/super/ai. If the platform provider is not already OpenAI, paste the key there. Do not put the key in git.
+2. Open http://localhost:3000/super/ai. The page lists which provider keys are saved. Paste an OpenAI key in **Provider key** with the provider set to OpenAI, then Save. Paste a fal key in the **fal key** box, tick **Enable fal comparisons**, then **Save fal key**. Do not put either key in git. A greyed High tier means high quality is off. It does not turn a saved OpenAI key off.
 3. Optional, no charge: `npm run benchmark:quote`.
-4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. Leave **Hair-only composite** off unless you want the smaller fallback. Set **Hair texture** to **Curly** when the selfie is curly and the catalogue JPEG is straight. Pick **Comparison model**. Those controls are absent until Reference mode is on, and they are absent for a guest. Upload or take a selfie, pick a style, read the texture warning if Image 2 does not match, read that model's estimate, tick **I understand this makes one paid call for this model and does not retry**, and press **Try this hairstyle**. To compare a second model, change **Comparison model**, read the new estimate, tick the box again, and press **Try this hairstyle** once more. That is a separate call.
+4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. Leave **Hair-only composite** off unless you want the smaller fallback. Set **Hair texture** to **Curly** when the selfie is curly and the catalogue JPEG is straight. **Comparison model** opens on `gpt-image-2.5-sunburst (recommended)`. `gpt-image-1.5` stays in the list and is labelled as shutting down on 1 Dec 2026. fal models are further down the same list. Those controls are absent until Reference mode is on, and they are absent for a guest. Upload or take a selfie, pick a style, read the texture warning if Image 2 does not match, read that model's estimate (fal shows a range; the rupee figure is the higher end plus the 8% buffer), tick **I understand this makes one paid call for this model and does not retry**, and press **Try this hairstyle**. To compare a second model, change **Comparison model**, read the new estimate, tick the box again, and press **Try this hairstyle** once more. That is a separate call.
 5. The large image is the raw provider output. The download is that raw image. A hair-only composite, when the fallback was on, is the smaller image and is not the download. The raw image stays labelled unvalidated. A neckline shift shows a clothing warning. A face warning says the face may differ and, for the super-admin, shows the landmark score. Open **saved stages** and look at `face-check.png` (green selfie landmarks, red aligned generated landmarks). **Delete now** removes that run, or leave the files for 72 hours. Do not commit the photos. The face check and the optional composite need `pip install -r scripts/requirements-vision.txt`. A missing vision install still returns the raw image after a paid call when the composite box is off. With the composite box on, a missing install is refused before the paid call.
 6. The benchmark form still works: on `/super/ai`, pick a hairstyle, choose a selfie, tick the confirmation, and press **Run benchmark**. Open the result link. The right image is `provider-response.png`, labelled UNVALIDATED. `validation.json` stays `accepted: false`.
 

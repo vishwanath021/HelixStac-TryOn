@@ -17,10 +17,15 @@ export type SalonAiSettings = {
   highEnabled: boolean;
 };
 
+export type StoredKeyStatus = { saved: boolean; hint: string };
+
 export type PlatformAiSettings = SalonAiSettings & {
   calibrationOk: boolean;
   choices: Record<ImageProviderName, TierRequest[]>;
   spend: { spentInr: number; capInr: number; calls: number };
+  openaiKey: StoredKeyStatus;
+  geminiKey: StoredKeyStatus;
+  falKey: StoredKeyStatus & { enabled: boolean };
 };
 
 /** @deprecated Salon pages use SalonAiSettings. Super pages use PlatformAiSettings. */
@@ -54,14 +59,44 @@ export async function readTierFlags(tenantId: string) {
   return { stored, highEnabled: gate.highEnabled, mediumApproved: gate.mediumApproved };
 }
 
+async function storedStatus(cipherKey: string, hintKey: string): Promise<StoredKeyStatus> {
+  const cipher = await setting(cipherKey);
+  return { saved: Boolean(cipher), hint: cipher ? await setting(hintKey) : "" };
+}
+
+/** The old single slot, classified so an OpenAI key is not shown as a Gemini key. */
+async function legacyKeyStatus(): Promise<{ kind: "openai" | "gemini" | ""; hint: string }> {
+  const cipher = await setting("platform_ai_key_cipher");
+  if (!cipher) return { kind: "", hint: "" };
+  const hint = await setting("platform_ai_key_hint");
+  try {
+    const plain = decryptSecret(cipher);
+    if (plain.startsWith("sk-")) return { kind: "openai", hint };
+    if (plain.startsWith("AIza")) return { kind: "gemini", hint };
+  } catch {
+    return { kind: "", hint };
+  }
+  const provider = await setting("platform_ai_provider");
+  if (provider === "openai" || provider === "gemini") return { kind: provider, hint };
+  return { kind: "", hint };
+}
+
 export async function platformAiView(): Promise<PlatformAiSettings> {
   const provider = providerSchema.safeParse(await setting("platform_ai_provider"));
-  const cipher = await setting("platform_ai_key_cipher");
+  const active = provider.success ? provider.data : "openai";
+  const legacyCipher = await setting("platform_ai_key_cipher");
   const gate = await tierGate();
+  const fal = await storedStatus("platform_fal_key_cipher", "platform_fal_key_hint");
+  const openaiDedicated = await storedStatus("platform_openai_key_cipher", "platform_openai_key_hint");
+  const geminiDedicated = await storedStatus("platform_gemini_key_cipher", "platform_gemini_key_hint");
+  const legacy = await legacyKeyStatus();
+  const openaiKey = openaiDedicated.saved ? openaiDedicated : legacy.kind === "openai" ? { saved: true, hint: legacy.hint } : openaiDedicated;
+  const geminiKey = geminiDedicated.saved ? geminiDedicated : legacy.kind === "gemini" ? { saved: true, hint: legacy.hint } : geminiDedicated;
+  const activeStatus = active === "openai" ? openaiKey : geminiKey;
   return {
-    provider: provider.success ? provider.data : "openai",
-    hasKey: Boolean(cipher),
-    hint: await setting("platform_ai_key_hint"),
+    provider: active,
+    hasKey: activeStatus.saved || Boolean(legacyCipher),
+    hint: activeStatus.hint || (await setting("platform_ai_key_hint")),
     allowByo: await allowByoKey(),
     tier: gate.platformTier,
     mediumApproved: gate.mediumApproved,
@@ -69,6 +104,9 @@ export async function platformAiView(): Promise<PlatformAiSettings> {
     calibrationOk: gate.calibrationOk,
     choices: { openai: tierCatalog("openai"), gemini: tierCatalog("gemini") },
     spend: await spendSummary(),
+    openaiKey,
+    geminiKey,
+    falKey: { ...fal, enabled: fal.saved && (await setting("platform_fal_enabled")) === "true" },
   };
 }
 
@@ -99,18 +137,73 @@ function freshKey(raw: string) {
   return trimmed;
 }
 
+function freshFalKey(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.startsWith("•")) return null;
+  if (!/^[A-Za-z0-9_\-.:]{12,400}$/.test(trimmed)) throw new Error("INVALID_KEY");
+  return trimmed;
+}
+
+async function migrateLegacySlot() {
+  const legacy = await legacyKeyStatus();
+  if (!legacy.kind) return;
+  const cipherKey = legacy.kind === "openai" ? "platform_openai_key_cipher" : "platform_gemini_key_cipher";
+  const hintKey = legacy.kind === "openai" ? "platform_openai_key_hint" : "platform_gemini_key_hint";
+  if (await setting(cipherKey)) return;
+  const cipher = await setting("platform_ai_key_cipher");
+  if (!cipher) return;
+  await putSetting(cipherKey, cipher);
+  await putSetting(hintKey, legacy.hint);
+}
+
+export async function saveFalKey(
+  input: { apiKey: string; enabled: boolean; remove: boolean },
+  actorId: string,
+) {
+  if (input.remove) {
+    await putSetting("platform_fal_key_cipher", "");
+    await putSetting("platform_fal_key_hint", "");
+    await putSetting("platform_fal_enabled", "false");
+  } else {
+    const next = freshFalKey(input.apiKey);
+    if (next) {
+      await putSetting("platform_fal_key_cipher", encryptSecret(next));
+      await putSetting("platform_fal_key_hint", keyHint(next));
+    } else if (!(await setting("platform_fal_key_cipher")) && input.apiKey.trim()) {
+      throw new Error("INVALID_KEY");
+    }
+    const saved = Boolean(await setting("platform_fal_key_cipher"));
+    await putSetting("platform_fal_enabled", saved && input.enabled ? "true" : "false");
+  }
+  await prisma.auditLog.create({
+    data: {
+      actorId,
+      action: "AI_KEY_UPDATE",
+      target: "platform",
+      meta: JSON.stringify({ provider: "fal", rotated: Boolean(input.apiKey.trim()), removed: input.remove, enabled: input.enabled }),
+    },
+  });
+}
+
 export async function savePlatformAi(
   input: { provider: "openai" | "gemini"; apiKey: string; allowByo: boolean; tier: ModelTier; highEnabled: boolean },
   actorId: string,
 ) {
+  await migrateLegacySlot();
   const next = freshKey(input.apiKey);
   const gate = await tierGate();
   await putSetting("platform_ai_provider", input.provider);
   await putSetting("allow_byo_key", input.allowByo ? "true" : "false");
   await putSetting("platform_ai_high_enabled", input.highEnabled ? "true" : "false");
+  const cipherKey = input.provider === "openai" ? "platform_openai_key_cipher" : "platform_gemini_key_cipher";
+  const hintKey = input.provider === "openai" ? "platform_openai_key_hint" : "platform_gemini_key_hint";
   if (next) {
-    await putSetting("platform_ai_key_cipher", encryptSecret(next));
-    await putSetting("platform_ai_key_hint", keyHint(next));
+    const cipher = encryptSecret(next);
+    const hint = keyHint(next);
+    await putSetting(cipherKey, cipher);
+    await putSetting(hintKey, hint);
+    await putSetting("platform_ai_key_cipher", cipher);
+    await putSetting("platform_ai_key_hint", hint);
     await putSetting("platform_ai_tier", "test");
     await putSetting("platform_ai_medium_approved", "false");
     await putSetting("platform_ai_calibration_ok", "false");
@@ -119,6 +212,14 @@ export async function savePlatformAi(
     if (tier === "high" && !input.highEnabled) tier = "test";
     if (tier === "medium" && !gate.mediumApproved) tier = "test";
     await putSetting("platform_ai_tier", tier);
+    const kept = await setting(cipherKey);
+    if (kept) {
+      await putSetting("platform_ai_key_cipher", kept);
+      await putSetting("platform_ai_key_hint", await setting(hintKey));
+    } else {
+      await putSetting("platform_ai_key_cipher", "");
+      await putSetting("platform_ai_key_hint", "");
+    }
   }
   await prisma.auditLog.create({
     data: {

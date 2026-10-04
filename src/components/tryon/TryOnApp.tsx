@@ -79,7 +79,7 @@ export function TryOnApp({
   salonMode?: boolean;
   demoMode?: boolean;
   referenceModeAvailable?: boolean;
-  comparisonModels?: { id: string; label: string }[];
+  comparisonModels?: { id: string; label: string; warning?: string }[];
 }) {
   const lang = config.defaultLang || "en";
   const [sid, setSid] = useState("");
@@ -102,7 +102,7 @@ export function TryOnApp({
   const [hairComposite, setHairComposite] = useState(false);
   const [hairTexture, setHairTexture] = useState<AskedTexture>("natural");
   const [referenceAck, setReferenceAck] = useState(false);
-  const [referenceQuote, setReferenceQuote] = useState<{ model: string; provider: string; quality: string; size: string; rupees: number; dollars: number; note: string } | null>(null);
+  const [referenceQuote, setReferenceQuote] = useState<{ model: string; provider: string; quality: string; size: string; rupees: number; dollars: number; note: string; warning: string } | null>(null);
   const [compareModel, setCompareModel] = useState(comparisonModels[0]?.id ?? "");
   const [comparisons, setComparisons] = useState<Look[]>([]);
   const [referenceChoice, setReferenceChoice] = useState<{ id: string; name: string; serviceKeys: string[]; tool: Look["tool"] } | null>(null);
@@ -383,6 +383,7 @@ export function TryOnApp({
         rupees: Number(data.rupees || 0),
         dollars: Number(data.dollars || 0),
         note: String(data.note || ""),
+        warning: String(data.warning || ""),
       });
     } finally {
       setBusy(false);
@@ -840,6 +841,11 @@ export function TryOnApp({
                     </select>
                   </label>
                 )}
+                {referenceMode && comparisonModels.find((model) => model.id === compareModel)?.warning && (
+                  <p className="mt-2 text-sm font-medium" role="status">
+                    {comparisonModels.find((model) => model.id === compareModel)?.warning}
+                  </p>
+                )}
                 {referenceMode && comparisonModels.length > 0 && (
                   <p className="mt-2 text-muted">
                     Each model is its own estimate, confirmation, and one call. Nothing runs until you confirm that model. There is no retry and no automatic substitution.
@@ -900,6 +906,7 @@ export function TryOnApp({
                     <p>
                       {referenceChoice.name}. {referenceQuote.model}, quality {referenceQuote.quality}, size {referenceQuote.size}. About ₹{referenceQuote.rupees.toFixed(2)} (${referenceQuote.dollars.toFixed(3)}).
                     </p>
+                    {referenceQuote.warning && <p className="mt-1 font-medium" role="status">{referenceQuote.warning}</p>}
                     <p className="mt-1 text-muted">{referenceQuote.note}</p>
                     <label className="mt-2 flex items-start gap-2">
                       <input type="checkbox" className="mt-1" checked={referenceAck} onChange={(event) => setReferenceAck(event.target.checked)} />
