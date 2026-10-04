@@ -6,7 +6,7 @@ import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
 import { shadeById } from "@/data/shades";
 import { resolveProviderChoice } from "@/lib/ai/credentials";
 import { claimGenerationJob, completeGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
-import { referenceModeActive } from "@/lib/ai/reference-mode";
+import { hairCompositeRequested, referenceModeActive } from "@/lib/ai/reference-mode";
 import { runTryOnReference } from "@/lib/ai/reference-run";
 import { salonOutcome, guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { generateWithFailover, selectProvider } from "@/lib/ai/router";
@@ -138,6 +138,7 @@ export async function POST(req: Request) {
     requested: String(form.get("referenceMode") || "") === "yes",
     tool,
   });
+  const wantHair = hairCompositeRequested(wantReference, String(form.get("hairComposite") || "") === "yes");
   if (wantReference && String(form.get("confirm") || "") !== "yes") {
     return NextResponse.json({ error: "CONFIRM", message: "Confirm the estimated cost before this paid call." }, { status: 400 });
   }
@@ -148,7 +149,7 @@ export async function POST(req: Request) {
     const claim = await claimGenerationJob({
       tenantId: tenant.id,
       requestId,
-      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: wantReference ? "" : shadeId || "", mode: wantReference ? "reference" : "production" }),
+      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: wantReference ? "" : shadeId || "", mode: wantHair ? "reference-hair" : wantReference ? "reference" : "production" }),
     });
     if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
     if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
@@ -180,6 +181,7 @@ export async function POST(req: Request) {
       jobId,
       requestId,
       revealCost: await isSuperSession(),
+      hairComposite: wantHair,
     });
   }
 

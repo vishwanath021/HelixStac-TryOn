@@ -1,7 +1,9 @@
+import { access } from "node:fs/promises";
+import path from "node:path";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DeleteBenchmarkButton } from "@/components/admin/DeleteBenchmarkButton";
-import { BENCHMARK_STAGES } from "@/lib/ai/benchmark";
+import { BENCHMARK_STAGES, benchmarkDir } from "@/lib/ai/benchmark";
 import { bufferedInr } from "@/lib/ai/tiers";
 import { numberEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
@@ -10,6 +12,11 @@ import { pageSuper } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 const EXTRA = ["restored-output.png", "provider-input.png", "provider-reference.jpg", "original-input.jpg"];
+const COMPOSITE_STAGES: { file: string; caption: string }[] = [
+  { file: "aligned-output.png", caption: "Aligned generated frame. This is not the raw provider output." },
+  { file: "mask-overlay.png", caption: "Original hair in blue, generated hair in magenta, protected face in gold." },
+  { file: "hair-composite.png", caption: "Hair-only composite. This is not the raw provider output." },
+];
 
 export default async function BenchmarkReviewPage({ params }: { params: Promise<{ id: string }> }) {
   await pageSuper();
@@ -18,6 +25,15 @@ export default async function BenchmarkReviewPage({ params }: { params: Promise<
   if (!run) notFound();
   const retentionHours = Math.max(1, numberEnv("BENCHMARK_RETENTION_HOURS", 72));
   const hasUsage = run.inputTokens > 0 || run.outputTokens > 0 || run.actualUsd > 0;
+  const compositeStages: { file: string; caption: string }[] = [];
+  for (const stage of COMPOSITE_STAGES) {
+    try {
+      await access(path.join(benchmarkDir(run.id), stage.file));
+      compositeStages.push(stage);
+    } catch {
+      // This run did not save that stage.
+    }
+  }
   const bufferedActual = run.actualUsd > 0 ? bufferedInr(run.actualUsd) : 0;
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -26,6 +42,7 @@ export default async function BenchmarkReviewPage({ params }: { params: Promise<
       <p className="mt-2 text-sm leading-6">
         Hairstyle benchmark for {run.styleId}. Model {run.model}, quality {run.quality}, size {run.size}. Status {run.status}. Source {run.source === "tryon" ? "salon try-on" : "benchmark form"}.
         The right-hand photograph is the raw provider body, before any crop. Nothing here was accepted as a finished haircut.
+        {compositeStages.some((stage) => stage.file === "hair-composite.png") && " A hair-only composite, when present below, is a separate image and is not the raw provider output."}
       </p>
       <p className="mt-3 rounded-xl border border-line bg-white p-3 text-sm leading-6">
         Real family photos are personal data. This run sent them only to OpenAI. The files stay on this server under var/benchmarks
@@ -74,6 +91,16 @@ export default async function BenchmarkReviewPage({ params }: { params: Promise<
           <img alt="" src={`/api/v1/super/ai/benchmark/${run.id}/file?stage=provider-response.png`} className="max-h-[36rem] w-full object-contain" />
         </figure>
       </div>
+      {compositeStages.length > 0 && (
+        <div className="mt-4 grid gap-4">
+          {compositeStages.map((stage) => (
+            <figure key={stage.file} className="rounded-2xl border border-line bg-white p-3">
+              <figcaption className="mb-2 text-sm font-medium">{stage.caption}</figcaption>
+              <img alt="" src={`/api/v1/super/ai/benchmark/${run.id}/file?stage=${stage.file}`} className="max-h-[32rem] w-full object-contain" />
+            </figure>
+          ))}
+        </div>
+      )}
       <div className="mt-4 grid gap-4">
         {EXTRA.map((stage) => (
           <figure key={stage} className="rounded-2xl border border-line bg-white p-3">

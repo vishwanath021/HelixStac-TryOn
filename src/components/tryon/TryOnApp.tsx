@@ -25,6 +25,9 @@ type Look = {
   showCost?: boolean;
   detail?: string;
   clothingWarning?: string;
+  composite?: string;
+  compositeError?: string;
+  rawFaceDrift?: boolean;
 };
 
 type TryTool = "colour" | "style" | "brows" | "beard" | "nails";
@@ -90,6 +93,7 @@ export function TryOnApp({
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
   const [busy, setBusy] = useState(false);
   const [referenceMode, setReferenceMode] = useState(false);
+  const [hairComposite, setHairComposite] = useState(false);
   const [referenceAck, setReferenceAck] = useState(false);
   const [referenceQuote, setReferenceQuote] = useState<{ model: string; quality: string; size: string; rupees: number; dollars: number; note: string } | null>(null);
   const [referenceChoice, setReferenceChoice] = useState<{ id: string; name: string; serviceKeys: string[]; tool: Look["tool"] } | null>(null);
@@ -433,6 +437,7 @@ export function TryOnApp({
       if (referenceConfirm) {
         body.set("referenceMode", "yes");
         body.set("confirm", "yes");
+        if (hairComposite) body.set("hairComposite", "yes");
       } else if (chosen.tool === "style" && shadeId) {
         body.set("shadeId", shadeId);
       }
@@ -468,6 +473,9 @@ export function TryOnApp({
           shadeName: null,
           before: shot.url,
           after: pngUrl(String(data.imageBase64)),
+          composite: data.compositeBase64 ? pngUrl(String(data.compositeBase64)) : "",
+          compositeError: String(data.compositeError || ""),
+          rawFaceDrift: Boolean(data.rawFaceDrift),
           serviceKeys: chosen.serviceKeys,
           tool: chosen.tool,
           unvalidated: true,
@@ -543,12 +551,12 @@ export function TryOnApp({
 
   async function downloadLook() {
     if (!active) return;
-    const response = await fetch(active.after);
+    const response = await fetch(active.composite || active.after);
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${config.slug}-${active.styleName}.jpg`;
+    anchor.download = `${config.slug}-${active.styleName}.${active.unvalidated ? "png" : "jpg"}`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -606,15 +614,21 @@ export function TryOnApp({
         {showResult && active?.unvalidated ? (
           <div className="p-3">
             <p className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-white">Experimental, unvalidated</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className={active.composite ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
               <figure>
                 <figcaption className="mb-1 text-center text-[11px] text-white">Original</figcaption>
                 <img src={active.before} alt="Original selfie" className="max-h-80 w-full object-contain" />
               </figure>
               <figure>
-                <figcaption className="mb-1 text-center text-[11px] text-white">Experimental, unvalidated</figcaption>
-                <img src={active.after} alt="Experimental, unvalidated result" className="max-h-80 w-full object-contain" />
+                <figcaption className="mb-1 text-center text-[11px] text-white">Raw provider image</figcaption>
+                <img src={active.after} alt="Raw provider image, experimental and unvalidated" className="max-h-80 w-full object-contain" />
               </figure>
+              {active.composite && (
+                <figure>
+                  <figcaption className="mb-1 text-center text-[11px] text-white">Hair-only composite</figcaption>
+                  <img src={active.composite} alt="Hair-only composite" className="max-h-80 w-full object-contain" />
+                </figure>
+              )}
             </div>
           </div>
         ) : showResult && active ? (
@@ -714,7 +728,10 @@ export function TryOnApp({
           <h3 className="text-center font-serif text-2xl">{active.styleName}</h3>
           {active.unvalidated && (
             <div className="rounded-xl border border-line bg-white p-3 text-sm leading-6">
-              <p>Experimental, unvalidated. This is the raw provider image. The original face was not pasted back, and this frame was not accepted.</p>
+              <p>Experimental, unvalidated. The middle image is the raw provider output. It was not accepted.</p>
+              {active.composite && <p className="mt-2">The download is the hair-only composite. That frame keeps this selfie outside the hair and is not the raw provider output.</p>}
+              {active.compositeError && <p className="mt-2">Hair-only composite failed: {active.compositeError} The paid call was not retried.</p>}
+              {active.rawFaceDrift && <p className="mt-2">The raw image changed the face enough to flag.</p>}
               {active.clothingWarning === "clothing_changed" && <p className="mt-2">Warning: the neckline or shoulder band changed.</p>}
               {active.showCost && active.detail && <p className="mt-2">{active.detail}</p>}
               {active.showCost && active.referenceId && (
@@ -745,6 +762,7 @@ export function TryOnApp({
                     checked={referenceMode}
                     onChange={(event) => {
                       setReferenceMode(event.target.checked);
+                      if (!event.target.checked) setHairComposite(false);
                       setReferenceAck(false);
                       setReferenceQuote(null);
                       setReferenceChoice(null);
@@ -756,6 +774,25 @@ export function TryOnApp({
                   Shown only on this super-admin session. Off, a hairstyle uses the normal preview. On, it sends your selfie and then the style photo, with no mask and no pasted face.
                   Real family photos are personal data and are sent only to OpenAI. Files stay on this server for 72 hours.
                 </p>
+                {referenceMode && (
+                  <label className="mt-3 flex items-start gap-2 font-medium">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={hairComposite}
+                      onChange={(event) => {
+                        setHairComposite(event.target.checked);
+                        setReferenceAck(false);
+                      }}
+                    />
+                    <span>Hair-only composite</span>
+                  </label>
+                )}
+                {referenceMode && (
+                  <p className="mt-2 text-muted">
+                    After the paid image returns, this keeps the selfie for the face, beard, clothes and background. Only the hair region is taken from the generated image. This step does not make another provider call. If it fails, the raw image is still shown and the call is not sent again.
+                  </p>
+                )}
                 {referenceMode && referenceQuote && referenceChoice && (
                   <div className="mt-3 border-t border-line pt-3">
                     <p>

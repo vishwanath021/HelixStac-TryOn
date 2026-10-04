@@ -18,7 +18,7 @@ import { captureShouldMirror } from "@/lib/capture";
 import { drawFrontal } from "@/lib/face/synthetic";
 import { runLockedEdit } from "@/lib/face/pipeline";
 import { prisma } from "@/lib/prisma";
-import { referenceModeActive, showReferenceToggle } from "@/lib/ai/reference-mode";
+import { hairCompositeRequested, referenceModeActive, showReferenceToggle } from "@/lib/ai/reference-mode";
 import { executeReferenceEdit, tryOnReferencePayload, type ReferenceSuccess } from "@/lib/ai/reference-run";
 import { buildReferencePrompt, buildStylePrompt } from "@/lib/prompts";
 import type { SalonConfig } from "@/lib/salon";
@@ -349,7 +349,14 @@ describe("salon reference switch", () => {
     const hidden = renderToStaticMarkup(createElement(TryOnApp, { config: salonConfig, referenceModeAvailable: false }));
     const shown = renderToStaticMarkup(createElement(TryOnApp, { config: salonConfig, referenceModeAvailable: true }));
     expect(hidden).not.toContain("Reference mode");
+    expect(hidden).not.toContain("Hair-only composite");
     expect(shown).toContain("Reference mode (test)");
+    expect(shown).not.toContain("Hair-only composite");
+    const guestSource = readFileSync("src/components/tryon/TryOnApp.tsx", "utf8");
+    expect(guestSource.indexOf("Hair-only composite")).toBeGreaterThan(guestSource.indexOf("referenceMode &&"));
+    expect(hairCompositeRequested(false, true)).toBe(false);
+    expect(hairCompositeRequested(true, false)).toBe(false);
+    expect(hairCompositeRequested(true, true)).toBe(true);
     const page = readFileSync("src/app/s/[slug]/page.tsx", "utf8");
     const route = readFileSync("src/app/api/v1/tryon/generate/route.ts", "utf8");
     expect(page).toContain("showReferenceToggle");
@@ -373,6 +380,10 @@ describe("salon reference switch", () => {
       usage: { inputTokens: 11180, outputTokens: 1899, imageTokens: 10885, textTokens: 295 },
       clothingWarning: "",
       imagePng: Buffer.from("png"),
+      compositePng: null,
+      compositeError: "",
+      rawFaceDrift: false,
+      hairComposite: false,
       message: "Unvalidated model output.",
     } satisfies ReferenceSuccess;
     const guest = tryOnReferencePayload(run, false);
@@ -386,6 +397,16 @@ describe("salon reference switch", () => {
     expect(admin.rupees).toBe(16.9);
     expect(admin.actualRupees).toBe(14.3);
     expect(admin.label).toBe("Experimental, unvalidated");
+    const composite = tryOnReferencePayload({
+      ...run,
+      hairComposite: true,
+      compositePng: Buffer.from("composite-bytes"),
+      rawFaceDrift: true,
+    }, false);
+    expect(composite.imageBase64).toBe(Buffer.from("png").toString("base64"));
+    expect(composite.compositeBase64).toBe(Buffer.from("composite-bytes").toString("base64"));
+    expect(composite.rawFaceDrift).toBe(true);
+    expect(JSON.stringify(composite)).not.toMatch(/gpt-image|estimateInr/);
   });
 
   it("sends the selfie before the reference when the switch is on, and does not call when the quote is over the run cap", async () => {
@@ -457,6 +478,27 @@ describe("salon reference switch", () => {
     expect(refused.ok).toBe(false);
     expect(hits).toBe(0);
     delete process.env.BENCHMARK_QUALITY;
+    const previousAssets = process.env.VISION_ASSET_DIR;
+    process.env.VISION_ASSET_DIR = "/tmp/helix-missing-vision-models";
+    let compositeHits = 0;
+    globalThis.fetch = (async () => {
+      compositeHits += 1;
+      return new Response("no", { status: 500 });
+    }) as typeof fetch;
+    const missing = await executeReferenceEdit({
+      jpeg,
+      original: jpeg,
+      styleId: "pixie",
+      tenantId: "reference-tryon",
+      source: "tryon",
+      tool: "reference",
+      hairComposite: true,
+    });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.message).toMatch(/missing or unusable/);
+    expect(compositeHits).toBe(0);
+    if (previousAssets === undefined) delete process.env.VISION_ASSET_DIR;
+    else process.env.VISION_ASSET_DIR = previousAssets;
     delete process.env.OPENAI_API_KEY;
     delete process.env.AI_SPEND_CAP_INR;
   });

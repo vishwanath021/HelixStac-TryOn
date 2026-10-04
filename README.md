@@ -217,6 +217,16 @@ npm run benchmark:quote
 
 Paid run from the salon page: sign in as the super-admin, open `/s/demo-salon`, stay on Hairstyle, and turn on **Reference mode (test)**. That switch is not rendered for a guest. Upload or take a selfie, pick a style (that click quotes the cost and does not call the provider), read the estimate, tick the confirmation, and press **Try this hairstyle**. The result is the raw provider image beside the original, labelled Experimental, unvalidated. Actual cost, usage, and latency are on that page for the super-admin only. **Delete now** removes the saved stages. The same request uses the provider spend ledger, the ₹500 cap, and the ₹30 per-run cap. It does not retry, does not send a mask, and does not paste the original face back.
 
+**Hair-only composite** is a second checkbox, visible only after Reference mode is on. It is off by default. The paid call is the same single reference edit. After that image returns, a local MediaPipe pass keeps the selfie for the face, beard, clothes and background, and takes pixels from the generated image only in the hair region. The download is the composite. The raw provider image stays on screen and is not relabelled. If the local pass fails, the raw image is still shown and the paid call is not sent again. This needs Python 3 with `mediapipe==0.10.21` (`pip install -r scripts/requirements-vision.txt`) and the files in `assets/vision`. A missing model refuses the request before the paid call. An unreliable mask after the call keeps the raw image and does not retry. Guests never see this switch. The `/super/ai` benchmark form stays the pure reference edit, with no composite.
+
+Replay a saved pair with no provider call:
+
+```bash
+npm run replay:composite -- --original sanitized-input.jpg --raw provider-response.png --out /tmp/replay-pixie --label synthetic-pixie
+```
+
+Do not commit customer photos. `replay-user/` and `benchmark-run1/` are gitignored.
+
 `/super/ai` still has the separate benchmark form. Sign in, choose any hairstyle and one selfie from your computer, read the estimate and its breakdown, tick the confirmation, and press **Run benchmark**. Open `/super/ai/benchmark/{id}`. The page shows the sanitized selfie beside `provider-response.png`, labelled UNVALIDATED, plus usage, latency, the estimate, and the actual cost from provider usage. **Delete now** removes that run's photos. Stages older than `BENCHMARK_RETENTION_HOURS` (default 72) are deleted on the next reference request. They are never served to guests. Family photos are personal data and are sent only to OpenAI.
 
 `TRYON_REFERENCE_MODE=on` is off by default. It does not show the switch to guests and it does not change a normal generate. On a private machine it can authorize an explicit `referenceMode=yes` request that has no super-admin session. Leave it unset on any server a guest can use.

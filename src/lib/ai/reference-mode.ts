@@ -19,3 +19,8 @@ export function referenceModeActive(args: { isSuperAdmin: boolean; requested: bo
   if (!args.requested) return false;
   return args.isSuperAdmin || referenceModeEnvOn();
 }
+
+/** Second switch. It does nothing unless reference mode itself is active. */
+export function hairCompositeRequested(reference: boolean, requested: boolean) {
+  return reference && requested;
+}

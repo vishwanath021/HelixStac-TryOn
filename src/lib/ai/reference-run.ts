@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { benchmarkDir, prepareBenchmark, restoredFromProvider, writeBenchmarkStages } from "@/lib/ai/benchmark";
+import { composeHairOnly } from "@/lib/face/compose-hair";
+import { assertVisionReady } from "@/lib/face/vision-assets";
+import type { DriftReport } from "@/lib/face/hair-composite";
 import { assessClothing } from "@/lib/ai/clothing-check";
 import { resolveOpenAIKey } from "@/lib/ai/credentials";
 import { editFormFields } from "@/lib/ai/edit-request";
@@ -57,6 +60,10 @@ export type ReferenceSuccess = {
   usage: UsageNumbers | null;
   clothingWarning: string;
   imagePng: Buffer;
+  compositePng: Buffer | null;
+  compositeError: string;
+  rawFaceDrift: boolean;
+  hairComposite: boolean;
   message: string;
 };
 
@@ -81,7 +88,16 @@ export async function executeReferenceEdit(args: {
   tenantId: string;
   source: "benchmark" | "tryon";
   tool: string;
+  hairComposite?: boolean;
 }): Promise<ReferenceSuccess | ReferenceFailure> {
+  if (args.hairComposite) {
+    try {
+      await assertVisionReady();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Hair-only composite is unavailable.";
+      return { ok: false, httpStatus: 400, error: "VISION", message, outcome: "quote" };
+    }
+  }
   await purgeOldBenchmarks().catch(() => undefined);
   const prepared = await prepareBenchmark({ jpeg: args.jpeg, styleId: args.styleId });
   if (!prepared.ok) {
@@ -136,6 +152,7 @@ export async function executeReferenceEdit(args: {
     outputFormat: "png",
     referencePixels: { width: prepared.referenceWidth, height: prepared.referenceHeight },
     note: "The skin-colour face blob was not used. Alignment is not a haircut score. No original face was pasted back.",
+    hairCompositeRequested: Boolean(args.hairComposite),
   };
   await writeBenchmarkStages(dir, {
     original: args.original,
@@ -193,6 +210,26 @@ export async function executeReferenceEdit(args: {
       accepted: false,
       detail: "clothing check failed. The run is not accepted.",
     }));
+    let compositePng: Buffer | null = null;
+    let compositeError = "";
+    let rawDrift: DriftReport | null = null;
+    let compositeDrift: DriftReport | null = null;
+    let aligned: Buffer | undefined;
+    let maskOverlayPng: Buffer | undefined;
+    let compositeLandmarksDetected = false;
+    if (args.hairComposite) {
+      try {
+        const composed = await composeHairOnly(args.jpeg, restored);
+        compositePng = composed.compositePng;
+        aligned = composed.alignedPng;
+        maskOverlayPng = composed.overlayPng;
+        rawDrift = composed.rawDrift;
+        compositeDrift = composed.compositeDrift;
+        compositeLandmarksDetected = composed.compositeLandmarksDetected;
+      } catch (error) {
+        compositeError = error instanceof Error ? error.message : "Hair-only composite failed.";
+      }
+    }
     await writeBenchmarkStages(dir, {
       original: args.original,
       sanitized: args.jpeg,
@@ -208,8 +245,20 @@ export async function executeReferenceEdit(args: {
         accepted: false,
         latencyMs,
         usage: usage || null,
+        compositeApplied: Boolean(compositePng),
+        compositeError,
+        compositeLandmarksDetected,
+        rawFaceDrift: rawDrift,
+        compositeFaceDrift: compositeDrift,
+        stages: {
+          rawProviderResponse: "provider-response.png",
+          hairComposite: compositePng ? "hair-composite.png" : "",
+        },
       },
       transform: fitted.transform,
+      aligned,
+      maskOverlay: maskOverlayPng,
+      hairComposite: compositePng || undefined,
     });
     const usd = costUsdFromUsage(quote.model, usage) ?? quote.estimateUsd;
     await finalizePaidCall(gate.id, {
@@ -223,7 +272,13 @@ export async function executeReferenceEdit(args: {
       imageSize: quote.size,
     });
     const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
-    const message = `Unvalidated model output. One provider call. No mask, no face paste, no retry.${clothingNote}`;
+    let message = `Unvalidated model output. One provider call. No mask, no face paste, no retry.${clothingNote}`;
+    if (args.hairComposite && compositePng) {
+      message += " Hair-only composite saved separately. It is not the raw provider image.";
+      if (rawDrift?.flagged) message += " Raw face drift flagged.";
+    } else if (args.hairComposite) {
+      message += ` Hair-only composite failed: ${compositeError} The paid call was not retried.`;
+    }
     await prisma.benchmarkRun.update({
       where: { id },
       data: {
@@ -254,6 +309,10 @@ export async function executeReferenceEdit(args: {
       usage: usage || null,
       clothingWarning: clothing.warning || "",
       imagePng: providerResponse,
+      compositePng,
+      compositeError,
+      rawFaceDrift: Boolean(rawDrift?.flagged),
+      hairComposite: Boolean(args.hairComposite),
       message,
     };
   } catch (error) {
@@ -312,7 +371,11 @@ export function tryOnReferencePayload(run: ReferenceSuccess, revealCost: boolean
     showCost: revealCost,
     clothingWarning: run.clothingWarning,
     message: run.message,
+    hairComposite: run.hairComposite,
+    compositeError: run.compositeError,
+    rawFaceDrift: run.rawFaceDrift,
   };
+  if (run.compositePng) body.compositeBase64 = run.compositePng.toString("base64");
   if (revealCost) {
     body.rupees = run.estimateInr;
     body.dollars = run.estimateUsd;
@@ -335,6 +398,7 @@ export async function runTryOnReference(args: {
   jobId: string;
   requestId: string;
   revealCost: boolean;
+  hairComposite?: boolean;
 }) {
   const executed = await executeReferenceEdit({
     jpeg: args.jpeg,
@@ -343,6 +407,7 @@ export async function runTryOnReference(args: {
     tenantId: args.tenantId,
     source: "tryon",
     tool: "reference",
+    hairComposite: args.hairComposite,
   });
   if (!executed.ok) {
     await failGenerationJob(args.jobId, { outcome: executed.outcome, message: executed.message, callId: executed.callId });

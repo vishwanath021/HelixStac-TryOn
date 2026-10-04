@@ -224,6 +224,26 @@ A local browser check, with no provider call: an anonymous `/s/demo-salon` page 
 
 The generate route then uses the same reference edit as the benchmark: `gpt-image-1.5`, quality medium, `input_fidelity=high`, png, selfie then the style reference, no mask, no face paste, one call. It still claims the request id, reserves through `beginPaidCall` (the ₹500 ledger cap), and refuses when the ₹30 run cap is below the full estimate. A timeout stays an unknown bill and is not sent again. Salon preview credits are not consumed, and the try-on row is `UNVALIDATED`, so it does not count as a successful guest preview. Stages are written under `var/benchmarks` with the same 72-hour retention and **Delete now**. The raw provider image is shown beside the original with the label Experimental, unvalidated. `accepted` stays false. Actual cost, usage, and latency are included in the JSON only when the caller is a super-admin.
 
+## Hair-only composite
+
+A second checkbox, **Hair-only composite**, appears only while Reference mode is on. It is off by default. Guests never see it. The benchmark form on `/super/ai` does not use it.
+
+The paid request is unchanged: one reference edit, the same quote, confirmation, request-id dedup, ₹500 ledger and ₹30 run cap. `hairComposite=yes` is ignored unless reference mode is already active. The fingerprint mode is `reference-hair`, so it does not replay a pure reference result. The vision models and Python mediapipe are checked before `beginPaidCall`. A missing file returns 400 and does not call the provider.
+
+After the provider PNG returns, the letterbox is cropped with the recorded frame transform, then a landmark similarity maps that frame onto the sanitized selfie. Hair comes from MediaPipe's hair segmenter on both images. Clothes and accessories come from the selfie multiclass model (categories 4 and 5). The protected zone is built from Face Landmarker points: eyes, brows, nose, mouth, the beard and moustache, ears only where the old hair does not cover them, and face-oval skin that is not already hair. The skin-colour blob is not a hair mask. The composite copies generated pixels only inside the dilated old hair plus the new hair, minus that protected zone and minus garments that the old hair did not cover. Edges are feathered. A per-channel gain from the ring around the edit is applied only on the new hair, clamped between 0.75 and 1.35.
+
+`validation.json` keeps `accepted: false`. `compositeApplied` is true only when the composite file was written. `provider-response.png` remains the raw provider body. `hair-composite.png` is a different file and the file route labels it `hair-only-composite`. A failed composite stores `compositeError` and does not retry the paid call.
+
+Face drift is separate from the clothing check. It compares scale-free brow, nose and face-width ratios, plus SSIM on protected skin that neither hair mask claims. The raw Messy Texture replay was flagged (SSIM 0.77, nose ratio delta 0.072). Its composite was not (SSIM 1.0). The synthetic pixie raw was not flagged on those limits (SSIM 0.83, geometry inside the limits). That pixie face was the run whose problem was the neckline, not a redrawn face. Thresholds live in `DRIFT_LIMITS`.
+
+Offline replay, no provider call:
+
+```bash
+npm run replay:composite -- --original sanitized-input.jpg --raw provider-response.png --out /tmp/replay-pixie --label synthetic-pixie
+```
+
+The synthetic contact sheet is original, raw, mask overlay, composite. Hair texture is a separate limit: the Messy Texture raw drew straight, spiky hair over curly hair, and the composite can only place the hair the model actually drew. It does not invent the original curl. The beard, black t-shirt and wall in that replay stayed with the selfie. About 6% of those pixels changed. The synthetic pixie composite changed about 16%, in line with the hair mask.
+
 ## How to run a controlled paid test locally
 
 ```bash
@@ -237,8 +257,8 @@ npm run dev
 1. Open http://localhost:3000/login and sign in as `super@helixstac.app` / `SuperAdmin#2026`.
 2. Open http://localhost:3000/super/ai. If the platform provider is not already OpenAI, paste the key there. Do not put the key in git.
 3. Optional, no charge: `npm run benchmark:quote`.
-4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. Upload or take a selfie, pick a style, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick **I understand this makes one paid OpenAI call and does not retry**, and press **Try this hairstyle**.
-5. The page shows the original beside the raw result, labelled Experimental, unvalidated, plus usage, latency, and the actual cost. A neckline shift shows a clothing warning. **Delete now** removes that run, or leave the files for 72 hours. Do not commit the photos.
+4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. For a hair-only result, also tick **Hair-only composite**. That box is absent until Reference mode is on, and it is absent for a guest. Upload or take a selfie, pick a style, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick **I understand this makes one paid OpenAI call and does not retry**, and press **Try this hairstyle**.
+5. With the composite off, the page shows the original beside the raw result. With it on, the page shows original, raw provider image, and hair-only composite. The download is the composite. The raw image stays labelled unvalidated. A neckline shift shows a clothing warning. A redrawn raw face shows a drift flag. **Delete now** removes that run, or leave the files for 72 hours. Do not commit the photos. The composite needs `pip install -r scripts/requirements-vision.txt` first. Without it, the request is refused before any paid call.
 6. The benchmark form still works: on `/super/ai`, pick a hairstyle, choose a selfie, tick the confirmation, and press **Run benchmark**. Open the result link. The right image is `provider-response.png`, labelled UNVALIDATED. `validation.json` stays `accepted: false`.
 
 `BENCHMARK_INPUT_SIZE=1024` in `.env`, then restart `npm run dev`, if you want a second run on a smaller canvas to compare cost. Leave it unset for the same 1536-class request as the first pixie run.

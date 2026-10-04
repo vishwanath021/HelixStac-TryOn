@@ -15,5 +15,8 @@ blob-report
 coverage
 *.log
 var/
+replay-user/
+benchmark-run1/
+var/replay/
 .DS_Store
 tsconfig.tsbuildinfo

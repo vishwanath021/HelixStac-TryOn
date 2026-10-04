@@ -177,6 +177,9 @@ export async function writeBenchmarkStages(dir: string, stages: {
   reference: Buffer;
   providerResponse?: Buffer;
   restored?: Buffer;
+  aligned?: Buffer;
+  maskOverlay?: Buffer;
+  hairComposite?: Buffer;
   validation: unknown;
   transform: FrameTransform;
 }) {
@@ -189,6 +192,9 @@ export async function writeBenchmarkStages(dir: string, stages: {
   await writeFile(path.join(dir, "validation.json"), JSON.stringify(stages.validation, null, 2));
   if (stages.providerResponse) await writeFile(path.join(dir, "provider-response.png"), stages.providerResponse);
   if (stages.restored) await writeFile(path.join(dir, "restored-output.png"), stages.restored);
+  if (stages.aligned) await writeFile(path.join(dir, "aligned-output.png"), stages.aligned);
+  if (stages.maskOverlay) await writeFile(path.join(dir, "mask-overlay.png"), stages.maskOverlay);
+  if (stages.hairComposite) await writeFile(path.join(dir, "hair-composite.png"), stages.hairComposite);
 }
 
 export async function restoredFromProvider(providerResponse: Buffer, transform: FrameTransform) {
@@ -202,6 +208,9 @@ export const BENCHMARK_STAGES = [
   "provider-reference.jpg",
   "provider-response.png",
   "restored-output.png",
+  "aligned-output.png",
+  "mask-overlay.png",
+  "hair-composite.png",
   "transform.json",
   "validation.json",
 ] as const;

@@ -1,8 +1,8 @@
 diff --git a/.env.example b/.env.example
-index 6ec3dab..a363306 100644
+index 6ec3dab..446aaab 100644
 --- a/.env.example
 +++ b/.env.example
-@@ -67,7 +67,26 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
+@@ -67,7 +67,29 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
  # Hard testing guard for paid image calls, in INR estimates (not a provider invoice).
  # Default ₹500. At the cap the app returns a labelled sample instead of calling the provider.
  AI_SPEND_CAP_INR="500"
@@ -24,14 +24,30 @@ index 6ec3dab..a363306 100644
 +# explicit referenceMode=yes request should be honored without that session. Guests never
 +# see the switch. It does not change requests that do not ask for it.
 +# TRYON_REFERENCE_MODE="on"
++# Hair-only composite is a second super-admin switch. It needs Python 3 and mediapipe==0.10.21
++# (pip install -r scripts/requirements-vision.txt) plus assets/vision. It does not call a provider.
++# VISION_PYTHON="python3"
 +# How long a repeated guest request id can replay its stored JPEG. Photos stay under var/.
 +GENERATION_JOB_TTL_HOURS="24"
 +# When true or 1, write the provider JPEG (after square restore, before the face composite) under var/ai-debug/.
  # Local diagnosis only. That folder is not served to guests or salon staff.
  DEBUG_SAVE_RAW="false"
  # Optional overrides. Leave unset to use the model-id estimates (OpenAI test ₹0.6, medium ₹1.2, high ₹17.4; Gemini test ₹3.5, medium ₹7, high ₹7).
+diff --git a/.gitignore b/.gitignore
+index d04db07..7f79571 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -15,5 +15,8 @@ blob-report
+ coverage
+ *.log
+ var/
++replay-user/
++benchmark-run1/
++var/replay/
+ .DS_Store
+ tsconfig.tsbuildinfo
 diff --git a/README.md b/README.md
-index 7c86367..02cd5da 100644
+index 7c86367..657a4c4 100644
 --- a/README.md
 +++ b/README.md
 @@ -139,7 +139,7 @@ Needs a key (OpenAI or Gemini):
@@ -52,7 +68,7 @@ index 7c86367..02cd5da 100644
  
  ### What the offline tests prove
  
-@@ -182,13 +182,46 @@ Before a paid edit, the server finds the face from the skin region and places th
+@@ -182,13 +182,56 @@ Before a paid edit, the server finds the face from the skin region and places th
  - Beard: the jaw and chin below the nose, with the mouth left out
  - Nails: fingertip regions on a hand photo. A picture that looks like a face is refused
  
@@ -94,6 +110,16 @@ index 7c86367..02cd5da 100644
 +
 +Paid run from the salon page: sign in as the super-admin, open `/s/demo-salon`, stay on Hairstyle, and turn on **Reference mode (test)**. That switch is not rendered for a guest. Upload or take a selfie, pick a style (that click quotes the cost and does not call the provider), read the estimate, tick the confirmation, and press **Try this hairstyle**. The result is the raw provider image beside the original, labelled Experimental, unvalidated. Actual cost, usage, and latency are on that page for the super-admin only. **Delete now** removes the saved stages. The same request uses the provider spend ledger, the ₹500 cap, and the ₹30 per-run cap. It does not retry, does not send a mask, and does not paste the original face back.
 +
++**Hair-only composite** is a second checkbox, visible only after Reference mode is on. It is off by default. The paid call is the same single reference edit. After that image returns, a local MediaPipe pass keeps the selfie for the face, beard, clothes and background, and takes pixels from the generated image only in the hair region. The download is the composite. The raw provider image stays on screen and is not relabelled. If the local pass fails, the raw image is still shown and the paid call is not sent again. This needs Python 3 with `mediapipe==0.10.21` (`pip install -r scripts/requirements-vision.txt`) and the files in `assets/vision`. A missing model refuses the request before the paid call. An unreliable mask after the call keeps the raw image and does not retry. Guests never see this switch. The `/super/ai` benchmark form stays the pure reference edit, with no composite.
++
++Replay a saved pair with no provider call:
++
++```bash
++npm run replay:composite -- --original sanitized-input.jpg --raw provider-response.png --out /tmp/replay-pixie --label synthetic-pixie
++```
++
++Do not commit customer photos. `replay-user/` and `benchmark-run1/` are gitignored.
++
 +`/super/ai` still has the separate benchmark form. Sign in, choose any hairstyle and one selfie from your computer, read the estimate and its breakdown, tick the confirmation, and press **Run benchmark**. Open `/super/ai/benchmark/{id}`. The page shows the sanitized selfie beside `provider-response.png`, labelled UNVALIDATED, plus usage, latency, the estimate, and the actual cost from provider usage. **Delete now** removes that run's photos. Stages older than `BENCHMARK_RETENTION_HOURS` (default 72) are deleted on the next reference request. They are never served to guests. Family photos are personal data and are sent only to OpenAI.
 +
 +`TRYON_REFERENCE_MODE=on` is off by default. It does not show the switch to guests and it does not change a normal generate. On a private machine it can authorize an explicit `referenceMode=yes` request that has no super-admin session. Leave it unset on any server a guest can use.
@@ -102,7 +128,7 @@ index 7c86367..02cd5da 100644
  
  The unit suite proves this without a provider key:
  
-@@ -202,7 +235,7 @@ The unit suite proves this without a provider key:
+@@ -202,7 +245,7 @@ The unit suite proves this without a provider key:
  - A hair edit that changes the eyes, or that zooms the face past the alignment window, is rejected once and is not retried
  - A modest zoom is warped back onto the original face and can then be composited
  - `npm run replay:raw -- raw.jpg original.jpg long-layers` runs that check on a saved provider JPEG with no network call
@@ -126,10 +152,10 @@ index c5ef9e0..6faa9da 100644
  
 diff --git a/docs/REFERENCE-MODE-REVIEW.md b/docs/REFERENCE-MODE-REVIEW.md
 new file mode 100644
-index 0000000..159c0f6
+index 0000000..e6c322a
 --- /dev/null
 +++ b/docs/REFERENCE-MODE-REVIEW.md
-@@ -0,0 +1,257 @@
+@@ -0,0 +1,277 @@
 +# Reference-mode review
 +
 +Date: 4 Oct 2026. Baseline before this work: `8a3a244` (`docs: record which image-edit parameters the hair path never sends`) on `cursor/feat-initial-build-5096`. The shareable diff against that commit is `docs/reference-mode.diff`.
@@ -356,6 +382,26 @@ index 0000000..159c0f6
 +
 +The generate route then uses the same reference edit as the benchmark: `gpt-image-1.5`, quality medium, `input_fidelity=high`, png, selfie then the style reference, no mask, no face paste, one call. It still claims the request id, reserves through `beginPaidCall` (the ₹500 ledger cap), and refuses when the ₹30 run cap is below the full estimate. A timeout stays an unknown bill and is not sent again. Salon preview credits are not consumed, and the try-on row is `UNVALIDATED`, so it does not count as a successful guest preview. Stages are written under `var/benchmarks` with the same 72-hour retention and **Delete now**. The raw provider image is shown beside the original with the label Experimental, unvalidated. `accepted` stays false. Actual cost, usage, and latency are included in the JSON only when the caller is a super-admin.
 +
++## Hair-only composite
++
++A second checkbox, **Hair-only composite**, appears only while Reference mode is on. It is off by default. Guests never see it. The benchmark form on `/super/ai` does not use it.
++
++The paid request is unchanged: one reference edit, the same quote, confirmation, request-id dedup, ₹500 ledger and ₹30 run cap. `hairComposite=yes` is ignored unless reference mode is already active. The fingerprint mode is `reference-hair`, so it does not replay a pure reference result. The vision models and Python mediapipe are checked before `beginPaidCall`. A missing file returns 400 and does not call the provider.
++
++After the provider PNG returns, the letterbox is cropped with the recorded frame transform, then a landmark similarity maps that frame onto the sanitized selfie. Hair comes from MediaPipe's hair segmenter on both images. Clothes and accessories come from the selfie multiclass model (categories 4 and 5). The protected zone is built from Face Landmarker points: eyes, brows, nose, mouth, the beard and moustache, ears only where the old hair does not cover them, and face-oval skin that is not already hair. The skin-colour blob is not a hair mask. The composite copies generated pixels only inside the dilated old hair plus the new hair, minus that protected zone and minus garments that the old hair did not cover. Edges are feathered. A per-channel gain from the ring around the edit is applied only on the new hair, clamped between 0.75 and 1.35.
++
++`validation.json` keeps `accepted: false`. `compositeApplied` is true only when the composite file was written. `provider-response.png` remains the raw provider body. `hair-composite.png` is a different file and the file route labels it `hair-only-composite`. A failed composite stores `compositeError` and does not retry the paid call.
++
++Face drift is separate from the clothing check. It compares scale-free brow, nose and face-width ratios, plus SSIM on protected skin that neither hair mask claims. The raw Messy Texture replay was flagged (SSIM 0.77, nose ratio delta 0.072). Its composite was not (SSIM 1.0). The synthetic pixie raw was not flagged on those limits (SSIM 0.83, geometry inside the limits). That pixie face was the run whose problem was the neckline, not a redrawn face. Thresholds live in `DRIFT_LIMITS`.
++
++Offline replay, no provider call:
++
++```bash
++npm run replay:composite -- --original sanitized-input.jpg --raw provider-response.png --out /tmp/replay-pixie --label synthetic-pixie
++```
++
++The synthetic contact sheet is original, raw, mask overlay, composite. Hair texture is a separate limit: the Messy Texture raw drew straight, spiky hair over curly hair, and the composite can only place the hair the model actually drew. It does not invent the original curl. The beard, black t-shirt and wall in that replay stayed with the selfie. About 6% of those pixels changed. The synthetic pixie composite changed about 16%, in line with the hair mask.
++
 +## How to run a controlled paid test locally
 +
 +```bash
@@ -369,8 +415,8 @@ index 0000000..159c0f6
 +1. Open http://localhost:3000/login and sign in as `super@helixstac.app` / `SuperAdmin#2026`.
 +2. Open http://localhost:3000/super/ai. If the platform provider is not already OpenAI, paste the key there. Do not put the key in git.
 +3. Optional, no charge: `npm run benchmark:quote`.
-+4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. Upload or take a selfie, pick a style, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick **I understand this makes one paid OpenAI call and does not retry**, and press **Try this hairstyle**.
-+5. The page shows the original beside the raw result, labelled Experimental, unvalidated, plus usage, latency, and the actual cost. A neckline shift shows a clothing warning. **Delete now** removes that run, or leave the files for 72 hours. Do not commit the photos.
++4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. For a hair-only result, also tick **Hair-only composite**. That box is absent until Reference mode is on, and it is absent for a guest. Upload or take a selfie, pick a style, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick **I understand this makes one paid OpenAI call and does not retry**, and press **Try this hairstyle**.
++5. With the composite off, the page shows the original beside the raw result. With it on, the page shows original, raw provider image, and hair-only composite. The download is the composite. The raw image stays labelled unvalidated. A neckline shift shows a clothing warning. A redrawn raw face shows a drift flag. **Delete now** removes that run, or leave the files for 72 hours. Do not commit the photos. The composite needs `pip install -r scripts/requirements-vision.txt` first. Without it, the request is refused before any paid call.
 +6. The benchmark form still works: on `/super/ai`, pick a hairstyle, choose a selfie, tick the confirmation, and press **Run benchmark**. Open the result link. The right image is `provider-response.png`, labelled UNVALIDATED. `validation.json` stays `accepted: false`.
 +
 +`BENCHMARK_INPUT_SIZE=1024` in `.env`, then restart `npm run dev`, if you want a second run on a smaller canvas to compare cost. Leave it unset for the same 1536-class request as the first pixie run.
@@ -401,13 +447,14 @@ index 0000000..597defe
 +5,selfie-c,soft-bob,long-to-short,,,,,,,
 +6,selfie-c,curtain-bangs,fringe,,,,,,,
 diff --git a/package.json b/package.json
-index ab17942..2afbeda 100644
+index ab17942..a0a1774 100644
 --- a/package.json
 +++ b/package.json
-@@ -19,6 +19,7 @@
+@@ -19,6 +19,8 @@
      "ai:smoke": "node --env-file=.env --import tsx scripts/ai-smoke.ts",
      "calibrate": "tsx scripts/calibrate.ts",
      "replay:raw": "tsx scripts/replay-raw.ts",
++    "replay:composite": "tsx scripts/replay-composite.ts",
 +    "benchmark:quote": "tsx scripts/benchmark-quote.ts",
      "scan:secrets": "tsx scripts/scan-secrets.ts",
      "prepare": "git config core.hooksPath .githooks || true"
@@ -467,6 +514,16 @@ index 8f77e40..ee22172 100644
  model Customer {
    id           String        @id @default(cuid())
    tenantId     String
+diff --git a/public/mediapipe/NOTICE.md b/public/mediapipe/NOTICE.md
+index 752aee1..dc43747 100644
+--- a/public/mediapipe/NOTICE.md
++++ b/public/mediapipe/NOTICE.md
+@@ -10,3 +10,5 @@ These files are redistributed so the colour try-on does not call a third-party C
+ The Apache 2.0 text is at https://www.apache.org/licenses/LICENSE-2.0
+ 
+ Do not replace these files with a hotlink to jsDelivr or `storage.googleapis.com` in the browser. The page loads `/mediapipe/wasm` and `/mediapipe/hair_segmenter.tflite` from this app.
++
++The super-admin hair-only composite uses a separate server copy of the hair segmenter, plus the selfie multiclass segmenter and the face landmarker. Those three files and their licence notes are in `assets/vision/NOTICE.md`.
 diff --git a/scripts/benchmark-quote.ts b/scripts/benchmark-quote.ts
 new file mode 100644
 index 0000000..4f0de57
@@ -495,7 +552,7 @@ index 0000000..4f0de57
 +console.log("No provider call was made. A paid run is the super-admin button on /super/ai.");
 diff --git a/src/app/api/v1/super/ai/benchmark/[id]/file/route.ts b/src/app/api/v1/super/ai/benchmark/[id]/file/route.ts
 new file mode 100644
-index 0000000..59cfb95
+index 0000000..1cb68bd
 --- /dev/null
 +++ b/src/app/api/v1/super/ai/benchmark/[id]/file/route.ts
 @@ -0,0 +1,41 @@
@@ -533,7 +590,7 @@ index 0000000..59cfb95
 +      headers: {
 +        "content-type": MIME[path.extname(stage)] || "application/octet-stream",
 +        "cache-control": "no-store",
-+        "x-benchmark-label": "unvalidated-model-output",
++        "x-benchmark-label": stage === "hair-composite.png" ? "hair-only-composite" : stage === "provider-response.png" ? "unvalidated-model-output" : "benchmark-stage",
 +      },
 +    });
 +  } catch {
@@ -661,7 +718,7 @@ index 0000000..d67207c
 +  });
 +}
 diff --git a/src/app/api/v1/tryon/generate/route.ts b/src/app/api/v1/tryon/generate/route.ts
-index 85e0ff6..96efab4 100644
+index 85e0ff6..83fd05c 100644
 --- a/src/app/api/v1/tryon/generate/route.ts
 +++ b/src/app/api/v1/tryon/generate/route.ts
 @@ -5,7 +5,10 @@ import sharp from "sharp";
@@ -670,7 +727,7 @@ index 85e0ff6..96efab4 100644
  import { resolveProviderChoice } from "@/lib/ai/credentials";
 -import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 +import { claimGenerationJob, completeGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
-+import { referenceModeActive } from "@/lib/ai/reference-mode";
++import { hairCompositeRequested, referenceModeActive } from "@/lib/ai/reference-mode";
 +import { runTryOnReference } from "@/lib/ai/reference-run";
 +import { salonOutcome, guestPreviewHeaders } from "@/lib/ai/guest-response";
  import { generateWithFailover, selectProvider } from "@/lib/ai/router";
@@ -696,7 +753,7 @@ index 85e0ff6..96efab4 100644
    } catch (error) {
      const code = error instanceof ImageError ? error.code : "DECODE";
      return NextResponse.json({ error: code, message: "Use a JPEG, PNG, or WebP selfie under 2 MB." }, { status: 400 });
-@@ -128,13 +133,66 @@ export async function POST(req: Request) {
+@@ -128,13 +133,68 @@ export async function POST(req: Request) {
      }
    }
  
@@ -705,6 +762,7 @@ index 85e0ff6..96efab4 100644
 +    requested: String(form.get("referenceMode") || "") === "yes",
 +    tool,
 +  });
++  const wantHair = hairCompositeRequested(wantReference, String(form.get("hairComposite") || "") === "yes");
 +  if (wantReference && String(form.get("confirm") || "") !== "yes") {
 +    return NextResponse.json({ error: "CONFIRM", message: "Confirm the estimated cost before this paid call." }, { status: 400 });
 +  }
@@ -715,7 +773,7 @@ index 85e0ff6..96efab4 100644
 +    const claim = await claimGenerationJob({
 +      tenantId: tenant.id,
 +      requestId,
-+      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: wantReference ? "" : shadeId || "", mode: wantReference ? "reference" : "production" }),
++      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: wantReference ? "" : shadeId || "", mode: wantHair ? "reference-hair" : wantReference ? "reference" : "production" }),
 +    });
 +    if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
 +    if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
@@ -747,6 +805,7 @@ index 85e0ff6..96efab4 100644
 +      jobId,
 +      requestId,
 +      revealCost: await isSuperSession(),
++      hairComposite: wantHair,
 +    });
 +  }
 +
@@ -764,7 +823,7 @@ index 85e0ff6..96efab4 100644
    }
  
    const flags = await readTierFlags(tenant.id);
-@@ -147,11 +205,13 @@ export async function POST(req: Request) {
+@@ -147,11 +207,13 @@ export async function POST(req: Request) {
      await reserveCredits(tenant.id, credits, refId);
    } catch (error) {
      if (error instanceof CreditError && error.code === "INSUFFICIENT") {
@@ -778,7 +837,7 @@ index 85e0ff6..96efab4 100644
      return NextResponse.json({ error: "SUSPENDED", message: "This salon's try-on is paused." }, { status: 403 });
    }
  
-@@ -191,17 +251,19 @@ export async function POST(req: Request) {
+@@ -191,17 +253,19 @@ export async function POST(req: Request) {
        styleName: look.name,
      };
      const result = await generateWithFailover(input, choice);
@@ -801,7 +860,7 @@ index 85e0ff6..96efab4 100644
          latencyMs: result.latencyMs,
        },
      });
-@@ -209,10 +271,19 @@ export async function POST(req: Request) {
+@@ -209,10 +273,19 @@ export async function POST(req: Request) {
        data: {
          tenantId: tenant.id,
          sessionId,
@@ -822,7 +881,7 @@ index 85e0ff6..96efab4 100644
      return new NextResponse(new Uint8Array(result.image), {
        status: 200,
        headers: guestPreviewHeaders({
-@@ -224,7 +295,12 @@ export async function POST(req: Request) {
+@@ -224,7 +297,12 @@ export async function POST(req: Request) {
    } catch (error) {
      await settleCredits(tenant.id, refId, "REFUND");
      await prisma.tryOn.update({ where: { id: tryOn.id }, data: { status: "FAILED" } });
@@ -836,6 +895,48 @@ index 85e0ff6..96efab4 100644
 +    return NextResponse.json({ error: uncertain ? "UNCERTAIN" : "PROVIDER", message }, { status: uncertain ? 504 : 502 });
    }
  }
+diff --git a/src/app/api/v1/tryon/reference-quote/route.ts b/src/app/api/v1/tryon/reference-quote/route.ts
+new file mode 100644
+index 0000000..b1a3721
+--- /dev/null
++++ b/src/app/api/v1/tryon/reference-quote/route.ts
+@@ -0,0 +1,36 @@
++import { NextResponse } from "next/server";
++import sharp from "sharp";
++import { quoteBenchmark } from "@/lib/ai/benchmark";
++import { readHairstyleReference } from "@/lib/ai/style-reference";
++import { requireSuper } from "@/lib/session";
++
++export const runtime = "nodejs";
++export const dynamic = "force-dynamic";
++
++/** Super-admin quote for the salon try-on switch. Field names stay off the guest preview. */
++export async function GET(req: Request) {
++  const access = await requireSuper();
++  if ("error" in access && access.error) return access.error;
++  const url = new URL(req.url);
++  const width = Number(url.searchParams.get("width") || 0);
++  const height = Number(url.searchParams.get("height") || 0);
++  const styleId = url.searchParams.get("styleId") || "";
++  if (width < 64 || height < 64 || !styleId) {
++    return NextResponse.json({ error: "SIZE", message: "A style and photo size are required to quote this try-on." }, { status: 400 });
++  }
++  const referenceBytes = readHairstyleReference(styleId);
++  const referenceMeta = referenceBytes ? await sharp(referenceBytes, { failOn: "none" }).metadata() : null;
++  const quote = quoteBenchmark(width, height, {
++    width: referenceMeta?.width || 512,
++    height: referenceMeta?.height || 512,
++  });
++  if (!quote.ok) return NextResponse.json({ error: "QUOTE", message: quote.message }, { status: 400 });
++  return NextResponse.json({
++    model: quote.model,
++    quality: quote.quality,
++    size: quote.size,
++    rupees: quote.estimateInr,
++    dollars: quote.estimateUsd,
++    note: quote.note,
++  });
++}
 diff --git a/src/app/s/[slug]/page.tsx b/src/app/s/[slug]/page.tsx
 index 794160f..84c4dd3 100644
 --- a/src/app/s/[slug]/page.tsx
@@ -862,14 +963,16 @@ index 794160f..84c4dd3 100644
  }
 diff --git a/src/app/super/ai/benchmark/[id]/page.tsx b/src/app/super/ai/benchmark/[id]/page.tsx
 new file mode 100644
-index 0000000..bc969e0
+index 0000000..36e28e3
 --- /dev/null
 +++ b/src/app/super/ai/benchmark/[id]/page.tsx
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,120 @@
++import { access } from "node:fs/promises";
++import path from "node:path";
 +import Link from "next/link";
 +import { notFound } from "next/navigation";
 +import { DeleteBenchmarkButton } from "@/components/admin/DeleteBenchmarkButton";
-+import { BENCHMARK_STAGES } from "@/lib/ai/benchmark";
++import { BENCHMARK_STAGES, benchmarkDir } from "@/lib/ai/benchmark";
 +import { bufferedInr } from "@/lib/ai/tiers";
 +import { numberEnv } from "@/lib/env";
 +import { prisma } from "@/lib/prisma";
@@ -878,6 +981,11 @@ index 0000000..bc969e0
 +export const dynamic = "force-dynamic";
 +
 +const EXTRA = ["restored-output.png", "provider-input.png", "provider-reference.jpg", "original-input.jpg"];
++const COMPOSITE_STAGES: { file: string; caption: string }[] = [
++  { file: "aligned-output.png", caption: "Aligned generated frame. This is not the raw provider output." },
++  { file: "mask-overlay.png", caption: "Original hair in blue, generated hair in magenta, protected face in gold." },
++  { file: "hair-composite.png", caption: "Hair-only composite. This is not the raw provider output." },
++];
 +
 +export default async function BenchmarkReviewPage({ params }: { params: Promise<{ id: string }> }) {
 +  await pageSuper();
@@ -886,6 +994,15 @@ index 0000000..bc969e0
 +  if (!run) notFound();
 +  const retentionHours = Math.max(1, numberEnv("BENCHMARK_RETENTION_HOURS", 72));
 +  const hasUsage = run.inputTokens > 0 || run.outputTokens > 0 || run.actualUsd > 0;
++  const compositeStages: { file: string; caption: string }[] = [];
++  for (const stage of COMPOSITE_STAGES) {
++    try {
++      await access(path.join(benchmarkDir(run.id), stage.file));
++      compositeStages.push(stage);
++    } catch {
++      // This run did not save that stage.
++    }
++  }
 +  const bufferedActual = run.actualUsd > 0 ? bufferedInr(run.actualUsd) : 0;
 +  return (
 +    <main className="mx-auto max-w-5xl px-4 py-8">
@@ -894,6 +1011,7 @@ index 0000000..bc969e0
 +      <p className="mt-2 text-sm leading-6">
 +        Hairstyle benchmark for {run.styleId}. Model {run.model}, quality {run.quality}, size {run.size}. Status {run.status}. Source {run.source === "tryon" ? "salon try-on" : "benchmark form"}.
 +        The right-hand photograph is the raw provider body, before any crop. Nothing here was accepted as a finished haircut.
++        {compositeStages.some((stage) => stage.file === "hair-composite.png") && " A hair-only composite, when present below, is a separate image and is not the raw provider output."}
 +      </p>
 +      <p className="mt-3 rounded-xl border border-line bg-white p-3 text-sm leading-6">
 +        Real family photos are personal data. This run sent them only to OpenAI. The files stay on this server under var/benchmarks
@@ -942,6 +1060,16 @@ index 0000000..bc969e0
 +          <img alt="" src={`/api/v1/super/ai/benchmark/${run.id}/file?stage=provider-response.png`} className="max-h-[36rem] w-full object-contain" />
 +        </figure>
 +      </div>
++      {compositeStages.length > 0 && (
++        <div className="mt-4 grid gap-4">
++          {compositeStages.map((stage) => (
++            <figure key={stage.file} className="rounded-2xl border border-line bg-white p-3">
++              <figcaption className="mb-2 text-sm font-medium">{stage.caption}</figcaption>
++              <img alt="" src={`/api/v1/super/ai/benchmark/${run.id}/file?stage=${stage.file}`} className="max-h-[32rem] w-full object-contain" />
++            </figure>
++          ))}
++        </div>
++      )}
 +      <div className="mt-4 grid gap-4">
 +        {EXTRA.map((stage) => (
 +          <figure key={stage} className="rounded-2xl border border-line bg-white p-3">
@@ -1189,7 +1317,7 @@ index 0000000..4850aa0
 +  );
 +}
 diff --git a/src/components/tryon/TryOnApp.tsx b/src/components/tryon/TryOnApp.tsx
-index b7bfc58..fbd0cf5 100644
+index b7bfc58..a733452 100644
 --- a/src/components/tryon/TryOnApp.tsx
 +++ b/src/components/tryon/TryOnApp.tsx
 @@ -5,6 +5,7 @@ import { BeforeAfter } from "@/components/tryon/BeforeAfter";
@@ -1200,7 +1328,7 @@ index b7bfc58..fbd0cf5 100644
  import { classifySkinPhoto } from "@/lib/hand-photo";
  import type { SalonConfig } from "@/lib/salon";
  import { normalizeWhatsAppPhone } from "@/lib/whatsapp";
-@@ -19,6 +20,11 @@ type Look = {
+@@ -19,6 +20,14 @@ type Look = {
    serviceKeys: string[];
    tool: "style" | "brows" | "beard" | "nails";
    demo?: boolean;
@@ -1209,10 +1337,13 @@ index b7bfc58..fbd0cf5 100644
 +  showCost?: boolean;
 +  detail?: string;
 +  clothingWarning?: string;
++  composite?: string;
++  compositeError?: string;
++  rawFaceDrift?: boolean;
  };
  
  type TryTool = "colour" | "style" | "brows" | "beard" | "nails";
-@@ -54,6 +60,7 @@ export function TryOnApp({
+@@ -54,6 +63,7 @@ export function TryOnApp({
    salonToken,
    salonMode = false,
    demoMode = false,
@@ -1220,7 +1351,7 @@ index b7bfc58..fbd0cf5 100644
  }: {
    config: SalonConfig;
    embed?: boolean;
-@@ -63,6 +70,7 @@ export function TryOnApp({
+@@ -63,6 +73,7 @@ export function TryOnApp({
    salonToken?: string;
    salonMode?: boolean;
    demoMode?: boolean;
@@ -1228,11 +1359,12 @@ index b7bfc58..fbd0cf5 100644
  }) {
    const lang = config.defaultLang || "en";
    const [sid, setSid] = useState("");
-@@ -81,6 +89,11 @@ export function TryOnApp({
+@@ -81,6 +92,12 @@ export function TryOnApp({
    const [styleId, setStyleId] = useState("");
    const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
    const [busy, setBusy] = useState(false);
 +  const [referenceMode, setReferenceMode] = useState(false);
++  const [hairComposite, setHairComposite] = useState(false);
 +  const [referenceAck, setReferenceAck] = useState(false);
 +  const [referenceQuote, setReferenceQuote] = useState<{ model: string; quality: string; size: string; rupees: number; dollars: number; note: string } | null>(null);
 +  const [referenceChoice, setReferenceChoice] = useState<{ id: string; name: string; serviceKeys: string[]; tool: Look["tool"] } | null>(null);
@@ -1240,7 +1372,7 @@ index b7bfc58..fbd0cf5 100644
    const [progress, setProgress] = useState(0);
    const [pendingName, setPendingName] = useState("");
    const [error, setError] = useState("");
-@@ -310,7 +323,7 @@ export function TryOnApp({
+@@ -310,7 +327,7 @@ export function TryOnApp({
      canvas.height = height;
      const ctx = canvas.getContext("2d");
      if (!ctx) return;
@@ -1249,7 +1381,7 @@ index b7bfc58..fbd0cf5 100644
        ctx.translate(width, 0);
        ctx.scale(-1, 1);
      }
-@@ -320,9 +333,75 @@ export function TryOnApp({
+@@ -320,9 +337,75 @@ export function TryOnApp({
      await applyBlob(blob);
    }
  
@@ -1326,7 +1458,7 @@ index b7bfc58..fbd0cf5 100644
      const shot = chosen.tool === "nails" ? handShot : faceShot;
      if (!shot) {
        setError(t(lang, chosen.tool === "nails" ? "uploadHand" : "addPhotoFirst"));
-@@ -335,49 +414,97 @@ export function TryOnApp({
+@@ -335,49 +418,101 @@ export function TryOnApp({
        return;
      }
      consentRef.current = consent;
@@ -1363,6 +1495,7 @@ index b7bfc58..fbd0cf5 100644
 +      if (referenceConfirm) {
 +        body.set("referenceMode", "yes");
 +        body.set("confirm", "yes");
++        if (hairComposite) body.set("hairComposite", "yes");
 +      } else if (chosen.tool === "style" && shadeId) {
 +        body.set("shadeId", shadeId);
 +      }
@@ -1398,6 +1531,9 @@ index b7bfc58..fbd0cf5 100644
 +          shadeName: null,
 +          before: shot.url,
 +          after: pngUrl(String(data.imageBase64)),
++          composite: data.compositeBase64 ? pngUrl(String(data.compositeBase64)) : "",
++          compositeError: String(data.compositeError || ""),
++          rawFaceDrift: Boolean(data.rawFaceDrift),
 +          serviceKeys: chosen.serviceKeys,
 +          tool: chosen.tool,
 +          unvalidated: true,
@@ -1462,7 +1598,22 @@ index b7bfc58..fbd0cf5 100644
    }
  
    function pickShade(id: string) {
-@@ -476,7 +603,21 @@ export function TryOnApp({
+@@ -416,12 +551,12 @@ export function TryOnApp({
+ 
+   async function downloadLook() {
+     if (!active) return;
+-    const response = await fetch(active.after);
++    const response = await fetch(active.composite || active.after);
+     const blob = await response.blob();
+     const url = URL.createObjectURL(blob);
+     const anchor = document.createElement("a");
+     anchor.href = url;
+-    anchor.download = `${config.slug}-${active.styleName}.jpg`;
++    anchor.download = `${config.slug}-${active.styleName}.${active.unvalidated ? "png" : "jpg"}`;
+     document.body.appendChild(anchor);
+     anchor.click();
+     anchor.remove();
+@@ -476,7 +611,27 @@ export function TryOnApp({
        </div>
  
        <section ref={frameRef} className="mt-4 overflow-hidden rounded-[28px] bg-[#14110e] shadow-lg" aria-label="Photo">
@@ -1470,28 +1621,37 @@ index b7bfc58..fbd0cf5 100644
 +        {showResult && active?.unvalidated ? (
 +          <div className="p-3">
 +            <p className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-white">Experimental, unvalidated</p>
-+            <div className="grid grid-cols-2 gap-2">
++            <div className={active.composite ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
 +              <figure>
 +                <figcaption className="mb-1 text-center text-[11px] text-white">Original</figcaption>
 +                <img src={active.before} alt="Original selfie" className="max-h-80 w-full object-contain" />
 +              </figure>
 +              <figure>
-+                <figcaption className="mb-1 text-center text-[11px] text-white">Experimental, unvalidated</figcaption>
-+                <img src={active.after} alt="Experimental, unvalidated result" className="max-h-80 w-full object-contain" />
++                <figcaption className="mb-1 text-center text-[11px] text-white">Raw provider image</figcaption>
++                <img src={active.after} alt="Raw provider image, experimental and unvalidated" className="max-h-80 w-full object-contain" />
 +              </figure>
++              {active.composite && (
++                <figure>
++                  <figcaption className="mb-1 text-center text-[11px] text-white">Hair-only composite</figcaption>
++                  <img src={active.composite} alt="Hair-only composite" className="max-h-80 w-full object-contain" />
++                </figure>
++              )}
 +            </div>
 +          </div>
 +        ) : showResult && active ? (
            <div>
              <BeforeAfter before={active.before} after={active.after} beforeLabel={t(lang, "before")} afterLabel={t(lang, "after")} />
              {active.demo && <p className="bg-[#241c16] px-4 py-3 text-center text-sm leading-6 text-white" role="status">{t(lang, active.tool === "nails" ? "demoNailBanner" : "demoStyleBanner")}</p>}
-@@ -571,6 +712,20 @@ export function TryOnApp({
+@@ -571,6 +726,23 @@ export function TryOnApp({
        {showResult && active && (
          <div className="mt-4 grid gap-2">
            <h3 className="text-center font-serif text-2xl">{active.styleName}</h3>
 +          {active.unvalidated && (
 +            <div className="rounded-xl border border-line bg-white p-3 text-sm leading-6">
-+              <p>Experimental, unvalidated. This is the raw provider image. The original face was not pasted back, and this frame was not accepted.</p>
++              <p>Experimental, unvalidated. The middle image is the raw provider output. It was not accepted.</p>
++              {active.composite && <p className="mt-2">The download is the hair-only composite. That frame keeps this selfie outside the hair and is not the raw provider output.</p>}
++              {active.compositeError && <p className="mt-2">Hair-only composite failed: {active.compositeError} The paid call was not retried.</p>}
++              {active.rawFaceDrift && <p className="mt-2">The raw image changed the face enough to flag.</p>}
 +              {active.clothingWarning === "clothing_changed" && <p className="mt-2">Warning: the neckline or shoulder band changed.</p>}
 +              {active.showCost && active.detail && <p className="mt-2">{active.detail}</p>}
 +              {active.showCost && active.referenceId && (
@@ -1506,7 +1666,7 @@ index b7bfc58..fbd0cf5 100644
            <p className="text-center text-sm text-muted">{t(lang, active.tool === "brows" ? "browDisclaimer" : active.tool === "beard" ? "beardDisclaimer" : active.tool === "nails" ? "nailDisclaimer" : "disclaimer")}</p>
            <button className="btn" type="button" onClick={() => void downloadLook()}>{t(lang, "downloadLook")}</button>
            <button className="btn" type="button" onClick={() => void book()}>{t(lang, "bookLook")}</button>
-@@ -581,6 +736,43 @@ export function TryOnApp({
+@@ -581,6 +753,63 @@ export function TryOnApp({
        <section ref={gridRef} className="mt-6" aria-label={tool === "style" ? t(lang, "styles") : tool === "colour" ? t(lang, "shades") : tool === "brows" ? t(lang, "brows") : tool === "beard" ? t(lang, "beards") : t(lang, "nails")}>
          {tool === "style" && (
            <>
@@ -1519,6 +1679,7 @@ index b7bfc58..fbd0cf5 100644
 +                    checked={referenceMode}
 +                    onChange={(event) => {
 +                      setReferenceMode(event.target.checked);
++                      if (!event.target.checked) setHairComposite(false);
 +                      setReferenceAck(false);
 +                      setReferenceQuote(null);
 +                      setReferenceChoice(null);
@@ -1530,6 +1691,25 @@ index b7bfc58..fbd0cf5 100644
 +                  Shown only on this super-admin session. Off, a hairstyle uses the normal preview. On, it sends your selfie and then the style photo, with no mask and no pasted face.
 +                  Real family photos are personal data and are sent only to OpenAI. Files stay on this server for 72 hours.
 +                </p>
++                {referenceMode && (
++                  <label className="mt-3 flex items-start gap-2 font-medium">
++                    <input
++                      type="checkbox"
++                      className="mt-1"
++                      checked={hairComposite}
++                      onChange={(event) => {
++                        setHairComposite(event.target.checked);
++                        setReferenceAck(false);
++                      }}
++                    />
++                    <span>Hair-only composite</span>
++                  </label>
++                )}
++                {referenceMode && (
++                  <p className="mt-2 text-muted">
++                    After the paid image returns, this keeps the selfie for the face, beard, clothes and background. Only the hair region is taken from the generated image. This step does not make another provider call. If it fails, the raw image is still shown and the call is not sent again.
++                  </p>
++                )}
 +                {referenceMode && referenceQuote && referenceChoice && (
 +                  <div className="mt-3 border-t border-line pt-3">
 +                    <p>
@@ -1550,7 +1730,7 @@ index b7bfc58..fbd0cf5 100644
              <div className="mb-3 inline-flex flex-wrap gap-1 rounded-full bg-[#241c16] p-1" role="group" aria-label="Style audience">
                {config.showWomen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "women" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "women"} onClick={() => chooseGender("women")}>{t(lang, "women")}</button>}
                {config.showMen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "men" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
-@@ -593,7 +785,7 @@ export function TryOnApp({
+@@ -593,7 +822,7 @@ export function TryOnApp({
                    type="button"
                    aria-pressed={style.id === styleId}
                    className={`overflow-hidden rounded-2xl border bg-white text-left ${style.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
@@ -1559,7 +1739,7 @@ index b7bfc58..fbd0cf5 100644
                  >
                    <StyleCard id={style.id} name={style.name} />
                    <span className="block px-2 py-2 text-center text-sm font-medium">{style.name}</span>
-@@ -623,7 +815,7 @@ export function TryOnApp({
+@@ -623,7 +852,7 @@ export function TryOnApp({
          {tool === "brows" && (
            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
              {config.brows.map((brow) => (
@@ -1568,7 +1748,7 @@ index b7bfc58..fbd0cf5 100644
                  <StyleCard id={brow.id} name={brow.name} folder="brows" />
                  <span className="block px-2 py-2 text-center text-sm font-medium">{brow.name}</span>
                </button>
-@@ -634,7 +826,7 @@ export function TryOnApp({
+@@ -634,7 +863,7 @@ export function TryOnApp({
          {tool === "beard" && (
            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
              {config.beards.map((beard) => (
@@ -1577,7 +1757,7 @@ index b7bfc58..fbd0cf5 100644
                  <StyleCard id={beard.id} name={beard.name} folder="beards" />
                  <span className="block px-2 py-2 text-center text-sm font-medium">{beard.name}</span>
                </button>
-@@ -645,7 +837,7 @@ export function TryOnApp({
+@@ -645,7 +874,7 @@ export function TryOnApp({
          {tool === "nails" && (
            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
              {config.nails.map((nail) => (
@@ -1643,10 +1823,10 @@ index fb6f536..1c9f825 100644
  
 diff --git a/src/lib/ai/benchmark.ts b/src/lib/ai/benchmark.ts
 new file mode 100644
-index 0000000..b2bcedd
+index 0000000..130b910
 --- /dev/null
 +++ b/src/lib/ai/benchmark.ts
-@@ -0,0 +1,213 @@
+@@ -0,0 +1,222 @@
 +import { mkdir, writeFile } from "node:fs/promises";
 +import path from "node:path";
 +import sharp from "sharp";
@@ -1826,6 +2006,9 @@ index 0000000..b2bcedd
 +  reference: Buffer;
 +  providerResponse?: Buffer;
 +  restored?: Buffer;
++  aligned?: Buffer;
++  maskOverlay?: Buffer;
++  hairComposite?: Buffer;
 +  validation: unknown;
 +  transform: FrameTransform;
 +}) {
@@ -1838,6 +2021,9 @@ index 0000000..b2bcedd
 +  await writeFile(path.join(dir, "validation.json"), JSON.stringify(stages.validation, null, 2));
 +  if (stages.providerResponse) await writeFile(path.join(dir, "provider-response.png"), stages.providerResponse);
 +  if (stages.restored) await writeFile(path.join(dir, "restored-output.png"), stages.restored);
++  if (stages.aligned) await writeFile(path.join(dir, "aligned-output.png"), stages.aligned);
++  if (stages.maskOverlay) await writeFile(path.join(dir, "mask-overlay.png"), stages.maskOverlay);
++  if (stages.hairComposite) await writeFile(path.join(dir, "hair-composite.png"), stages.hairComposite);
 +}
 +
 +export async function restoredFromProvider(providerResponse: Buffer, transform: FrameTransform) {
@@ -1851,6 +2037,9 @@ index 0000000..b2bcedd
 +  "provider-reference.jpg",
 +  "provider-response.png",
 +  "restored-output.png",
++  "aligned-output.png",
++  "mask-overlay.png",
++  "hair-composite.png",
 +  "transform.json",
 +  "validation.json",
 +] as const;
@@ -2636,6 +2825,501 @@ index 11d68e8..e9e879b 100644
      const payload = (await response.json()) as {
        data?: { b64_json?: string }[];
        usage?: {
+diff --git a/src/lib/ai/reference-mode.ts b/src/lib/ai/reference-mode.ts
+new file mode 100644
+index 0000000..776a70d
+--- /dev/null
++++ b/src/lib/ai/reference-mode.ts
+@@ -0,0 +1,26 @@
++/** Explicit test switch. Off unless a super-admin asks, or this process flag is on. */
++export function referenceModeEnvOn() {
++  const raw = (process.env.TRYON_REFERENCE_MODE || "").trim().toLowerCase();
++  return raw === "on" || raw === "1" || raw === "true" || raw === "yes";
++}
++
++/** The salon page renders the switch only for a signed-in super-admin. Guests never see it. */
++export function showReferenceToggle(isSuperAdmin: boolean) {
++  return isSuperAdmin;
++}
++
++/**
++ * Hairstyles only. A request is ignored unless it is explicit.
++ * A super-admin session may send it. TRYON_REFERENCE_MODE=on may also authorize it on a private machine.
++ * The flag does not turn the path on by itself, and it does not show the switch to guests.
++ */
++export function referenceModeActive(args: { isSuperAdmin: boolean; requested: boolean; tool: string }) {
++  if (args.tool !== "style") return false;
++  if (!args.requested) return false;
++  return args.isSuperAdmin || referenceModeEnvOn();
++}
++
++/** Second switch. It does nothing unless reference mode itself is active. */
++export function hairCompositeRequested(reference: boolean, requested: boolean) {
++  return reference && requested;
++}
+diff --git a/src/lib/ai/reference-run.ts b/src/lib/ai/reference-run.ts
+new file mode 100644
+index 0000000..932e539
+--- /dev/null
++++ b/src/lib/ai/reference-run.ts
+@@ -0,0 +1,457 @@
++import { randomUUID } from "node:crypto";
++import { rm } from "node:fs/promises";
++import { NextResponse } from "next/server";
++import { benchmarkDir, prepareBenchmark, restoredFromProvider, writeBenchmarkStages } from "@/lib/ai/benchmark";
++import { composeHairOnly } from "@/lib/face/compose-hair";
++import { assertVisionReady } from "@/lib/face/vision-assets";
++import type { DriftReport } from "@/lib/face/hair-composite";
++import { assessClothing } from "@/lib/ai/clothing-check";
++import { resolveOpenAIKey } from "@/lib/ai/credentials";
++import { editFormFields } from "@/lib/ai/edit-request";
++import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
++import { postImageEdit } from "@/lib/ai/openai";
++import { completeGenerationJob, failGenerationJob } from "@/lib/ai/dedupe";
++import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
++import { costUsdFromUsage, exactInr, type UsageNumbers } from "@/lib/ai/tiers";
++import { numberEnv } from "@/lib/env";
++import { prisma } from "@/lib/prisma";
++
++function usageFrom(payload: {
++  usage?: {
++    input_tokens?: number;
++    output_tokens?: number;
++    total_tokens?: number;
++    input_tokens_details?: { text_tokens?: number; image_tokens?: number };
++  };
++}): UsageNumbers | undefined {
++  const usage = payload.usage;
++  if (!usage) return undefined;
++  return {
++    inputTokens: usage.input_tokens,
++    outputTokens: usage.output_tokens,
++    totalTokens: usage.total_tokens,
++    textTokens: usage.input_tokens_details?.text_tokens,
++    imageTokens: usage.input_tokens_details?.image_tokens,
++  };
++}
++
++export async function purgeOldBenchmarks() {
++  const hours = Math.max(1, numberEnv("BENCHMARK_RETENTION_HOURS", 72));
++  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
++  const stale = await prisma.benchmarkRun.findMany({ where: { createdAt: { lt: cutoff } }, take: 20 });
++  for (const row of stale) {
++    await rm(row.dir, { recursive: true, force: true }).catch(() => undefined);
++    await prisma.benchmarkRun.delete({ where: { id: row.id } }).catch(() => undefined);
++  }
++}
++
++export type ReferenceSuccess = {
++  ok: true;
++  id: string;
++  callId: string;
++  model: string;
++  quality: string;
++  size: string;
++  estimateInr: number;
++  estimateUsd: number;
++  actualInr: number;
++  actualUsd: number;
++  latencyMs: number;
++  usage: UsageNumbers | null;
++  clothingWarning: string;
++  imagePng: Buffer;
++  compositePng: Buffer | null;
++  compositeError: string;
++  rawFaceDrift: boolean;
++  hairComposite: boolean;
++  message: string;
++};
++
++export type ReferenceFailure = {
++  ok: false;
++  httpStatus: number;
++  error: string;
++  message: string;
++  outcome: "quote" | "key" | "spend-cap" | "uncertain" | "provider";
++  id?: string;
++  callId?: string;
++};
++
++/**
++ * One gpt-image reference edit. No mask, no face paste, no retry.
++ * The ₹30 run cap is inside the quote. The ₹500 ledger cap is beginPaidCall.
++ */
++export async function executeReferenceEdit(args: {
++  jpeg: Buffer;
++  original: Buffer;
++  styleId: string;
++  tenantId: string;
++  source: "benchmark" | "tryon";
++  tool: string;
++  hairComposite?: boolean;
++}): Promise<ReferenceSuccess | ReferenceFailure> {
++  if (args.hairComposite) {
++    try {
++      await assertVisionReady();
++    } catch (error) {
++      const message = error instanceof Error ? error.message : "Hair-only composite is unavailable.";
++      return { ok: false, httpStatus: 400, error: "VISION", message, outcome: "quote" };
++    }
++  }
++  await purgeOldBenchmarks().catch(() => undefined);
++  const prepared = await prepareBenchmark({ jpeg: args.jpeg, styleId: args.styleId });
++  if (!prepared.ok) {
++    return { ok: false, httpStatus: 400, error: "QUOTE", message: prepared.message, outcome: "quote" };
++  }
++  const apiKey = await resolveOpenAIKey();
++  if (!apiKey) {
++    return {
++      ok: false,
++      httpStatus: 400,
++      error: "NO_OPENAI_KEY",
++      outcome: "key",
++      message: "Add an OpenAI key on AI settings. Reference mode does not call Gemini, a mock, or another model.",
++    };
++  }
++
++  const { quote, planned, fitted, reference, style } = prepared;
++  const gate = await beginPaidCall({
++    provider: "openai",
++    quality: quote.quality,
++    model: quote.model,
++    tenantId: args.tenantId,
++    tool: args.tool,
++    tier: args.source,
++    imageSize: quote.size,
++    estimateInr: quote.estimateInr,
++    estimateUsd: quote.estimateUsd,
++  });
++  if (!gate.ok) {
++    return {
++      ok: false,
++      httpStatus: 402,
++      error: "SPEND_CAP",
++      outcome: "spend-cap",
++      message: "The testing spend cap would be exceeded. No reference call was made.",
++    };
++  }
++
++  const id = randomUUID();
++  const dir = benchmarkDir(id);
++  const validation = {
++    label: "unvalidated model output",
++    compositeApplied: false,
++    maskSent: false,
++    faceBlobUsedAsGate: false,
++    accepted: false,
++    source: args.source,
++    model: quote.model,
++    quality: quote.quality,
++    size: quote.size,
++    inputFidelity: "high",
++    outputFormat: "png",
++    referencePixels: { width: prepared.referenceWidth, height: prepared.referenceHeight },
++    note: "The skin-colour face blob was not used. Alignment is not a haircut score. No original face was pasted back.",
++    hairCompositeRequested: Boolean(args.hairComposite),
++  };
++  await writeBenchmarkStages(dir, {
++    original: args.original,
++    sanitized: args.jpeg,
++    providerInput: fitted.png,
++    reference,
++    validation,
++    transform: fitted.transform,
++  });
++  await prisma.benchmarkRun.create({
++    data: {
++      id,
++      styleId: style.id,
++      model: quote.model,
++      quality: quote.quality,
++      size: quote.size,
++      status: "PENDING",
++      estimateInr: quote.estimateInr,
++      estimateUsd: quote.estimateUsd,
++      callId: gate.id,
++      dir,
++      source: args.source,
++    },
++  });
++
++  const fields = editFormFields(planned);
++  const body = new FormData();
++  for (const [key, value] of Object.entries(fields)) body.set(key, value);
++  body.append("image[]", new Blob([new Uint8Array(fitted.png)], { type: "image/png" }), "selfie.png");
++  body.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
++
++  try {
++    const started = Date.now();
++    const response = await postImageEdit(apiKey, body);
++    const payload = (await response.json()) as {
++      data?: { b64_json?: string }[];
++      usage?: {
++        input_tokens?: number;
++        output_tokens?: number;
++        total_tokens?: number;
++        input_tokens_details?: { text_tokens?: number; image_tokens?: number };
++      };
++    };
++    const usage = usageFrom(payload);
++    const latencyMs = Date.now() - started;
++    const b64 = payload.data?.[0]?.b64_json;
++    if (!b64) throw new BilledProviderError(quote.estimateUsd, usage);
++    const providerResponse = Buffer.from(b64, "base64");
++    const restored = await restoredFromProvider(providerResponse, fitted.transform);
++    const clothing = await assessClothing(args.jpeg, restored).catch((): Awaited<ReturnType<typeof assessClothing>> => ({
++      warning: null,
++      meanDelta: 0,
++      centerMean: 0,
++      registered: false,
++      accepted: false,
++      detail: "clothing check failed. The run is not accepted.",
++    }));
++    let compositePng: Buffer | null = null;
++    let compositeError = "";
++    let rawDrift: DriftReport | null = null;
++    let compositeDrift: DriftReport | null = null;
++    let aligned: Buffer | undefined;
++    let maskOverlayPng: Buffer | undefined;
++    let compositeLandmarksDetected = false;
++    if (args.hairComposite) {
++      try {
++        const composed = await composeHairOnly(args.jpeg, restored);
++        compositePng = composed.compositePng;
++        aligned = composed.alignedPng;
++        maskOverlayPng = composed.overlayPng;
++        rawDrift = composed.rawDrift;
++        compositeDrift = composed.compositeDrift;
++        compositeLandmarksDetected = composed.compositeLandmarksDetected;
++      } catch (error) {
++        compositeError = error instanceof Error ? error.message : "Hair-only composite failed.";
++      }
++    }
++    await writeBenchmarkStages(dir, {
++      original: args.original,
++      sanitized: args.jpeg,
++      providerInput: fitted.png,
++      reference,
++      providerResponse,
++      restored,
++      validation: {
++        ...validation,
++        providerResponseBytes: providerResponse.length,
++        restoredBytes: restored.length,
++        clothing,
++        accepted: false,
++        latencyMs,
++        usage: usage || null,
++        compositeApplied: Boolean(compositePng),
++        compositeError,
++        compositeLandmarksDetected,
++        rawFaceDrift: rawDrift,
++        compositeFaceDrift: compositeDrift,
++        stages: {
++          rawProviderResponse: "provider-response.png",
++          hairComposite: compositePng ? "hair-composite.png" : "",
++        },
++      },
++      transform: fitted.transform,
++      aligned,
++      maskOverlay: maskOverlayPng,
++      hairComposite: compositePng || undefined,
++    });
++    const usd = costUsdFromUsage(quote.model, usage) ?? quote.estimateUsd;
++    await finalizePaidCall(gate.id, {
++      model: quote.model,
++      billed: true,
++      charged: true,
++      costUsd: usd,
++      estimateInr: gate.estimateInr,
++      usage,
++      latencyMs,
++      imageSize: quote.size,
++    });
++    const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
++    let message = `Unvalidated model output. One provider call. No mask, no face paste, no retry.${clothingNote}`;
++    if (args.hairComposite && compositePng) {
++      message += " Hair-only composite saved separately. It is not the raw provider image.";
++      if (rawDrift?.flagged) message += " Raw face drift flagged.";
++    } else if (args.hairComposite) {
++      message += ` Hair-only composite failed: ${compositeError} The paid call was not retried.`;
++    }
++    await prisma.benchmarkRun.update({
++      where: { id },
++      data: {
++        status: "UNVALIDATED",
++        message,
++        actualUsd: usd,
++        actualInr: exactInr(usd),
++        inputTokens: usage?.inputTokens || 0,
++        outputTokens: usage?.outputTokens || 0,
++        imageTokens: usage?.imageTokens || 0,
++        textTokens: usage?.textTokens || 0,
++        latencyMs,
++        clothingWarning: clothing.warning || "",
++      },
++    });
++    return {
++      ok: true,
++      id,
++      callId: gate.id,
++      model: quote.model,
++      quality: quote.quality,
++      size: quote.size,
++      estimateInr: quote.estimateInr,
++      estimateUsd: quote.estimateUsd,
++      actualInr: exactInr(usd),
++      actualUsd: usd,
++      latencyMs,
++      usage: usage || null,
++      clothingWarning: clothing.warning || "",
++      imagePng: providerResponse,
++      compositePng,
++      compositeError,
++      rawFaceDrift: Boolean(rawDrift?.flagged),
++      hairComposite: Boolean(args.hairComposite),
++      message,
++    };
++  } catch (error) {
++    const uncertain = error instanceof UncertainBillingError;
++    const unknown = error instanceof UnknownModelError;
++    if (uncertain) {
++      await finalizePaidCall(gate.id, {
++        model: quote.model,
++        billed: true,
++        charged: true,
++        costUsd: quote.estimateUsd,
++        estimateInr: gate.estimateInr,
++        imageSize: quote.size,
++      });
++      await releasePaidCall(gate.id, "UNCERTAIN");
++    } else if (error instanceof BilledProviderError) {
++      await finalizePaidCall(gate.id, {
++        model: quote.model,
++        billed: true,
++        charged: true,
++        costUsd: error.costUsd,
++        estimateInr: gate.estimateInr,
++        usage: error.usage,
++        imageSize: quote.size,
++      });
++      await releasePaidCall(gate.id, "BILLED_FAILED");
++    } else {
++      await finalizePaidCall(gate.id, { model: quote.model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize: quote.size });
++      await releasePaidCall(gate.id, "REFUNDED");
++    }
++    const message = error instanceof Error ? error.message : "The reference edit did not finish.";
++    await prisma.benchmarkRun.update({ where: { id }, data: { status: uncertain ? "UNCERTAIN" : "FAILED", message } });
++    const httpStatus = uncertain ? 504 : unknown || error instanceof UnbilledProviderError ? 422 : 502;
++    return {
++      ok: false,
++      httpStatus,
++      error: uncertain ? "UNCERTAIN" : unknown ? "UNKNOWN_MODEL" : "PROVIDER",
++      message,
++      outcome: uncertain ? "uncertain" : "provider",
++      id,
++      callId: gate.id,
++    };
++  }
++}
++
++/** Salon try-on payload. Money fields are omitted unless the viewer is a super-admin. */
++export function tryOnReferencePayload(run: ReferenceSuccess, revealCost: boolean) {
++  const body: Record<string, unknown> = {
++    mode: "reference",
++    status: "UNVALIDATED",
++    label: "Experimental, unvalidated",
++    id: run.id,
++    mime: "image/png",
++    imageBase64: run.imagePng.toString("base64"),
++    accepted: false,
++    showCost: revealCost,
++    clothingWarning: run.clothingWarning,
++    message: run.message,
++    hairComposite: run.hairComposite,
++    compositeError: run.compositeError,
++    rawFaceDrift: run.rawFaceDrift,
++  };
++  if (run.compositePng) body.compositeBase64 = run.compositePng.toString("base64");
++  if (revealCost) {
++    body.rupees = run.estimateInr;
++    body.dollars = run.estimateUsd;
++    body.actualRupees = run.actualInr;
++    body.actualDollars = run.actualUsd;
++    body.latencyMs = run.latencyMs;
++    body.usage = run.usage;
++  }
++  return body;
++}
++
++export async function runTryOnReference(args: {
++  jpeg: Buffer;
++  original: Buffer;
++  styleId: string;
++  tenantId: string;
++  sessionId: string;
++  tier: string;
++  actorKey: string;
++  jobId: string;
++  requestId: string;
++  revealCost: boolean;
++  hairComposite?: boolean;
++}) {
++  const executed = await executeReferenceEdit({
++    jpeg: args.jpeg,
++    original: args.original,
++    styleId: args.styleId,
++    tenantId: args.tenantId,
++    source: "tryon",
++    tool: "reference",
++    hairComposite: args.hairComposite,
++  });
++  if (!executed.ok) {
++    await failGenerationJob(args.jobId, { outcome: executed.outcome, message: executed.message, callId: executed.callId });
++    if (executed.callId) {
++      await prisma.tryOn.create({
++        data: {
++          tenantId: args.tenantId,
++          sessionId: args.sessionId,
++          styleId: args.styleId,
++          kind: "STYLE",
++          tier: args.tier,
++          actorKey: args.actorKey,
++          quality: "reference",
++          status: "FAILED",
++          credits: 0,
++        },
++      });
++    }
++    return NextResponse.json({ error: executed.error, message: executed.message, id: executed.id }, { status: executed.httpStatus });
++  }
++  const payload = tryOnReferencePayload(executed, args.revealCost);
++  await prisma.tryOn.create({
++    data: {
++      tenantId: args.tenantId,
++      sessionId: args.sessionId,
++      styleId: args.styleId,
++      kind: "STYLE",
++      tier: args.tier,
++      actorKey: args.actorKey,
++      quality: "reference",
++      status: "UNVALIDATED",
++      latencyMs: executed.latencyMs,
++      credits: 0,
++    },
++  });
++  if (args.requestId) {
++    await completeGenerationJob(args.jobId, {
++      tenantId: args.tenantId,
++      requestId: args.requestId,
++      image: Buffer.from(JSON.stringify(payload)),
++      demoReason: "reference",
++      callId: executed.callId,
++      fileName: "result.json",
++    });
++  }
++  return NextResponse.json(payload);
++}
 diff --git a/src/lib/ai/router.ts b/src/lib/ai/router.ts
 index ce5b6c1..bc33dcc 100644
 --- a/src/lib/ai/router.ts
@@ -3053,10 +3737,10 @@ index c371951..094bd18 100644
  });
 diff --git a/tests/unit/reference-mode.test.ts b/tests/unit/reference-mode.test.ts
 new file mode 100644
-index 0000000..0f0a48c
+index 0000000..0fc4ed9
 --- /dev/null
 +++ b/tests/unit/reference-mode.test.ts
-@@ -0,0 +1,463 @@
+@@ -0,0 +1,505 @@
 +import { readFileSync } from "node:fs";
 +import { createElement } from "react";
 +import { renderToStaticMarkup } from "react-dom/server";
@@ -3077,7 +3761,7 @@ index 0000000..0f0a48c
 +import { drawFrontal } from "@/lib/face/synthetic";
 +import { runLockedEdit } from "@/lib/face/pipeline";
 +import { prisma } from "@/lib/prisma";
-+import { referenceModeActive, showReferenceToggle } from "@/lib/ai/reference-mode";
++import { hairCompositeRequested, referenceModeActive, showReferenceToggle } from "@/lib/ai/reference-mode";
 +import { executeReferenceEdit, tryOnReferencePayload, type ReferenceSuccess } from "@/lib/ai/reference-run";
 +import { buildReferencePrompt, buildStylePrompt } from "@/lib/prompts";
 +import type { SalonConfig } from "@/lib/salon";
@@ -3408,7 +4092,14 @@ index 0000000..0f0a48c
 +    const hidden = renderToStaticMarkup(createElement(TryOnApp, { config: salonConfig, referenceModeAvailable: false }));
 +    const shown = renderToStaticMarkup(createElement(TryOnApp, { config: salonConfig, referenceModeAvailable: true }));
 +    expect(hidden).not.toContain("Reference mode");
++    expect(hidden).not.toContain("Hair-only composite");
 +    expect(shown).toContain("Reference mode (test)");
++    expect(shown).not.toContain("Hair-only composite");
++    const guestSource = readFileSync("src/components/tryon/TryOnApp.tsx", "utf8");
++    expect(guestSource.indexOf("Hair-only composite")).toBeGreaterThan(guestSource.indexOf("referenceMode &&"));
++    expect(hairCompositeRequested(false, true)).toBe(false);
++    expect(hairCompositeRequested(true, false)).toBe(false);
++    expect(hairCompositeRequested(true, true)).toBe(true);
 +    const page = readFileSync("src/app/s/[slug]/page.tsx", "utf8");
 +    const route = readFileSync("src/app/api/v1/tryon/generate/route.ts", "utf8");
 +    expect(page).toContain("showReferenceToggle");
@@ -3432,6 +4123,10 @@ index 0000000..0f0a48c
 +      usage: { inputTokens: 11180, outputTokens: 1899, imageTokens: 10885, textTokens: 295 },
 +      clothingWarning: "",
 +      imagePng: Buffer.from("png"),
++      compositePng: null,
++      compositeError: "",
++      rawFaceDrift: false,
++      hairComposite: false,
 +      message: "Unvalidated model output.",
 +    } satisfies ReferenceSuccess;
 +    const guest = tryOnReferencePayload(run, false);
@@ -3445,6 +4140,16 @@ index 0000000..0f0a48c
 +    expect(admin.rupees).toBe(16.9);
 +    expect(admin.actualRupees).toBe(14.3);
 +    expect(admin.label).toBe("Experimental, unvalidated");
++    const composite = tryOnReferencePayload({
++      ...run,
++      hairComposite: true,
++      compositePng: Buffer.from("composite-bytes"),
++      rawFaceDrift: true,
++    }, false);
++    expect(composite.imageBase64).toBe(Buffer.from("png").toString("base64"));
++    expect(composite.compositeBase64).toBe(Buffer.from("composite-bytes").toString("base64"));
++    expect(composite.rawFaceDrift).toBe(true);
++    expect(JSON.stringify(composite)).not.toMatch(/gpt-image|estimateInr/);
 +  });
 +
 +  it("sends the selfie before the reference when the switch is on, and does not call when the quote is over the run cap", async () => {
@@ -3516,6 +4221,27 @@ index 0000000..0f0a48c
 +    expect(refused.ok).toBe(false);
 +    expect(hits).toBe(0);
 +    delete process.env.BENCHMARK_QUALITY;
++    const previousAssets = process.env.VISION_ASSET_DIR;
++    process.env.VISION_ASSET_DIR = "/tmp/helix-missing-vision-models";
++    let compositeHits = 0;
++    globalThis.fetch = (async () => {
++      compositeHits += 1;
++      return new Response("no", { status: 500 });
++    }) as typeof fetch;
++    const missing = await executeReferenceEdit({
++      jpeg,
++      original: jpeg,
++      styleId: "pixie",
++      tenantId: "reference-tryon",
++      source: "tryon",
++      tool: "reference",
++      hairComposite: true,
++    });
++    expect(missing.ok).toBe(false);
++    if (!missing.ok) expect(missing.message).toMatch(/missing or unusable/);
++    expect(compositeHits).toBe(0);
++    if (previousAssets === undefined) delete process.env.VISION_ASSET_DIR;
++    else process.env.VISION_ASSET_DIR = previousAssets;
 +    delete process.env.OPENAI_API_KEY;
 +    delete process.env.AI_SPEND_CAP_INR;
 +  });
