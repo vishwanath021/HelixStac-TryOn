@@ -29,7 +29,6 @@ type Report = {
     costInr: number;
     chargedInr: number;
     charged: boolean;
-    providerRequestId: string;
   }[];
   plans: { id: string; name: string; priceInr: number; projectedInr: number; marginInr: number }[];
 };
@@ -112,8 +111,7 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
               <th className="py-1 pr-2">Tokens</th>
               <th className="py-1 pr-2">USD</th>
               <th className="py-1 pr-2">INR</th>
-              <th className="py-1 pr-2">Charged</th>
-              <th className="py-1">fal request</th>
+              <th className="py-1">Charged</th>
             </tr>
           </thead>
           <tbody>
@@ -128,8 +126,7 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
                 <td className="py-1 pr-2">{row.totalTokens || `${row.inputTokens}/${row.outputTokens}`}</td>
                 <td className="py-1 pr-2">{row.costUsd.toFixed(4)}</td>
                 <td className="py-1 pr-2">{row.costInr.toFixed(2)}</td>
-                <td className="py-1 pr-2">{row.charged ? row.chargedInr.toFixed(2) : "0"}</td>
-                <td className="py-1">{row.providerRequestId || "—"}</td>
+                <td className="py-1">{row.charged ? row.chargedInr.toFixed(2) : "0"}</td>
               </tr>
             ))}
           </tbody>

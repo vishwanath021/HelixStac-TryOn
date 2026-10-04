@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { quoteBenchmark } from "@/lib/ai/benchmark";
 import { quoteComparisonModel } from "@/lib/ai/compare-models";
-import { falTimeoutMs } from "@/lib/ai/fal-wait";
 import { readHairstyleReference } from "@/lib/ai/style-reference";
 import { requireSuper } from "@/lib/session";
 
@@ -26,10 +25,9 @@ export async function GET(req: Request) {
   const referenceSize = { width: referenceMeta?.width || 512, height: referenceMeta?.height || 512 };
   const quote = requested ? quoteComparisonModel(requested, width, height, referenceSize) : quoteBenchmark(width, height, referenceSize);
   if (!quote.ok) return NextResponse.json({ error: "QUOTE", message: quote.message }, { status: 400 });
-  const provider = "provider" in quote ? quote.provider : "openai";
   return NextResponse.json({
     model: quote.model,
-    provider,
+    provider: "provider" in quote ? quote.provider : "openai",
     quality: quote.quality,
     size: quote.size,
     rupees: quote.estimateInr,
@@ -38,6 +36,5 @@ export async function GET(req: Request) {
     warning: "warning" in quote ? quote.warning || "" : "",
     rangeLowInr: "rangeLowInr" in quote ? quote.rangeLowInr : null,
     rangeHighInr: "rangeHighInr" in quote ? quote.rangeHighInr : null,
-    waitSeconds: provider === "fal" ? Math.round(falTimeoutMs() / 1000) : 0,
   });
 }

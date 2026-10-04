@@ -293,7 +293,7 @@ The script adds a button and an iframe to `/embed/{slug}` with `allow="camera"`.
 
 ## Deploy
 
-- **Vercel:** Next.js app, `DATABASE_URL` on Neon or another Postgres, `AUTH_SECRET`, and the provider flags. Guest edits are shorter. A super-admin fal comparison waits up to `FAL_TIMEOUT_MS` (default one hour) on one queue request, and the route `maxDuration` is 3780 seconds. Do not enable the dev magic link.
+- **Vercel:** Next.js app, `DATABASE_URL` on Neon or another Postgres, `AUTH_SECRET`, and the provider flags. Set the function timeout with `maxDuration` in mind: AI calls can take 10–20 seconds. Do not enable the dev magic link.
 - **Railway:** same env, Postgres plugin, start command `npm run start` after `prisma db push` and seed on a release phase.
 - **VPS:** `docker compose up --build` on a machine with Postgres. Put Caddy or another proxy in front for TLS. Wildcard `*.try.yourdomain` should reach the app so middleware can read the host.
 

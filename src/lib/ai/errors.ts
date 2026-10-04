@@ -26,12 +26,10 @@ export class SpendCapError extends Error {
  */
 export class UncertainBillingError extends Error {
   readonly code = "UNCERTAIN_BILLING" as const;
-  readonly requestId: string;
 
-  constructor(message = "The provider outcome is unknown. No second generation was started.", requestId = "") {
+  constructor(message = "The provider outcome is unknown. No second generation was started.") {
     super(message);
     this.name = "UncertainBillingError";
-    this.requestId = requestId;
   }
 }
 

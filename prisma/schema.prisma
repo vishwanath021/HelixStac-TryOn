@@ -334,7 +334,6 @@ model AiCall {
   billed        Boolean  @default(false)
   latencyMs     Int      @default(0)
   costSource    String   @default("estimate")
-  providerRequestId String @default("")
   createdAt     DateTime @default(now())
 
   @@index([status, createdAt])
@@ -382,7 +381,6 @@ model BenchmarkRun {
   dir              String
   source           String   @default("benchmark")
   message          String   @default("")
-  providerRequestId String @default("")
   createdAt        DateTime @default(now())
 }
 

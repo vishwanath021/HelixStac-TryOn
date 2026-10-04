@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { falWaitingLabel } from "@/lib/ai/fal-wait";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { ColourStage } from "@/components/tryon/ColourStage";
 import { ReferenceTextureWarning } from "@/components/tryon/ReferenceTextureWarning";
@@ -103,14 +102,12 @@ export function TryOnApp({
   const [hairComposite, setHairComposite] = useState(false);
   const [hairTexture, setHairTexture] = useState<AskedTexture>("natural");
   const [referenceAck, setReferenceAck] = useState(false);
-  const [referenceQuote, setReferenceQuote] = useState<{ model: string; provider: string; quality: string; size: string; rupees: number; dollars: number; note: string; warning: string; waitSeconds: number } | null>(null);
+  const [referenceQuote, setReferenceQuote] = useState<{ model: string; provider: string; quality: string; size: string; rupees: number; dollars: number; note: string; warning: string } | null>(null);
   const [compareModel, setCompareModel] = useState(comparisonModels[0]?.id ?? "");
   const [comparisons, setComparisons] = useState<Look[]>([]);
   const [referenceChoice, setReferenceChoice] = useState<{ id: string; name: string; serviceKeys: string[]; tool: Look["tool"] } | null>(null);
   const previewLock = useRef(false);
   const [progress, setProgress] = useState(0);
-  const [falWaitStarted, setFalWaitStarted] = useState<number | null>(null);
-  const [falElapsed, setFalElapsed] = useState(0);
   const [pendingName, setPendingName] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -163,14 +160,6 @@ export function TryOnApp({
   }, [busy]);
 
   useEffect(() => {
-    if (falWaitStarted == null) return;
-    const timer = window.setInterval(() => {
-      setFalElapsed(Math.floor((Date.now() - falWaitStarted) / 1000));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [falWaitStarted]);
-
-  useEffect(() => {
     return () => {
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
@@ -180,10 +169,6 @@ export function TryOnApp({
   const activeShot = tool === "nails" ? handShot : faceShot;
   const styles = config.styles.filter((style) => style.gender === gender);
   const showResult = tool !== "colour" && stylePhase === "result" && active?.tool === tool && !busy;
-  const falWaitSeconds = referenceQuote?.waitSeconds || 3600;
-  const shownProgress = falWaitStarted != null
-    ? Math.min(92, Math.round((falElapsed / falWaitSeconds) * 92))
-    : progress;
   const phone = normalizeWhatsAppPhone(config.whatsapp);
   const bookHref = phone
     ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hi ${config.name}, I would like to book an appointment.`)}`
@@ -399,7 +384,6 @@ export function TryOnApp({
         dollars: Number(data.dollars || 0),
         note: String(data.note || ""),
         warning: String(data.warning || ""),
-        waitSeconds: Number(data.waitSeconds || 0),
       });
     } finally {
       setBusy(false);
@@ -453,11 +437,6 @@ export function TryOnApp({
     setError("");
     setPendingName(chosen.name);
     setBusy(true);
-    const falWait = referenceConfirm && referenceQuote?.provider === "fal";
-    if (falWait) {
-      setFalElapsed(0);
-      setFalWaitStarted(Date.now());
-    }
     try {
       track("generate_requested", { styleId: chosen.id, tool: chosen.tool });
       const body = new FormData();
@@ -479,12 +458,7 @@ export function TryOnApp({
         body.set("shadeId", shadeId);
       }
       if (salonToken) body.set("salonToken", salonToken);
-      const waitSeconds = falWait ? referenceQuote?.waitSeconds || 3600 : 0;
-      const res = await fetch("/api/v1/tryon/generate", {
-        method: "POST",
-        body,
-        signal: falWait ? AbortSignal.timeout((waitSeconds + 180) * 1000) : undefined,
-      });
+      const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
       if (!res.ok) {
         const data = await res.json().catch(() => ({ message: t(lang, "creditsEmpty") }));
         setProgress(0);
@@ -555,18 +529,9 @@ export function TryOnApp({
       setStylePhase("result");
       frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       track("generate_succeeded", { styleId: chosen.id });
-    } catch (error) {
-      const timedOut = error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError");
-      if (timedOut) {
-        setProgress(0);
-        setError("This page stopped waiting. The fal request was not submitted again.");
-        return;
-      }
-      throw error;
     } finally {
       previewLock.current = false;
       setBusy(false);
-      setFalWaitStarted(null);
     }
   }
 
@@ -738,11 +703,8 @@ export function TryOnApp({
                 <div className="w-full max-w-xs">
                   <p className="font-serif text-3xl">{t(lang, "styling")}</p>
                   <p className="mt-1 text-sm">{pendingName}</p>
-                  {falWaitStarted != null && (
-                    <p className="mt-2 text-sm">{falWaitingLabel(falElapsed, falWaitSeconds)}</p>
-                  )}
                   <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/25">
-                    <div className="h-full bg-white" style={{ width: `${shownProgress}%` }} />
+                    <div className="h-full bg-white" style={{ width: `${progress}%` }} />
                   </div>
                 </div>
               </div>

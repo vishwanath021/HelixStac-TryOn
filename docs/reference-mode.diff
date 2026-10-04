@@ -1,22 +1,20 @@
 diff --git a/.env.example b/.env.example
-index 6ec3dab..a8bd790 100644
+index 6ec3dab..70ece1c 100644
 --- a/.env.example
 +++ b/.env.example
-@@ -44,7 +44,13 @@ GEMINI_TEXT_MODEL="gemini-3.1-flash-lite"
+@@ -44,7 +44,11 @@ GEMINI_TEXT_MODEL="gemini-3.1-flash-lite"
  # Optional failover. Leave blank to keep the stub inactive.
  # REPLICATE_API_TOKEN=""
  # REPLICATE_MODEL="flux-kontext-apps/change-haircut"
 +# Optional fallback only. Reference comparisons use the encrypted fal key saved on /super/ai.
  # FAL_KEY=""
-+# Super-admin fal comparisons poll one queue request for this many milliseconds. Default 3600000 (1 hour).
-+# FAL_TIMEOUT_MS="3600000"
 +# Optional fallback only. Reference comparisons use the encrypted OpenRouter key saved on /super/ai.
 +# OpenRouter does not proxy fal.ai models.
 +# OPENROUTER_API_KEY=""
  # FAL_MODEL="fal-ai/flux-pro/kontext"
  # Set to gemini to allow the concierge to call a text model. Default is rules.
  CONCIERGE_LLM="rules"
-@@ -67,7 +73,29 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
+@@ -67,7 +71,29 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
  # Hard testing guard for paid image calls, in INR estimates (not a provider invoice).
  # Default ₹500. At the cap the app returns a labelled sample instead of calling the provider.
  AI_SPEND_CAP_INR="500"
@@ -61,7 +59,7 @@ index d04db07..7f79571 100644
  .DS_Store
  tsconfig.tsbuildinfo
 diff --git a/README.md b/README.md
-index 7c86367..f874774 100644
+index 7c86367..b4d6305 100644
 --- a/README.md
 +++ b/README.md
 @@ -139,7 +139,7 @@ Needs a key (OpenAI or Gemini):
@@ -153,15 +151,6 @@ index 7c86367..f874774 100644
  - Calibration stops at 5 images or about ₹30, whichever comes first
  
  `npm run calibrate` writes before / mask / after files under `docs/mask-overlays/` using the flat-colour edit. The same action is the **Calibration run** button on `/super/ai`. With no key it spends ₹0. With a key it uses the real model inside that cap.
-@@ -248,7 +293,7 @@ The script adds a button and an iframe to `/embed/{slug}` with `allow="camera"`.
- 
- ## Deploy
- 
--- **Vercel:** Next.js app, `DATABASE_URL` on Neon or another Postgres, `AUTH_SECRET`, and the provider flags. Set the function timeout with `maxDuration` in mind: AI calls can take 10–20 seconds. Do not enable the dev magic link.
-+- **Vercel:** Next.js app, `DATABASE_URL` on Neon or another Postgres, `AUTH_SECRET`, and the provider flags. Guest edits are shorter. A super-admin fal comparison waits up to `FAL_TIMEOUT_MS` (default one hour) on one queue request, and the route `maxDuration` is 3780 seconds. Do not enable the dev magic link.
- - **Railway:** same env, Postgres plugin, start command `npm run start` after `prisma db push` and seed on a release phase.
- - **VPS:** `docker compose up --build` on a machine with Postgres. Put Caddy or another proxy in front for TLS. Wildcard `*.try.yourdomain` should reach the app so middleware can read the host.
- 
 diff --git a/assets/vision/NOTICE.md b/assets/vision/NOTICE.md
 new file mode 100644
 index 0000000..70988bb
@@ -205,7 +194,7 @@ index c5ef9e0..6faa9da 100644
  
 diff --git a/docs/REFERENCE-MODE-REVIEW.md b/docs/REFERENCE-MODE-REVIEW.md
 new file mode 100644
-index 0000000..d8274ed
+index 0000000..ae5a4ec
 --- /dev/null
 +++ b/docs/REFERENCE-MODE-REVIEW.md
 @@ -0,0 +1,400 @@
@@ -535,7 +524,7 @@ index 0000000..d8274ed
 +
 +### fal queue
 +
-+Every fal comparison is `POST https://queue.fal.run/<endpoint-id>` with `Authorization: Key …` and `X-Fal-No-Retry: 1`. fal otherwise retries a failed queue request up to 10 times. The client submits once, then polls that same `…/requests/{id}/status` until `FAL_TIMEOUT_MS` (default 3,600,000, one hour). A status or download that drops is requested again at that same URL. The queue submit is not repeated. Output is `images[].url`. If the hour ends, the estimated cost stays on the ledger as an unknown bill and the fal request id is stored on the call and the benchmark row. The salon page shows “Still waiting” with the elapsed seconds. The generate route `maxDuration` is 3780 seconds, and the Node server request timeout is the poll window plus 180 seconds, so a shorter platform timeout does not cut the wait. `image_urls` is the selfie, then the hairstyle reference. The same reference prompt is used. No mask. Images are uploaded with `POST https://rest.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3`, then `PUT` to the returned `upload_url`. The initiate request sets `expiration_duration_seconds` to 3600. The payloads delete API does not delete input CDN files, so there is no delete call. A dedicated input-file delete endpoint was not verified.
++Every fal comparison is `POST https://queue.fal.run/<endpoint-id>` with `Authorization: Key …` and `X-Fal-No-Retry: 1`. fal otherwise retries a failed queue request up to 10 times. The client submits once, polls `…/requests/{id}/status`, then `GET …/requests/{id}`. Output is `images[].url`. A timeout after submit is an unknown bill and is not sent again. `image_urls` is the selfie, then the hairstyle reference. The same reference prompt is used. No mask. Images are uploaded with `POST https://rest.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3`, then `PUT` to the returned `upload_url`. The initiate request sets `expiration_duration_seconds` to 3600. The payloads delete API does not delete input CDN files, so there is no delete call. A dedicated input-file delete endpoint was not verified.
 +
 +`enable_safety_checker` is sent `true` where the schema has that field. nano-banana has `safety_tolerance` instead, so the field is omitted and the default stands. A black frame, or `has_nsfw_concepts` true, is an error: the safety checker blocked the image. That completed call counts as billed. It is not shown as a haircut and it is not retried.
 +
@@ -622,21 +611,6 @@ index 0000000..597defe
 +4,selfie-b,beach-waves,short-to-long,,,,,,,
 +5,selfie-c,soft-bob,long-to-short,,,,,,,
 +6,selfie-c,curtain-bangs,fringe,,,,,,,
-diff --git a/next.config.ts b/next.config.ts
-index f5846a6..fe85166 100644
---- a/next.config.ts
-+++ b/next.config.ts
-@@ -3,6 +3,10 @@ import type { NextConfig } from "next";
- const nextConfig: NextConfig = {
-   output: "standalone",
-   poweredByHeader: false,
-+  experimental: {
-+    // The dev/router proxy otherwise stops at 30 seconds. Fal comparisons wait one hour.
-+    proxyTimeout: 3_780_000,
-+  },
-   serverExternalPackages: ["sharp", "bcryptjs", "@prisma/client"],
-   async headers() {
-     return [
 diff --git a/package.json b/package.json
 index ab17942..a0a1774 100644
 --- a/package.json
@@ -651,17 +625,10 @@ index ab17942..a0a1774 100644
      "prepare": "git config core.hooksPath .githooks || true"
    },
 diff --git a/prisma/schema.prisma b/prisma/schema.prisma
-index 8f77e40..68b8437 100644
+index 8f77e40..ee22172 100644
 --- a/prisma/schema.prisma
 +++ b/prisma/schema.prisma
-@@ -334,12 +334,58 @@ model AiCall {
-   billed        Boolean  @default(false)
-   latencyMs     Int      @default(0)
-   costSource    String   @default("estimate")
-+  providerRequestId String @default("")
-   createdAt     DateTime @default(now())
- 
-   @@index([status, createdAt])
+@@ -340,6 +340,50 @@ model AiCall {
    @@index([createdAt])
  }
  
@@ -706,7 +673,6 @@ index 8f77e40..68b8437 100644
 +  dir              String
 +  source           String   @default("benchmark")
 +  message          String   @default("")
-+  providerRequestId String @default("")
 +  createdAt        DateTime @default(now())
 +}
 +
@@ -1058,7 +1024,7 @@ index 0000000..d46572b
 +}
 diff --git a/src/app/api/v1/super/ai/benchmark/route.ts b/src/app/api/v1/super/ai/benchmark/route.ts
 new file mode 100644
-index 0000000..e65c780
+index 0000000..d67207c
 --- /dev/null
 +++ b/src/app/api/v1/super/ai/benchmark/route.ts
 @@ -0,0 +1,80 @@
@@ -1073,7 +1039,7 @@ index 0000000..e65c780
 +
 +export const runtime = "nodejs";
 +export const dynamic = "force-dynamic";
-+export const maxDuration = 3780;
++export const maxDuration = 60;
 +
 +export async function GET(req: Request) {
 +  const access = await requireSuper();
@@ -1206,7 +1172,7 @@ index b5ba519..6cf02ad 100644
      if (error instanceof Error && error.message === "INVALID_KEY") {
        return NextResponse.json({ error: "INVALID_KEY", message: "Paste the provider key. It is stored encrypted and is not shown again." }, { status: 400 });
 diff --git a/src/app/api/v1/tryon/generate/route.ts b/src/app/api/v1/tryon/generate/route.ts
-index 85e0ff6..ec27a3a 100644
+index 85e0ff6..ed37b0b 100644
 --- a/src/app/api/v1/tryon/generate/route.ts
 +++ b/src/app/api/v1/tryon/generate/route.ts
 @@ -5,7 +5,11 @@ import sharp from "sharp";
@@ -1222,7 +1188,7 @@ index 85e0ff6..ec27a3a 100644
  import { generateWithFailover, selectProvider } from "@/lib/ai/router";
  import { readTierFlags } from "@/lib/ai/settings-store";
  import { resolveGuestTier } from "@/lib/ai/tiers";
-@@ -25,10 +29,11 @@ import { browById } from "@/data/brows";
+@@ -25,6 +29,7 @@ import { browById } from "@/data/brows";
  import { nailById } from "@/data/nails";
  import { styleById } from "@/data/styles";
  import { clientIp, rateLimit } from "@/lib/ratelimit";
@@ -1230,11 +1196,6 @@ index 85e0ff6..ec27a3a 100644
  
  export const runtime = "nodejs";
  export const dynamic = "force-dynamic";
--export const maxDuration = 60;
-+export const maxDuration = 3780;
- 
- function startOfToday() {
-   const date = new Date();
 @@ -113,9 +118,10 @@ export async function POST(req: Request) {
      }
    }
@@ -1395,15 +1356,14 @@ index 85e0ff6..ec27a3a 100644
  }
 diff --git a/src/app/api/v1/tryon/reference-quote/route.ts b/src/app/api/v1/tryon/reference-quote/route.ts
 new file mode 100644
-index 0000000..35bb6d9
+index 0000000..80688e0
 --- /dev/null
 +++ b/src/app/api/v1/tryon/reference-quote/route.ts
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,40 @@
 +import { NextResponse } from "next/server";
 +import sharp from "sharp";
 +import { quoteBenchmark } from "@/lib/ai/benchmark";
 +import { quoteComparisonModel } from "@/lib/ai/compare-models";
-+import { falTimeoutMs } from "@/lib/ai/fal-wait";
 +import { readHairstyleReference } from "@/lib/ai/style-reference";
 +import { requireSuper } from "@/lib/session";
 +
@@ -1427,10 +1387,9 @@ index 0000000..35bb6d9
 +  const referenceSize = { width: referenceMeta?.width || 512, height: referenceMeta?.height || 512 };
 +  const quote = requested ? quoteComparisonModel(requested, width, height, referenceSize) : quoteBenchmark(width, height, referenceSize);
 +  if (!quote.ok) return NextResponse.json({ error: "QUOTE", message: quote.message }, { status: 400 });
-+  const provider = "provider" in quote ? quote.provider : "openai";
 +  return NextResponse.json({
 +    model: quote.model,
-+    provider,
++    provider: "provider" in quote ? quote.provider : "openai",
 +    quality: quote.quality,
 +    size: quote.size,
 +    rupees: quote.estimateInr,
@@ -1439,7 +1398,6 @@ index 0000000..35bb6d9
 +    warning: "warning" in quote ? quote.warning || "" : "",
 +    rangeLowInr: "rangeLowInr" in quote ? quote.rangeLowInr : null,
 +    rangeHighInr: "rangeHighInr" in quote ? quote.rangeHighInr : null,
-+    waitSeconds: provider === "fal" ? Math.round(falTimeoutMs() / 1000) : 0,
 +  });
 +}
 diff --git a/src/app/s/[slug]/page.tsx b/src/app/s/[slug]/page.tsx
@@ -1478,10 +1436,10 @@ index 794160f..54358a8 100644
  }
 diff --git a/src/app/super/ai/benchmark/[id]/page.tsx b/src/app/super/ai/benchmark/[id]/page.tsx
 new file mode 100644
-index 0000000..e87dcae
+index 0000000..645eff9
 --- /dev/null
 +++ b/src/app/super/ai/benchmark/[id]/page.tsx
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,121 @@
 +import { access } from "node:fs/promises";
 +import path from "node:path";
 +import Link from "next/link";
@@ -1538,9 +1496,6 @@ index 0000000..e87dcae
 +        <p className="mt-3 rounded-xl border border-line bg-white p-3 text-sm leading-6">
 +          Warning: clothing_changed. The neckline or shoulder band moved relative to the selfie. This is a finding, not an accepted result.
 +        </p>
-+      )}
-+      {run.providerRequestId && (
-+        <p className="mt-3 text-sm">fal request {run.providerRequestId}. This id was not submitted again.</p>
 +      )}
 +      {run.message && <p className="mt-3 text-sm">{run.message}</p>}
 +      <dl className="mt-4 grid gap-2 text-sm leading-6 sm:grid-cols-2">
@@ -2035,38 +1990,6 @@ index f6985df..54bfa1a 100644
        {message && <p role="status">{message}</p>}
        {total && <p className="text-sm font-medium">{total}</p>}
        {panels.length > 0 && (
-diff --git a/src/components/admin/SuperCostPanel.tsx b/src/components/admin/SuperCostPanel.tsx
-index 56c6c35..a083b7b 100644
---- a/src/components/admin/SuperCostPanel.tsx
-+++ b/src/components/admin/SuperCostPanel.tsx
-@@ -29,6 +29,7 @@ type Report = {
-     costInr: number;
-     chargedInr: number;
-     charged: boolean;
-+    providerRequestId: string;
-   }[];
-   plans: { id: string; name: string; priceInr: number; projectedInr: number; marginInr: number }[];
- };
-@@ -111,7 +112,8 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
-               <th className="py-1 pr-2">Tokens</th>
-               <th className="py-1 pr-2">USD</th>
-               <th className="py-1 pr-2">INR</th>
--              <th className="py-1">Charged</th>
-+              <th className="py-1 pr-2">Charged</th>
-+              <th className="py-1">fal request</th>
-             </tr>
-           </thead>
-           <tbody>
-@@ -126,7 +128,8 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
-                 <td className="py-1 pr-2">{row.totalTokens || `${row.inputTokens}/${row.outputTokens}`}</td>
-                 <td className="py-1 pr-2">{row.costUsd.toFixed(4)}</td>
-                 <td className="py-1 pr-2">{row.costInr.toFixed(2)}</td>
--                <td className="py-1">{row.charged ? row.chargedInr.toFixed(2) : "0"}</td>
-+                <td className="py-1 pr-2">{row.charged ? row.chargedInr.toFixed(2) : "0"}</td>
-+                <td className="py-1">{row.providerRequestId || "—"}</td>
-               </tr>
-             ))}
-           </tbody>
 diff --git a/src/components/tryon/ReferenceTextureWarning.tsx b/src/components/tryon/ReferenceTextureWarning.tsx
 new file mode 100644
 index 0000000..24e01a4
@@ -2100,14 +2023,11 @@ index 0000000..24e01a4
 +  return <p className="mt-2 text-amber-900" role="status">{choice.warning}</p>;
 +}
 diff --git a/src/components/tryon/TryOnApp.tsx b/src/components/tryon/TryOnApp.tsx
-index b7bfc58..6bb932c 100644
+index b7bfc58..92b428d 100644
 --- a/src/components/tryon/TryOnApp.tsx
 +++ b/src/components/tryon/TryOnApp.tsx
-@@ -1,11 +1,15 @@
- "use client";
- 
+@@ -3,9 +3,12 @@
  import { useEffect, useRef, useState } from "react";
-+import { falWaitingLabel } from "@/lib/ai/fal-wait";
  import { BeforeAfter } from "@/components/tryon/BeforeAfter";
  import { ColourStage } from "@/components/tryon/ColourStage";
 +import { ReferenceTextureWarning } from "@/components/tryon/ReferenceTextureWarning";
@@ -2119,7 +2039,7 @@ index b7bfc58..6bb932c 100644
  import type { SalonConfig } from "@/lib/salon";
  import { normalizeWhatsAppPhone } from "@/lib/whatsapp";
  
-@@ -19,6 +23,16 @@ type Look = {
+@@ -19,6 +22,16 @@ type Look = {
    serviceKeys: string[];
    tool: "style" | "brows" | "beard" | "nails";
    demo?: boolean;
@@ -2136,7 +2056,7 @@ index b7bfc58..6bb932c 100644
  };
  
  type TryTool = "colour" | "style" | "brows" | "beard" | "nails";
-@@ -54,6 +68,8 @@ export function TryOnApp({
+@@ -54,6 +67,8 @@ export function TryOnApp({
    salonToken,
    salonMode = false,
    demoMode = false,
@@ -2145,7 +2065,7 @@ index b7bfc58..6bb932c 100644
  }: {
    config: SalonConfig;
    embed?: boolean;
-@@ -63,6 +79,8 @@ export function TryOnApp({
+@@ -63,6 +78,8 @@ export function TryOnApp({
    salonToken?: string;
    salonMode?: boolean;
    demoMode?: boolean;
@@ -2154,7 +2074,7 @@ index b7bfc58..6bb932c 100644
  }) {
    const lang = config.defaultLang || "en";
    const [sid, setSid] = useState("");
-@@ -81,7 +99,18 @@ export function TryOnApp({
+@@ -81,6 +98,15 @@ export function TryOnApp({
    const [styleId, setStyleId] = useState("");
    const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
    const [busy, setBusy] = useState(false);
@@ -2162,44 +2082,15 @@ index b7bfc58..6bb932c 100644
 +  const [hairComposite, setHairComposite] = useState(false);
 +  const [hairTexture, setHairTexture] = useState<AskedTexture>("natural");
 +  const [referenceAck, setReferenceAck] = useState(false);
-+  const [referenceQuote, setReferenceQuote] = useState<{ model: string; provider: string; quality: string; size: string; rupees: number; dollars: number; note: string; warning: string; waitSeconds: number } | null>(null);
++  const [referenceQuote, setReferenceQuote] = useState<{ model: string; provider: string; quality: string; size: string; rupees: number; dollars: number; note: string; warning: string } | null>(null);
 +  const [compareModel, setCompareModel] = useState(comparisonModels[0]?.id ?? "");
 +  const [comparisons, setComparisons] = useState<Look[]>([]);
 +  const [referenceChoice, setReferenceChoice] = useState<{ id: string; name: string; serviceKeys: string[]; tool: Look["tool"] } | null>(null);
 +  const previewLock = useRef(false);
    const [progress, setProgress] = useState(0);
-+  const [falWaitStarted, setFalWaitStarted] = useState<number | null>(null);
-+  const [falElapsed, setFalElapsed] = useState(0);
    const [pendingName, setPendingName] = useState("");
    const [error, setError] = useState("");
-   const [notice, setNotice] = useState("");
-@@ -133,6 +162,14 @@ export function TryOnApp({
-     return () => window.clearInterval(timer);
-   }, [busy]);
- 
-+  useEffect(() => {
-+    if (falWaitStarted == null) return;
-+    const timer = window.setInterval(() => {
-+      setFalElapsed(Math.floor((Date.now() - falWaitStarted) / 1000));
-+    }, 1000);
-+    return () => window.clearInterval(timer);
-+  }, [falWaitStarted]);
-+
-   useEffect(() => {
-     return () => {
-       streamRef.current?.getTracks().forEach((track) => track.stop());
-@@ -143,6 +180,10 @@ export function TryOnApp({
-   const activeShot = tool === "nails" ? handShot : faceShot;
-   const styles = config.styles.filter((style) => style.gender === gender);
-   const showResult = tool !== "colour" && stylePhase === "result" && active?.tool === tool && !busy;
-+  const falWaitSeconds = referenceQuote?.waitSeconds || 3600;
-+  const shownProgress = falWaitStarted != null
-+    ? Math.min(92, Math.round((falElapsed / falWaitSeconds) * 92))
-+    : progress;
-   const phone = normalizeWhatsAppPhone(config.whatsapp);
-   const bookHref = phone
-     ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hi ${config.name}, I would like to book an appointment.`)}`
-@@ -310,7 +351,7 @@ export function TryOnApp({
+@@ -310,7 +336,7 @@ export function TryOnApp({
      canvas.height = height;
      const ctx = canvas.getContext("2d");
      if (!ctx) return;
@@ -2208,7 +2099,7 @@ index b7bfc58..6bb932c 100644
        ctx.translate(width, 0);
        ctx.scale(-1, 1);
      }
-@@ -320,9 +361,81 @@ export function TryOnApp({
+@@ -320,9 +346,80 @@ export function TryOnApp({
      await applyBlob(blob);
    }
  
@@ -2251,7 +2142,6 @@ index b7bfc58..6bb932c 100644
 +        dollars: Number(data.dollars || 0),
 +        note: String(data.note || ""),
 +        warning: String(data.warning || ""),
-+        waitSeconds: Number(data.waitSeconds || 0),
 +      });
 +    } finally {
 +      setBusy(false);
@@ -2291,7 +2181,7 @@ index b7bfc58..6bb932c 100644
      const shot = chosen.tool === "nails" ? handShot : faceShot;
      if (!shot) {
        setError(t(lang, chosen.tool === "nails" ? "uploadHand" : "addPhotoFirst"));
-@@ -335,49 +448,126 @@ export function TryOnApp({
+@@ -335,49 +432,107 @@ export function TryOnApp({
        return;
      }
      consentRef.current = consent;
@@ -2314,11 +2204,6 @@ index b7bfc58..6bb932c 100644
 -    const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
 -    if (!res.ok) {
 -      const data = await res.json().catch(() => ({ message: t(lang, "creditsEmpty") }));
-+    const falWait = referenceConfirm && referenceQuote?.provider === "fal";
-+    if (falWait) {
-+      setFalElapsed(0);
-+      setFalWaitStarted(Date.now());
-+    }
 +    try {
 +      track("generate_requested", { styleId: chosen.id, tool: chosen.tool });
 +      const body = new FormData();
@@ -2340,12 +2225,7 @@ index b7bfc58..6bb932c 100644
 +        body.set("shadeId", shadeId);
 +      }
 +      if (salonToken) body.set("salonToken", salonToken);
-+      const waitSeconds = falWait ? referenceQuote?.waitSeconds || 3600 : 0;
-+      const res = await fetch("/api/v1/tryon/generate", {
-+        method: "POST",
-+        body,
-+        signal: falWait ? AbortSignal.timeout((waitSeconds + 180) * 1000) : undefined,
-+      });
++      const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
 +      if (!res.ok) {
 +        const data = await res.json().catch(() => ({ message: t(lang, "creditsEmpty") }));
 +        setProgress(0);
@@ -2416,14 +2296,6 @@ index b7bfc58..6bb932c 100644
 +      setStylePhase("result");
 +      frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 +      track("generate_succeeded", { styleId: chosen.id });
-+    } catch (error) {
-+      const timedOut = error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError");
-+      if (timedOut) {
-+        setProgress(0);
-+        setError("This page stopped waiting. The fal request was not submitted again.");
-+        return;
-+      }
-+      throw error;
 +    } finally {
 +      previewLock.current = false;
        setBusy(false);
@@ -2431,7 +2303,6 @@ index b7bfc58..6bb932c 100644
 -      setError(data.message || t(lang, "creditsEmpty"));
 -      track("generate_failed", { styleId: chosen.id });
 -      return;
-+      setFalWaitStarted(null);
      }
 -    const out = await res.blob();
 -    const reason = res.headers.get("x-demo-reason") || "";
@@ -2456,7 +2327,7 @@ index b7bfc58..6bb932c 100644
    }
  
    function pickShade(id: string) {
-@@ -421,7 +611,7 @@ export function TryOnApp({
+@@ -421,7 +576,7 @@ export function TryOnApp({
      const url = URL.createObjectURL(blob);
      const anchor = document.createElement("a");
      anchor.href = url;
@@ -2465,7 +2336,7 @@ index b7bfc58..6bb932c 100644
      document.body.appendChild(anchor);
      anchor.click();
      anchor.remove();
-@@ -476,7 +666,27 @@ export function TryOnApp({
+@@ -476,7 +631,27 @@ export function TryOnApp({
        </div>
  
        <section ref={frameRef} className="mt-4 overflow-hidden rounded-[28px] bg-[#14110e] shadow-lg" aria-label="Photo">
@@ -2494,20 +2365,7 @@ index b7bfc58..6bb932c 100644
            <div>
              <BeforeAfter before={active.before} after={active.after} beforeLabel={t(lang, "before")} afterLabel={t(lang, "after")} />
              {active.demo && <p className="bg-[#241c16] px-4 py-3 text-center text-sm leading-6 text-white" role="status">{t(lang, active.tool === "nails" ? "demoNailBanner" : "demoStyleBanner")}</p>}
-@@ -528,8 +738,11 @@ export function TryOnApp({
-                 <div className="w-full max-w-xs">
-                   <p className="font-serif text-3xl">{t(lang, "styling")}</p>
-                   <p className="mt-1 text-sm">{pendingName}</p>
-+                  {falWaitStarted != null && (
-+                    <p className="mt-2 text-sm">{falWaitingLabel(falElapsed, falWaitSeconds)}</p>
-+                  )}
-                   <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/25">
--                    <div className="h-full bg-white" style={{ width: `${progress}%` }} />
-+                    <div className="h-full bg-white" style={{ width: `${shownProgress}%` }} />
-                   </div>
-                 </div>
-               </div>
-@@ -571,6 +784,47 @@ export function TryOnApp({
+@@ -571,6 +746,47 @@ export function TryOnApp({
        {showResult && active && (
          <div className="mt-4 grid gap-2">
            <h3 className="text-center font-serif text-2xl">{active.styleName}</h3>
@@ -2555,7 +2413,7 @@ index b7bfc58..6bb932c 100644
            <p className="text-center text-sm text-muted">{t(lang, active.tool === "brows" ? "browDisclaimer" : active.tool === "beard" ? "beardDisclaimer" : active.tool === "nails" ? "nailDisclaimer" : "disclaimer")}</p>
            <button className="btn" type="button" onClick={() => void downloadLook()}>{t(lang, "downloadLook")}</button>
            <button className="btn" type="button" onClick={() => void book()}>{t(lang, "bookLook")}</button>
-@@ -581,6 +835,128 @@ export function TryOnApp({
+@@ -581,6 +797,128 @@ export function TryOnApp({
        <section ref={gridRef} className="mt-6" aria-label={tool === "style" ? t(lang, "styles") : tool === "colour" ? t(lang, "shades") : tool === "brows" ? t(lang, "brows") : tool === "beard" ? t(lang, "beards") : t(lang, "nails")}>
          {tool === "style" && (
            <>
@@ -2684,7 +2542,7 @@ index b7bfc58..6bb932c 100644
              <div className="mb-3 inline-flex flex-wrap gap-1 rounded-full bg-[#241c16] p-1" role="group" aria-label="Style audience">
                {config.showWomen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "women" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "women"} onClick={() => chooseGender("women")}>{t(lang, "women")}</button>}
                {config.showMen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "men" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
-@@ -593,7 +969,7 @@ export function TryOnApp({
+@@ -593,7 +931,7 @@ export function TryOnApp({
                    type="button"
                    aria-pressed={style.id === styleId}
                    className={`overflow-hidden rounded-2xl border bg-white text-left ${style.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
@@ -2693,7 +2551,7 @@ index b7bfc58..6bb932c 100644
                  >
                    <StyleCard id={style.id} name={style.name} />
                    <span className="block px-2 py-2 text-center text-sm font-medium">{style.name}</span>
-@@ -623,7 +999,7 @@ export function TryOnApp({
+@@ -623,7 +961,7 @@ export function TryOnApp({
          {tool === "brows" && (
            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
              {config.brows.map((brow) => (
@@ -2702,7 +2560,7 @@ index b7bfc58..6bb932c 100644
                  <StyleCard id={brow.id} name={brow.name} folder="brows" />
                  <span className="block px-2 py-2 text-center text-sm font-medium">{brow.name}</span>
                </button>
-@@ -634,7 +1010,7 @@ export function TryOnApp({
+@@ -634,7 +972,7 @@ export function TryOnApp({
          {tool === "beard" && (
            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
              {config.beards.map((beard) => (
@@ -2711,7 +2569,7 @@ index b7bfc58..6bb932c 100644
                  <StyleCard id={beard.id} name={beard.name} folder="beards" />
                  <span className="block px-2 py-2 text-center text-sm font-medium">{beard.name}</span>
                </button>
-@@ -645,7 +1021,7 @@ export function TryOnApp({
+@@ -645,7 +983,7 @@ export function TryOnApp({
          {tool === "nails" && (
            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
              {config.nails.map((nail) => (
@@ -3451,7 +3309,7 @@ index 0000000..f28f0b8
 +  };
 +}
 diff --git a/src/lib/ai/cost-report.ts b/src/lib/ai/cost-report.ts
-index d1e70fa..afa6c95 100644
+index d1e70fa..7c8563d 100644
 --- a/src/lib/ai/cost-report.ts
 +++ b/src/lib/ai/cost-report.ts
 @@ -1,5 +1,5 @@
@@ -3461,15 +3319,7 @@ index d1e70fa..afa6c95 100644
  import { parseTier, projectSalonMonth, tierRequest, type ImageProviderName } from "@/lib/ai/tiers";
  import { prisma } from "@/lib/prisma";
  
-@@ -24,6 +24,7 @@ export type CostCallRow = {
-   billed: boolean;
-   status: string;
-   costSource: string;
-+  providerRequestId: string;
- };
- 
- function inr(paise: number) {
-@@ -40,7 +41,7 @@ function startOfMonth(now: Date) {
+@@ -40,7 +40,7 @@ function startOfMonth(now: Date) {
  
  async function chargedSince(from: Date) {
    const agg = await prisma.aiCall.aggregate({
@@ -3478,7 +3328,7 @@ index d1e70fa..afa6c95 100644
      _sum: { estimatePaise: true },
    });
    return inr(agg._sum.estimatePaise || 0);
-@@ -56,7 +57,7 @@ export async function costReport(args: { since?: Date; imagesPerMonth?: number;
+@@ -56,7 +56,7 @@ export async function costReport(args: { since?: Date; imagesPerMonth?: number;
      chargedSince(since),
      chargedSince(startOfDay(now)),
      chargedSince(startOfMonth(now)),
@@ -3487,14 +3337,6 @@ index d1e70fa..afa6c95 100644
    ]);
    const ids = [...new Set(recent.map((row) => row.tenantId).filter((id) => id.length > 8))];
    const tenants = ids.length
-@@ -103,6 +104,7 @@ export async function costReport(args: { since?: Date; imagesPerMonth?: number;
-     billed: row.billed,
-     status: row.status,
-     costSource: row.costSource,
-+    providerRequestId: row.providerRequestId,
-   }));
-   return {
-     capInr: spendCapInr(),
 diff --git a/src/lib/ai/credentials.ts b/src/lib/ai/credentials.ts
 index e1a5dd8..e828807 100644
 --- a/src/lib/ai/credentials.ts
@@ -3954,7 +3796,7 @@ index 0000000..cd2e1fd
 +  return caps?.outputUsd[quality]?.[size] ?? null;
 +}
 diff --git a/src/lib/ai/errors.ts b/src/lib/ai/errors.ts
-index 3c73025..bdef560 100644
+index 3c73025..815befb 100644
 --- a/src/lib/ai/errors.ts
 +++ b/src/lib/ai/errors.ts
 @@ -4,8 +4,8 @@ import type { UsageNumbers } from "@/lib/ai/tiers";
@@ -3968,7 +3810,7 @@ index 3c73025..bdef560 100644
      this.name = "UnknownModelError";
    }
  }
-@@ -20,14 +20,39 @@ export class SpendCapError extends Error {
+@@ -20,14 +20,37 @@ export class SpendCapError extends Error {
    }
  }
  
@@ -3978,12 +3820,10 @@ index 3c73025..bdef560 100644
 + */
 +export class UncertainBillingError extends Error {
 +  readonly code = "UNCERTAIN_BILLING" as const;
-+  readonly requestId: string;
 +
-+  constructor(message = "The provider outcome is unknown. No second generation was started.", requestId = "") {
++  constructor(message = "The provider outcome is unknown. No second generation was started.") {
 +    super(message);
 +    this.name = "UncertainBillingError";
-+    this.requestId = requestId;
 +  }
 +}
 +
@@ -4254,15 +4094,15 @@ index 0000000..ce6d3df
 +}
 diff --git a/src/lib/ai/fal-reference.ts b/src/lib/ai/fal-reference.ts
 new file mode 100644
-index 0000000..30ac746
+index 0000000..7fb2854
 --- /dev/null
 +++ b/src/lib/ai/fal-reference.ts
-@@ -0,0 +1,276 @@
+@@ -0,0 +1,220 @@
 +import sharp from "sharp";
 +import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
 +import { buildFalEditBody, falModel } from "@/lib/ai/fal-models";
 +import type { EditSize } from "@/lib/ai/edit-request";
-+import { falTimeoutMs } from "@/lib/ai/fal-wait";
++import { numberEnv } from "@/lib/env";
 +
 +const QUEUE_ORIGIN = "https://queue.fal.run";
 +const REST_ORIGIN = "https://rest.fal.ai";
@@ -4297,44 +4137,6 @@ index 0000000..30ac746
 +}
 +
 +type FetchImpl = typeof fetch;
-+
-+const STATUS_SLICE_MS = 60_000;
-+const DOWNLOAD_SLICE_MS = 300_000;
-+
-+function deadlineMessage(requestId: string) {
-+  return `The fal edit did not finish before the deadline. The queue request was not submitted again. fal request ${requestId}.`;
-+}
-+
-+/**
-+ * One HTTP call to a URL we already have. A short abort retries that same URL.
-+ * This never submits a new queue request.
-+ */
-+async function fetchOk(args: {
-+  fetchImpl: FetchImpl;
-+  url: string;
-+  init: RequestInit;
-+  deadline: number;
-+  now: () => number;
-+  sleep: (ms: number) => Promise<void>;
-+  sliceMs: number;
-+}) {
-+  while (args.now() < args.deadline) {
-+    const remaining = Math.max(1, args.deadline - args.now());
-+    try {
-+      const response = await args.fetchImpl(args.url, {
-+        ...args.init,
-+        signal: AbortSignal.timeout(Math.min(remaining, args.sliceMs)),
-+      });
-+      if (response.ok) return response;
-+    } catch {
-+      // The same URL is tried again until the deadline. The queue submit is not repeated.
-+    }
-+    if (args.now() >= args.deadline) break;
-+    const pause = Math.min(2_000, Math.max(0, args.deadline - args.now()));
-+    if (pause > 0) await args.sleep(pause);
-+  }
-+  return null;
-+}
 +
 +async function uploadOne(args: {
 +  fetchImpl: FetchImpl;
@@ -4382,9 +4184,8 @@ index 0000000..30ac746
 +}
 +
 +/**
-+ * One queue submit, then poll that request id until FAL_TIMEOUT_MS (default 1 hour).
-+ * X-Fal-No-Retry is always sent. A timeout after the submit is an unknown bill.
-+ * The submit is not repeated. Status, result, and image downloads retry the same URLs.
++ * One queue submit, then poll. X-Fal-No-Retry is always sent.
++ * A timeout after the submit is an unknown bill. The submit is not repeated.
 + * Input CDN files are not deleted: the payloads API leaves input files in place. The upload sets a 1 hour expiry instead.
 + */
 +export async function postFalReferenceEdit(args: {
@@ -4399,18 +4200,19 @@ index 0000000..30ac746
 +  now?: () => number;
 +  deadlineMs?: number;
 +  sleep?: (ms: number) => Promise<void>;
-+  onRequestId?: (requestId: string) => Promise<void> | void;
 +}) {
 +  const row = falModel(args.endpointId);
 +  if (!row) throw new UnknownModelError(`${args.endpointId} is not a configured fal edit. No other model was called.`);
 +  const fetchImpl = args.fetchImpl ?? fetch;
 +  const now = args.now ?? Date.now;
-+  const deadlineMs = args.deadlineMs ?? falTimeoutMs();
++  const deadlineMs = args.deadlineMs ?? numberEnv("FAL_QUEUE_DEADLINE_MS", 180_000);
 +  const sleep = args.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
 +  const selfieUrl = await uploadOne({ fetchImpl, apiKey: args.apiKey, bytes: args.selfiePng, fileName: "selfie.png", contentType: "image/png" });
 +  const referenceUrl = await uploadOne({ fetchImpl, apiKey: args.apiKey, bytes: args.referenceJpeg, fileName: "style-reference.jpg", contentType: "image/jpeg" });
 +  const body = buildFalEditBody(row.id, { prompt: args.prompt, selfieUrl, referenceUrl, size: args.size });
 +  if (!body) throw new UnknownModelError(`${row.id} is not a configured fal edit. No other model was called.`);
++  const started = now();
++  const deadline = started + deadlineMs;
 +  let submitted = false;
 +  let requestId = "";
 +  let statusUrl = "";
@@ -4444,32 +4246,25 @@ index 0000000..30ac746
 +    if (!sameOrigin(statusUrl, QUEUE_ORIGIN)) statusUrl = expected;
 +  } catch (error) {
 +    if (error instanceof UnbilledProviderError || error instanceof UncertainBillingError || error instanceof UnknownModelError) throw error;
-+    if (submitted) throw new UncertainBillingError("The fal queue request left this server and the reply was lost. It was not submitted again.", requestId);
-+    throw new UncertainBillingError("The fal queue request timed out. It was not submitted again.", requestId);
++    if (submitted) throw new UncertainBillingError("The fal queue request left this server and the reply was lost. It was not submitted again.");
++    throw new UncertainBillingError("The fal queue request timed out. It was not submitted again.");
 +  }
 +
-+  await Promise.resolve(args.onRequestId?.(requestId)).catch(() => undefined);
-+  const deadline = now() + deadlineMs;
 +  let completed = false;
 +  let resultUrl = `${QUEUE_ORIGIN}/${row.id}/requests/${requestId}`;
 +  while (now() < deadline) {
-+    const remaining = Math.max(1, deadline - now());
 +    let statusResponse: Response;
 +    try {
 +      statusResponse = await fetchImpl(statusUrl, {
 +        headers: { Authorization: `Key ${args.apiKey}` },
-+        signal: AbortSignal.timeout(Math.min(remaining, STATUS_SLICE_MS)),
++        signal: AbortSignal.timeout(15_000),
 +      });
 +    } catch {
-+      if (now() >= deadline) break;
-+      const pause = Math.min(2_000, Math.max(0, deadline - now()));
-+      if (pause > 0) await sleep(pause);
++      await sleep(2_000);
 +      continue;
 +    }
 +    if (!statusResponse.ok) {
-+      if (now() >= deadline) break;
-+      const pause = Math.min(2_000, Math.max(0, deadline - now()));
-+      if (pause > 0) await sleep(pause);
++      await sleep(2_000);
 +      continue;
 +    }
 +    const status = (await statusResponse.json()) as { status?: string; response_url?: string; error?: string };
@@ -4483,25 +4278,20 @@ index 0000000..30ac746
 +      }
 +      break;
 +    }
-+    if (now() >= deadline) break;
-+    const pause = Math.min(2_000, Math.max(0, deadline - now()));
-+    if (pause > 0) await sleep(pause);
++    await sleep(2_000);
 +  }
 +  if (!completed) {
-+    throw new UncertainBillingError(deadlineMessage(requestId), requestId);
++    throw new UncertainBillingError("The fal edit did not finish before the deadline. The queue request was not submitted again.");
 +  }
 +
-+  const resultResponse = await fetchOk({
-+    fetchImpl,
-+    url: resultUrl,
-+    init: { headers: { Authorization: `Key ${args.apiKey}` } },
-+    deadline,
-+    now,
-+    sleep,
-+    sliceMs: DOWNLOAD_SLICE_MS,
++  const resultResponse = await fetchImpl(resultUrl, {
++    headers: { Authorization: `Key ${args.apiKey}` },
++    signal: AbortSignal.timeout(20_000),
++  }).catch(() => {
++    throw new UncertainBillingError("fal marked the edit complete and the result could not be read. It was not submitted again.");
 +  });
-+  if (!resultResponse) {
-+    throw new UncertainBillingError(`fal marked the edit complete and the result could not be read. It was not submitted again. fal request ${requestId}.`, requestId);
++  if (!resultResponse.ok) {
++    throw new UncertainBillingError("fal marked the edit complete and the result was refused. It was not submitted again.");
 +  }
 +  const result = (await resultResponse.json()) as {
 +    images?: { url?: string }[];
@@ -4511,17 +4301,11 @@ index 0000000..30ac746
 +  if (!imageUrl.startsWith("https://")) {
 +    throw new BilledProviderError(args.estimateUsd, undefined, "fal finished without an image URL. The call was not retried.");
 +  }
-+  const imageResponse = await fetchOk({
-+    fetchImpl,
-+    url: imageUrl,
-+    init: {},
-+    deadline,
-+    now,
-+    sleep,
-+    sliceMs: DOWNLOAD_SLICE_MS,
++  const imageResponse = await fetchImpl(imageUrl, { signal: AbortSignal.timeout(30_000) }).catch(() => {
++    throw new UncertainBillingError("The fal image URL could not be downloaded. The edit was not submitted again.");
 +  });
-+  if (!imageResponse) {
-+    throw new UncertainBillingError(`The fal image URL could not be downloaded. The edit was not submitted again. fal request ${requestId}.`, requestId);
++  if (!imageResponse.ok) {
++    throw new UncertainBillingError("The fal image URL was refused. The edit was not submitted again.");
 +  }
 +  const bytes = Buffer.from(await imageResponse.arrayBuffer());
 +  if (await imageLooksBlocked(bytes, result.has_nsfw_concepts)) {
@@ -4863,361 +4647,6 @@ index 11d68e8..e9e879b 100644
      const payload = (await response.json()) as {
        data?: { b64_json?: string }[];
        usage?: {
-diff --git a/src/lib/ai/openrouter-models.ts b/src/lib/ai/openrouter-models.ts
-new file mode 100644
-index 0000000..16ff638
---- /dev/null
-+++ b/src/lib/ai/openrouter-models.ts
-@@ -0,0 +1,207 @@
-+import { benchmarkRunCapInr, estimateImageInputTokens, mediumOutputTokenAllowance } from "@/lib/ai/benchmark";
-+import { editSizeForAspect, type EditSize } from "@/lib/ai/edit-request";
-+import { bufferedInr, exactInr } from "@/lib/ai/tiers";
-+
-+/**
-+ * OpenRouter chat models that accept image input and return image and text.
-+ * Checked 4 Oct 2026 against GET /api/v1/models?output_modalities=image and each model page.
-+ * Match the full id. A prefix is not a model.
-+ *
-+ * These rows are called with POST /api/v1/chat/completions and modalities ["image","text"].
-+ * Models whose output is image only (gpt-image-2, the 2.5 image ids, Flux, Seedream) are on the Image API
-+ * and are not in this list. openrouter/auto and openrouter/auto-beta are routers and are not in this list.
-+ * Preview slugs of the same Gemini image models are listed on the catalog and are not in this list.
-+ * OpenRouter does not list fal-ai endpoints. It does not proxy fal.ai.
-+ */
-+const OUTPUT_SIZES = ["1024x1024", "1024x1536", "1536x1024"] as const;
-+
-+export type OpenRouterPrice = {
-+  /** USD per million tokens. */
-+  imageIn: number;
-+  textIn: number;
-+  imageOut: number;
-+  textOut: number;
-+};
-+
-+export type OpenRouterModelRow = {
-+  id: string;
-+  label: string;
-+  /** Documented maximum reference images. Two are sent. */
-+  maxInputs: number;
-+  /** google uses the 1K token count. openai-edit uses the direct-edit token allowance. */
-+  quote: "gemini-1k" | "openai-edit";
-+  /** Measured chat high from the 11 Sep 2026 OpenRouter blog, in USD. 0 means the page did not publish one. */
-+  measuredChatHighUsd: number;
-+  price: OpenRouterPrice;
-+};
-+
-+const GEMINI_IMAGE_TOKENS = 1120;
-+const TEXT_IN = 400;
-+const TEXT_OUT = 200;
-+
-+export const OPENROUTER_COMPARISON_MODELS: readonly OpenRouterModelRow[] = [
-+  {
-+    id: "google/gemini-2.5-flash-image",
-+    label: "google/gemini-2.5-flash-image",
-+    maxInputs: 3,
-+    quote: "gemini-1k",
-+    measuredChatHighUsd: 0,
-+    price: { imageIn: 0.3, textIn: 0.3, imageOut: 30, textOut: 2.5 },
-+  },
-+  {
-+    id: "google/gemini-3.1-flash-lite-image",
-+    label: "google/gemini-3.1-flash-lite-image",
-+    maxInputs: 14,
-+    quote: "gemini-1k",
-+    measuredChatHighUsd: 0,
-+    price: { imageIn: 0.25, textIn: 0.25, imageOut: 30, textOut: 1.5 },
-+  },
-+  {
-+    id: "google/gemini-3.1-flash-image",
-+    label: "google/gemini-3.1-flash-image",
-+    maxInputs: 14,
-+    quote: "gemini-1k",
-+    measuredChatHighUsd: 0,
-+    price: { imageIn: 0.5, textIn: 0.5, imageOut: 60, textOut: 3 },
-+  },
-+  {
-+    id: "google/gemini-3-pro-image",
-+    label: "google/gemini-3-pro-image",
-+    maxInputs: 14,
-+    quote: "gemini-1k",
-+    measuredChatHighUsd: 0,
-+    price: { imageIn: 2, textIn: 2, imageOut: 120, textOut: 12 },
-+  },
-+  {
-+    id: "openai/gpt-5-image-mini",
-+    label: "openai/gpt-5-image-mini",
-+    maxInputs: 16,
-+    quote: "openai-edit",
-+    measuredChatHighUsd: 0,
-+    price: { imageIn: 2.5, textIn: 2.5, imageOut: 8, textOut: 2 },
-+  },
-+  {
-+    id: "openai/gpt-5.4-image-2",
-+    label: "openai/gpt-5.4-image-2",
-+    maxInputs: 16,
-+    quote: "openai-edit",
-+    measuredChatHighUsd: 0,
-+    price: { imageIn: 8, textIn: 8, imageOut: 30, textOut: 15 },
-+  },
-+  {
-+    id: "openai/gpt-5-image",
-+    label: "openai/gpt-5-image",
-+    maxInputs: 16,
-+    quote: "openai-edit",
-+    measuredChatHighUsd: 0.28,
-+    price: { imageIn: 10, textIn: 10, imageOut: 40, textOut: 10 },
-+  },
-+];
-+
-+export function openRouterModel(id: string) {
-+  return OPENROUTER_COMPARISON_MODELS.find((row) => row.id === id) ?? null;
-+}
-+
-+export function openRouterAspect(width: number, height: number) {
-+  const size = editSizeForAspect(width, height, OUTPUT_SIZES);
-+  if (size === "1024x1536") return "2:3" as const;
-+  if (size === "1536x1024") return "3:2" as const;
-+  return "1:1" as const;
-+}
-+
-+function portraitSize(width: number, height: number): EditSize {
-+  return editSizeForAspect(width, height, OUTPUT_SIZES);
-+}
-+
-+function usdFromRates(price: OpenRouterPrice, counts: { imageIn: number; textIn: number; imageOut: number; textOut: number }) {
-+  return (
-+    counts.imageIn * price.imageIn +
-+    counts.textIn * price.textIn +
-+    counts.imageOut * price.imageOut +
-+    counts.textOut * price.textOut
-+  ) / 1_000_000;
-+}
-+
-+export function quoteOpenRouterModel(id: string, width: number, height: number, reference = { width: 512, height: 512 }) {
-+  const row = openRouterModel(id);
-+  if (!row) return { ok: false as const, message: `${id} is not a configured comparison model. No other model was substituted.` };
-+  if (row.maxInputs < 2) {
-+    return { ok: false as const, message: `${row.id} does not accept two images. The request was not sent.` };
-+  }
-+  const aspect = openRouterAspect(width, height);
-+  const size = portraitSize(width, height);
-+  let detail = "";
-+  let estimateUsd = 0;
-+  if (row.quote === "gemini-1k") {
-+    estimateUsd = usdFromRates(row.price, {
-+      imageIn: GEMINI_IMAGE_TOKENS * 2,
-+      textIn: TEXT_IN,
-+      imageOut: GEMINI_IMAGE_TOKENS,
-+      textOut: TEXT_OUT,
-+    });
-+    detail = `Model page rates: image input $${row.price.imageIn}/1M, text input $${row.price.textIn}/1M, image output $${row.price.imageOut}/1M, text output $${row.price.textOut}/1M. The 11 Sep 2026 OpenRouter measurements divide into 1,120 tokens for a 1K image. This quote uses 1,120 tokens for each of the two input images, 1,120 for one output image, 400 text-input tokens, and 200 text-output tokens.`;
-+  } else {
-+    const imageIn = estimateImageInputTokens(Math.max(1, width) * Math.max(1, height), Math.max(1, reference.width) * Math.max(1, reference.height));
-+    const imageOut = mediumOutputTokenAllowance(size);
-+    estimateUsd = usdFromRates(row.price, { imageIn, textIn: TEXT_IN, imageOut, textOut: TEXT_OUT });
-+    detail = `Model page rates: image input $${row.price.imageIn}/1M, text input $${row.price.textIn}/1M, image output $${row.price.imageOut}/1M, text output $${row.price.textOut}/1M. The chat path does not publish an image-token count. Image-input tokens use the 1536×1024 calibration with a 15% margin. Output tokens use the medium ${size} guide allowance. Text allowances are 400 in and 200 out.`;
-+    if (row.measuredChatHighUsd > 0) {
-+      estimateUsd = Math.max(estimateUsd, row.measuredChatHighUsd);
-+      detail += ` The 11 Sep 2026 blog measured $${row.measuredChatHighUsd.toFixed(2)} on a text-and-image chat for this id. That run did not say two reference images were sent. The quote uses the higher of that figure and the token allowance.`;
-+    }
-+  }
-+  const estimateInr = bufferedInr(estimateUsd);
-+  const capInr = benchmarkRunCapInr();
-+  if (estimateInr > capInr) {
-+    return {
-+      ok: false as const,
-+      message: `This comparison is about ₹${estimateInr.toFixed(2)}, above the ₹${capInr.toFixed(0)} run cap. It was not sent.`,
-+    };
-+  }
-+  return {
-+    ok: true as const,
-+    provider: "openrouter" as const,
-+    model: row.id,
-+    quality: "chat",
-+    size: aspect,
-+    outputFormat: "png" as const,
-+    inputFidelity: null,
-+    n: 1 as const,
-+    estimateUsd,
-+    estimateInr,
-+    capInr,
-+    outputTokens: 0,
-+    outputUsd: estimateUsd,
-+    imageInputTokens: 0,
-+    imageInputUsd: 0,
-+    textInputTokens: TEXT_IN,
-+    textInputUsd: 0,
-+    inputSizeMode: "native" as const,
-+    rangeLowInr: exactInr(estimateUsd),
-+    rangeHighInr: exactInr(estimateUsd),
-+    note: `Estimate about ₹${exactInr(estimateUsd).toFixed(2)} at FX 96 before the 8% buffer. The ₹${capInr.toFixed(0)} cap uses ₹${estimateInr.toFixed(2)} after that buffer. ${detail} A finished call uses usage.cost when OpenRouter returns it. Not an invoice. OpenRouter does not proxy fal.ai.`,
-+  };
-+}
-+
-+/** One chat completion. models has a single id. allow_fallbacks is false. route is omitted. */
-+export function buildOpenRouterChatBody(id: string, args: { prompt: string; selfieDataUrl: string; referenceDataUrl: string; aspectRatio: string }) {
-+  const row = openRouterModel(id);
-+  if (!row) return null;
-+  return {
-+    model: row.id,
-+    models: [row.id],
-+    modalities: ["image", "text"],
-+    provider: { allow_fallbacks: false },
-+    image_config: { aspect_ratio: args.aspectRatio },
-+    messages: [
-+      {
-+        role: "user" as const,
-+        content: [
-+          { type: "text" as const, text: args.prompt },
-+          { type: "image_url" as const, image_url: { url: args.selfieDataUrl } },
-+          { type: "image_url" as const, image_url: { url: args.referenceDataUrl } },
-+        ],
-+      },
-+    ],
-+  };
-+}
-diff --git a/src/lib/ai/openrouter-reference.ts b/src/lib/ai/openrouter-reference.ts
-new file mode 100644
-index 0000000..62499e2
---- /dev/null
-+++ b/src/lib/ai/openrouter-reference.ts
-@@ -0,0 +1,136 @@
-+import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError, isUnknownModelResponse } from "@/lib/ai/errors";
-+import { buildOpenRouterChatBody, openRouterAspect, openRouterModel } from "@/lib/ai/openrouter-models";
-+import type { UsageNumbers } from "@/lib/ai/tiers";
-+import { numberEnv } from "@/lib/env";
-+
-+const CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
-+
-+export function openRouterHeaders(apiKey: string): Record<string, string> {
-+  return {
-+    Authorization: `Bearer ${apiKey}`,
-+    "Content-Type": "application/json",
-+  };
-+}
-+
-+function scrub(text: string, apiKey: string) {
-+  const hidden = apiKey ? text.split(apiKey).join("[redacted]") : text;
-+  return hidden
-+    .replace(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g, "data:image/[redacted]")
-+    .replace(/sk-(?:or-)?[A-Za-z0-9_\-]{8,}/g, "sk-[redacted]")
-+    .replace(/Bearer\s+[^\s"]+/gi, "Bearer [redacted]")
-+    .slice(0, 400);
-+}
-+
-+function dataUrl(bytes: Buffer, mime: string) {
-+  return `data:${mime};base64,${bytes.toString("base64")}`;
-+}
-+
-+function reportedCost(usage: { cost?: unknown } | undefined): number | undefined {
-+  return typeof usage?.cost === "number" && Number.isFinite(usage.cost) && usage.cost >= 0 ? usage.cost : undefined;
-+}
-+
-+function usageFrom(payload: { usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost?: number } }): UsageNumbers | undefined {
-+  const usage = payload.usage;
-+  if (!usage) return undefined;
-+  const cost = reportedCost(usage);
-+  return {
-+    inputTokens: usage.prompt_tokens,
-+    outputTokens: usage.completion_tokens,
-+    totalTokens: usage.total_tokens,
-+    ...(cost === undefined ? {} : { reportedCostUsd: cost }),
-+  };
-+}
-+
-+/** Official assistant image field: image_url.url is a data URL. Remote URLs are not fetched. */
-+export function openRouterImageBytes(message: { images?: unknown } | undefined): Buffer | null {
-+  const images = message?.images;
-+  if (!Array.isArray(images) || images.length === 0) return null;
-+  const first = images[0];
-+  if (!first || typeof first !== "object") return null;
-+  const url = (first as { image_url?: { url?: unknown } }).image_url?.url;
-+  if (typeof url !== "string") return null;
-+  const match = /^data:image\/[a-zA-Z0-9.+-]+;base64,([A-Za-z0-9+/=]+)$/.exec(url);
-+  if (!match) return null;
-+  const bytes = Buffer.from(match[1], "base64");
-+  return bytes.length > 0 ? bytes : null;
-+}
-+
-+type FetchImpl = typeof fetch;
-+
-+/**
-+ * One chat completion. No retry. A timeout or a dropped connection is an unknown bill.
-+ * A different model id in the response is not kept.
-+ */
-+export async function postOpenRouterReferenceEdit(args: {
-+  apiKey: string;
-+  modelId: string;
-+  prompt: string;
-+  selfiePng: Buffer;
-+  referenceJpeg: Buffer;
-+  width: number;
-+  height: number;
-+  estimateUsd: number;
-+  fetchImpl?: FetchImpl;
-+  deadlineMs?: number;
-+}) {
-+  const row = openRouterModel(args.modelId);
-+  if (!row) throw new UnknownModelError(`${args.modelId} is not a configured OpenRouter comparison model. No other model was called.`);
-+  const aspect = openRouterAspect(args.width, args.height);
-+  const body = buildOpenRouterChatBody(row.id, {
-+    prompt: args.prompt,
-+    selfieDataUrl: dataUrl(args.selfiePng, "image/png"),
-+    referenceDataUrl: dataUrl(args.referenceJpeg, "image/jpeg"),
-+    aspectRatio: aspect,
-+  });
-+  if (!body) throw new UnknownModelError(`${row.id} is not a configured OpenRouter comparison model. No other model was called.`);
-+  const fetchImpl = args.fetchImpl ?? fetch;
-+  const deadlineMs = args.deadlineMs ?? numberEnv("OPENROUTER_DEADLINE_MS", 180_000);
-+  let response: Response;
-+  try {
-+    response = await fetchImpl(CHAT_URL, {
-+      method: "POST",
-+      headers: openRouterHeaders(args.apiKey),
-+      body: JSON.stringify(body),
-+      signal: AbortSignal.timeout(Math.max(1, deadlineMs)),
-+    });
-+  } catch {
-+    throw new UncertainBillingError("OpenRouter did not answer. The call was not sent again.");
-+  }
-+  const raw = await response.text().catch(() => "");
-+  if (response.status === 401 || response.status === 403) {
-+    throw new UnbilledProviderError("OpenRouter rejected the key. No image was returned.");
-+  }
-+  if (isUnknownModelResponse(response.status, scrub(raw, args.apiKey))) {
-+    throw new UnknownModelError(`${row.id} is not available on this key. No other model was called.`);
-+  }
-+  if (response.status >= 500) {
-+    throw new UncertainBillingError("OpenRouter returned an error after the request was sent. The call was not sent again.");
-+  }
-+  if (!response.ok) {
-+    throw new UnbilledProviderError(scrub(raw, args.apiKey) || "OpenRouter refused the request before an image was returned.");
-+  }
-+  let payload: {
-+    model?: string;
-+    choices?: { message?: { images?: unknown } }[];
-+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost?: number };
-+  };
-+  try {
-+    payload = JSON.parse(raw) as typeof payload;
-+  } catch {
-+    throw new UncertainBillingError("OpenRouter returned a response that could not be read. The call was not sent again.");
-+  }
-+  const usage = usageFrom(payload);
-+  const cost = usage?.reportedCostUsd ?? args.estimateUsd;
-+  if (typeof payload.model === "string" && payload.model !== row.id) {
-+    throw new BilledProviderError(
-+      cost,
-+      usage,
-+      `OpenRouter returned ${payload.model} instead of ${row.id}. The image was not kept. The call was not retried.`,
-+    );
-+  }
-+  const image = openRouterImageBytes(payload.choices?.[0]?.message);
-+  if (!image) {
-+    throw new BilledProviderError(cost, usage, "OpenRouter did not return a base64 image in message.images. The call was not retried.");
-+  }
-+  return { image, usage, model: row.id, costFromUsage: usage?.reportedCostUsd != null };
-+}
 diff --git a/src/lib/ai/reference-mode.ts b/src/lib/ai/reference-mode.ts
 new file mode 100644
 index 0000000..776a70d
@@ -5252,10 +4681,10 @@ index 0000000..776a70d
 +}
 diff --git a/src/lib/ai/reference-run.ts b/src/lib/ai/reference-run.ts
 new file mode 100644
-index 0000000..945c62a
+index 0000000..8de30dd
 --- /dev/null
 +++ b/src/lib/ai/reference-run.ts
-@@ -0,0 +1,627 @@
+@@ -0,0 +1,607 @@
 +import { randomUUID } from "node:crypto";
 +import { rm } from "node:fs/promises";
 +import { NextResponse } from "next/server";
@@ -5342,7 +4771,6 @@ index 0000000..945c62a
 +  outcome: "quote" | "key" | "spend-cap" | "uncertain" | "provider";
 +  id?: string;
 +  callId?: string;
-+  providerRequestId?: string;
 +};
 +
 +/**
@@ -5508,7 +4936,6 @@ index 0000000..945c62a
 +    },
 +  });
 +
-+  let falRequestId = "";
 +  try {
 +    const started = Date.now();
 +    let usage: ReturnType<typeof usageFrom>;
@@ -5534,11 +4961,6 @@ index 0000000..945c62a
 +        referenceJpeg: reference,
 +        size: quote.size as EditSize,
 +        estimateUsd: quote.estimateUsd,
-+        onRequestId: async (requestId) => {
-+          falRequestId = requestId;
-+          await prisma.aiCall.updateMany({ where: { id: gate.id }, data: { providerRequestId: requestId } });
-+          await prisma.benchmarkRun.updateMany({ where: { id }, data: { providerRequestId: requestId } });
-+        },
 +      });
 +      usage = undefined;
 +      providerResponse = fal.image;
@@ -5676,7 +5098,6 @@ index 0000000..945c62a
 +    const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
 +    let message = `Unvalidated model output. The raw provider image is the result. One provider call. No mask, no face paste, no retry.${clothingNote}`;
 +    if (costIsEstimate && provider === "fal") message += " The shown cost is the conservative estimate. fal did not report usage.";
-+    if (provider === "fal" && falRequestId) message += ` fal request ${falRequestId}.`;
 +    if (provider === "openrouter" && costIsEstimate) message += " The shown cost is the estimate. OpenRouter did not return usage.cost.";
 +    if (provider === "openrouter" && !costIsEstimate) message += " The shown cost is usage.cost from OpenRouter.";
 +    if (rawDrift?.flagged) message += " Face may differ from your photo.";
@@ -5752,16 +5173,8 @@ index 0000000..945c62a
 +      await finalizePaidCall(gate.id, { model: quote.model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize: quote.size });
 +      await releasePaidCall(gate.id, "REFUNDED");
 +    }
-+    const storedRequestId = error instanceof UncertainBillingError && error.requestId ? error.requestId : falRequestId;
-+    const baseMessage = error instanceof Error ? error.message : "The reference edit did not finish.";
-+    const message = storedRequestId && !baseMessage.includes(storedRequestId) ? `${baseMessage} fal request ${storedRequestId}.` : baseMessage;
-+    if (storedRequestId) {
-+      await prisma.aiCall.updateMany({ where: { id: gate.id }, data: { providerRequestId: storedRequestId } });
-+    }
-+    await prisma.benchmarkRun.update({
-+      where: { id },
-+      data: { status: uncertain ? "UNCERTAIN" : "FAILED", message, ...(storedRequestId ? { providerRequestId: storedRequestId } : {}) },
-+    });
++    const message = error instanceof Error ? error.message : "The reference edit did not finish.";
++    await prisma.benchmarkRun.update({ where: { id }, data: { status: uncertain ? "UNCERTAIN" : "FAILED", message } });
 +    const httpStatus = uncertain ? 504 : unknown || error instanceof UnbilledProviderError ? 422 : 502;
 +    return {
 +      ok: false,
@@ -5771,7 +5184,6 @@ index 0000000..945c62a
 +      outcome: uncertain ? "uncertain" : "provider",
 +      id,
 +      callId: gate.id,
-+      providerRequestId: storedRequestId,
 +    };
 +  }
 +}
@@ -5851,10 +5263,7 @@ index 0000000..945c62a
 +        },
 +      });
 +    }
-+    return NextResponse.json(
-+      { error: executed.error, message: executed.message, id: executed.id, providerRequestId: executed.providerRequestId || "" },
-+      { status: executed.httpStatus },
-+    );
++    return NextResponse.json({ error: executed.error, message: executed.message, id: executed.id }, { status: executed.httpStatus });
 +  }
 +  const payload = tryOnReferencePayload(executed, args.revealCost);
 +  await prisma.tryOn.create({
@@ -7992,21 +7401,17 @@ index 0000000..f36d143
 +});
 diff --git a/tests/unit/fal-compare.test.ts b/tests/unit/fal-compare.test.ts
 new file mode 100644
-index 0000000..9f11aa6
+index 0000000..998d226
 --- /dev/null
 +++ b/tests/unit/fal-compare.test.ts
-@@ -0,0 +1,430 @@
-+import { readFileSync } from "node:fs";
-+import http from "node:http";
+@@ -0,0 +1,288 @@
 +import sharp from "sharp";
 +import { afterEach, describe, expect, it } from "vitest";
 +import { COMPARISON_MODELS, comparisonModel, quoteComparisonModel } from "@/lib/ai/compare-models";
 +import { resolveFalKey, resolveOpenAIKey } from "@/lib/ai/credentials";
 +import { BilledProviderError, UncertainBillingError } from "@/lib/ai/errors";
 +import { buildFalEditBody, falModel } from "@/lib/ai/fal-models";
-+import { falTimeoutMs, falWaitingLabel } from "@/lib/ai/fal-wait";
 +import { falSubmitHeaders, postFalReferenceEdit } from "@/lib/ai/fal-reference";
-+import { relaxHttpServerTimeouts } from "@/lib/http/server-timeout";
 +import { productionModelNotice } from "@/lib/ai/model-notices";
 +import { executeReferenceEdit } from "@/lib/ai/reference-run";
 +import { saveFalKey, savePlatformAi } from "@/lib/ai/settings-store";
@@ -8042,19 +7447,7 @@ index 0000000..9f11aa6
 +    });
 +    await prisma.aiCall.deleteMany();
 +    delete process.env.FAL_KEY;
-+    delete process.env.FAL_TIMEOUT_MS;
 +    delete process.env.FAL_QUEUE_DEADLINE_MS;
-+  });
-+
-+  it("waits one hour by default and labels the elapsed wait", () => {
-+    expect(falTimeoutMs()).toBe(3_600_000);
-+    expect(falWaitingLabel(12, 3600)).toBe("Still waiting. 12s elapsed. This can take up to 3600 seconds.");
-+    const generate = readFileSync("src/app/api/v1/tryon/generate/route.ts", "utf8");
-+    const benchmark = readFileSync("src/app/api/v1/super/ai/benchmark/route.ts", "utf8");
-+    const config = readFileSync("next.config.ts", "utf8");
-+    expect(generate).toContain("export const maxDuration = 3780");
-+    expect(benchmark).toContain("export const maxDuration = 3780");
-+    expect(config).toContain("proxyTimeout: 3_780_000");
 +  });
 +
 +  it("defaults to sunburst, keeps shutdown warnings, and refuses a prefix", () => {
@@ -8158,7 +7551,7 @@ index 0000000..9f11aa6
 +
 +  it("submits once with no retry and records an unknown bill on timeout", async () => {
 +    await saveFalKey({ apiKey: "fal-test-key-123456", enabled: true, remove: false }, "super");
-+    process.env.FAL_TIMEOUT_MS = "0";
++    process.env.FAL_QUEUE_DEADLINE_MS = "0";
 +    const submits: { url: string; retry: string }[] = [];
 +    globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
 +      const href = String(url);
@@ -8186,19 +7579,10 @@ index 0000000..9f11aa6
 +    expect(submits).toHaveLength(1);
 +    expect(submits[0]?.retry).toBe("1");
 +    expect(result.ok).toBe(false);
-+    if (!result.ok) {
-+      expect(result.error).toBe("UNCERTAIN");
-+      expect(result.providerRequestId).toBe("req-1");
-+      expect(result.message).toContain("fal request req-1");
-+      expect(result.message).toContain("was not submitted again");
-+    }
++    if (!result.ok) expect(result.error).toBe("UNCERTAIN");
 +    const call = await prisma.aiCall.findFirst({ where: { tenantId: "fal-timeout" } });
 +    expect(call?.status).toBe("UNCERTAIN");
 +    expect(call?.charged).toBe(true);
-+    expect(call?.providerRequestId).toBe("req-1");
-+    const run = await prisma.benchmarkRun.findFirst({ where: { callId: call?.id || "" } });
-+    expect(run?.providerRequestId).toBe("req-1");
-+    expect(run?.status).toBe("UNCERTAIN");
 +  });
 +
 +  it("reports a black fal frame as a safety block and does not submit again", async () => {
@@ -8307,123 +7691,6 @@ index 0000000..9f11aa6
 +      deadlineMs: 0,
 +    })).rejects.toBeInstanceOf(UncertainBillingError);
 +    expect(submits).toBe(1);
-+  });
-+
-+  it("keeps polling the same request until a slow queue completes", async () => {
-+    const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#cc8866" } }).png().toBuffer();
-+    let submits = 0;
-+    let statusReads = 0;
-+    let resultReads = 0;
-+    let clock = 0;
-+    const fetchImpl = (async (url: string | URL) => {
-+      const href = String(url);
-+      if (href.includes("/storage/upload/initiate")) return json({ upload_url: "https://upload.example/put", file_url: "https://v3.fal.media/files/in.png" });
-+      if (href.startsWith("https://upload.example")) return new Response(null, { status: 200 });
-+      if (href.startsWith("https://queue.fal.run/") && !href.includes("/requests/")) {
-+        submits += 1;
-+        return json({ request_id: "req-slow", status_url: "https://queue.fal.run/fal-ai/flux-2/edit/requests/req-slow/status" });
-+      }
-+      if (href.endsWith("/status")) {
-+        statusReads += 1;
-+        if (statusReads < 3) return json({ status: "IN_PROGRESS" });
-+        return json({ status: "COMPLETED" });
-+      }
-+      if (href.includes("/requests/req-slow")) {
-+        resultReads += 1;
-+        if (resultReads === 1) throw new Error("result not ready");
-+        return json({ images: [{ url: "https://v3.fal.media/files/out.png" }], has_nsfw_concepts: [false] });
-+      }
-+      if (href.startsWith("https://v3.fal.media/")) return new Response(new Uint8Array(png), { status: 200 });
-+      throw new Error(`unexpected ${href}`);
-+    }) as typeof fetch;
-+    const selfie = await sharp({ create: { width: 16, height: 16, channels: 3, background: "#ccbbaa" } }).png().toBuffer();
-+    const result = await postFalReferenceEdit({
-+      apiKey: "fal-test-key-123456",
-+      endpointId: "fal-ai/flux-2/edit",
-+      prompt: "Image 1 stays. Image 2 supplies the cut.",
-+      selfiePng: selfie,
-+      referenceJpeg: selfie,
-+      size: "1024x1536",
-+      estimateUsd: 0.05,
-+      fetchImpl,
-+      now: () => clock,
-+      deadlineMs: 20_000,
-+      sleep: async () => {
-+        clock += 1_000;
-+      },
-+    });
-+    expect(submits).toBe(1);
-+    expect(statusReads).toBe(3);
-+    expect(resultReads).toBe(2);
-+    expect(result.requestId).toBe("req-slow");
-+    expect(result.image.length).toBeGreaterThan(8);
-+  });
-+
-+  it("stops at the deadline without a second submit when the queue never completes", async () => {
-+    let submits = 0;
-+    let statusReads = 0;
-+    let clock = 0;
-+    const seenIds: string[] = [];
-+    const fetchImpl = (async (url: string | URL) => {
-+      const href = String(url);
-+      if (href.includes("/storage/upload/initiate")) return json({ upload_url: "https://upload.example/put", file_url: "https://v3.fal.media/files/in.png" });
-+      if (href.startsWith("https://upload.example")) return new Response(null, { status: 200 });
-+      if (href.startsWith("https://queue.fal.run/") && !href.includes("/requests/")) {
-+        submits += 1;
-+        return json({ request_id: "req-hang" });
-+      }
-+      if (href.includes("/requests/req-hang/status")) {
-+        statusReads += 1;
-+        return json({ status: "IN_PROGRESS" });
-+      }
-+      throw new Error(`unexpected ${href}`);
-+    }) as typeof fetch;
-+    const selfie = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#ccbbaa" } }).png().toBuffer();
-+    const error = await postFalReferenceEdit({
-+      apiKey: "fal-test-key-123456",
-+      endpointId: "fal-ai/bytedance/seedream/v4/edit",
-+      prompt: "edit",
-+      selfiePng: selfie,
-+      referenceJpeg: selfie,
-+      size: "1024x1536",
-+      estimateUsd: 0.03,
-+      fetchImpl,
-+      now: () => clock,
-+      deadlineMs: 3_000,
-+      sleep: async () => {
-+        clock += 2_000;
-+      },
-+      onRequestId: (requestId) => {
-+        seenIds.push(requestId);
-+      },
-+    }).catch((caught: unknown) => caught);
-+    expect(error).toBeInstanceOf(UncertainBillingError);
-+    if (error instanceof UncertainBillingError) {
-+      expect(error.requestId).toBe("req-hang");
-+      expect(error.message).toContain("did not finish before the deadline");
-+      expect(error.message).toContain("was not submitted again");
-+    }
-+    expect(submits).toBe(1);
-+    expect(statusReads).toBeGreaterThan(0);
-+    expect(seenIds).toEqual(["req-hang"]);
-+  });
-+
-+  it("raises the node server timeout above the one hour fal wait", async () => {
-+    process.env.FAL_TIMEOUT_MS = "3600000";
-+    const server = http.createServer((_req, res) => {
-+      res.end("ok");
-+    });
-+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
-+    relaxHttpServerTimeouts();
-+    expect(server.requestTimeout).toBeGreaterThanOrEqual(3_600_000);
-+    expect(server.headersTimeout).toBeGreaterThan(server.requestTimeout);
-+    const later = http.createServer((_req, res) => {
-+      res.end("ok");
-+    });
-+    await new Promise<void>((resolve) => later.listen(0, "127.0.0.1", () => resolve()));
-+    expect(later.requestTimeout).toBeGreaterThanOrEqual(3_600_000);
-+    await new Promise<void>((resolve, reject) => server.close((closeError) => (closeError ? reject(closeError) : resolve())));
-+    await new Promise<void>((resolve, reject) => later.close((closeError) => (closeError ? reject(closeError) : resolve())));
 +  });
 +});
 diff --git a/tests/unit/hair-composite.test.ts b/tests/unit/hair-composite.test.ts
@@ -8816,254 +8083,6 @@ index 37383d5..0c485cb 100644
      delete process.env.AI_SPEND_CAP_INR;
    });
  });
-diff --git a/tests/unit/openrouter-compare.test.ts b/tests/unit/openrouter-compare.test.ts
-new file mode 100644
-index 0000000..5e81431
---- /dev/null
-+++ b/tests/unit/openrouter-compare.test.ts
-@@ -0,0 +1,242 @@
-+import sharp from "sharp";
-+import { afterEach, describe, expect, it, vi } from "vitest";
-+import { comparisonModel, quoteComparisonModel } from "@/lib/ai/compare-models";
-+import { resolveOpenRouterKey } from "@/lib/ai/credentials";
-+import { BilledProviderError } from "@/lib/ai/errors";
-+import { buildOpenRouterChatBody } from "@/lib/ai/openrouter-models";
-+import { postOpenRouterReferenceEdit } from "@/lib/ai/openrouter-reference";
-+import { executeReferenceEdit } from "@/lib/ai/reference-run";
-+import { saveOpenRouterKey } from "@/lib/ai/settings-store";
-+import { costUsdFromUsage } from "@/lib/ai/tiers";
-+import { encryptSecret } from "@/lib/crypto/secret";
-+import { prisma } from "@/lib/prisma";
-+
-+const originalFetch = globalThis.fetch;
-+
-+function json(body: unknown, status = 200) {
-+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-+}
-+
-+describe("openrouter comparison", () => {
-+  afterEach(async () => {
-+    globalThis.fetch = originalFetch;
-+    vi.restoreAllMocks();
-+    await prisma.platformSetting.deleteMany({
-+      where: {
-+        key: {
-+          in: [
-+            "platform_openrouter_key_cipher",
-+            "platform_openrouter_key_hint",
-+            "platform_openrouter_enabled",
-+          ],
-+        },
-+      },
-+    });
-+    await prisma.aiCall.deleteMany();
-+    delete process.env.OPENROUTER_API_KEY;
-+  });
-+
-+  it("quotes the verified chat models and refuses a prefix or a router", () => {
-+    expect(comparisonModel("openrouter/auto")).toBeNull();
-+    expect(comparisonModel("google/gemini")).toBeNull();
-+    expect(comparisonModel("google/gemini-3.1-flash-image-preview")).toBeNull();
-+    expect(comparisonModel("openai/gpt-image-2")).toBeNull();
-+    expect(comparisonModel("gpt-image-2")?.provider).toBe("openai");
-+    expect(comparisonModel("openai/gpt-5-image")?.provider).toBe("openrouter");
-+    const cases: [string, number][] = [
-+      ["google/gemini-2.5-flash-image", 3.7],
-+      ["google/gemini-3.1-flash-lite-image", 3.6],
-+      ["google/gemini-3.1-flash-image", 7.2],
-+      ["google/gemini-3-pro-image", 14.8],
-+      ["openai/gpt-5-image-mini", 2.8],
-+      ["openai/gpt-5.4-image-2", 9.9],
-+      ["openai/gpt-5-image", 29.1],
-+    ];
-+    for (const [id, cap] of cases) {
-+      const quote = quoteComparisonModel(id, 480, 640, { width: 512, height: 512 });
-+      expect(quote.ok, id).toBe(true);
-+      if (!quote.ok) continue;
-+      expect(quote.provider).toBe("openrouter");
-+      expect(quote.estimateInr).toBe(cap);
-+      expect(quote.size).toBe("2:3");
-+    }
-+  });
-+
-+  it("sends text, then the selfie, then the reference, with fallbacks off", () => {
-+    const body = buildOpenRouterChatBody("google/gemini-3.1-flash-image", {
-+      prompt: "Image 1 is the person. Image 2 is the haircut.",
-+      selfieDataUrl: "data:image/png;base64,SELFIE",
-+      referenceDataUrl: "data:image/jpeg;base64,REFERENCE",
-+      aspectRatio: "2:3",
-+    });
-+    expect(body?.model).toBe("google/gemini-3.1-flash-image");
-+    expect(body?.models).toEqual(["google/gemini-3.1-flash-image"]);
-+    expect(body?.modalities).toEqual(["image", "text"]);
-+    expect(body?.provider).toEqual({ allow_fallbacks: false });
-+    expect(body).not.toHaveProperty("route");
-+    expect(body).not.toHaveProperty("plugins");
-+    const content = body?.messages[0]?.content || [];
-+    expect(content.map((part) => part.type)).toEqual(["text", "image_url", "image_url"]);
-+    expect(content[1]).toMatchObject({ image_url: { url: "data:image/png;base64,SELFIE" } });
-+    expect(content[2]).toMatchObject({ image_url: { url: "data:image/jpeg;base64,REFERENCE" } });
-+    expect(JSON.stringify(body)).not.toMatch(/fal-ai\//);
-+  });
-+
-+  it("refuses a missing OpenRouter key before any request", async () => {
-+    let calls = 0;
-+    globalThis.fetch = (async () => {
-+      calls += 1;
-+      throw new Error("fetch should not run");
-+    }) as typeof fetch;
-+    const jpeg = await sharp({ create: { width: 80, height: 120, channels: 3, background: "#886655" } }).jpeg().toBuffer();
-+    const result = await executeReferenceEdit({
-+      jpeg,
-+      original: jpeg,
-+      styleId: "long-layers",
-+      tenantId: "openrouter-missing",
-+      source: "tryon",
-+      tool: "reference",
-+      modelId: "google/gemini-3.1-flash-image",
-+    });
-+    expect(result.ok).toBe(false);
-+    if (!result.ok) {
-+      expect(result.error).toBe("NO_OPENROUTER_KEY");
-+      expect(result.message).toMatch(/does not call OpenAI, Gemini, or fal/);
-+    }
-+    expect(calls).toBe(0);
-+    expect(await prisma.aiCall.count({ where: { tenantId: "openrouter-missing" } })).toBe(0);
-+  });
-+
-+  it("posts once and records an unknown bill when the request does not return", async () => {
-+    await saveOpenRouterKey({ apiKey: "openrouter-test-key", enabled: true, remove: false }, "super");
-+    let calls = 0;
-+    globalThis.fetch = (async () => {
-+      calls += 1;
-+      throw new Error("socket hang up");
-+    }) as typeof fetch;
-+    const jpeg = await sharp({ create: { width: 80, height: 120, channels: 3, background: "#886655" } }).jpeg().toBuffer();
-+    const result = await executeReferenceEdit({
-+      jpeg,
-+      original: jpeg,
-+      styleId: "long-layers",
-+      tenantId: "openrouter-timeout",
-+      source: "tryon",
-+      tool: "reference",
-+      modelId: "google/gemini-2.5-flash-image",
-+    });
-+    expect(calls).toBe(1);
-+    expect(result.ok).toBe(false);
-+    if (!result.ok) expect(result.outcome).toBe("uncertain");
-+    const call = await prisma.aiCall.findFirst({ where: { tenantId: "openrouter-timeout" } });
-+    expect(call?.status).toBe("UNCERTAIN");
-+    expect(call?.charged).toBe(true);
-+  });
-+
-+  it("does not log the key or the image bytes", async () => {
-+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
-+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
-+    const selfie = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#ccbbaa" } }).png().toBuffer();
-+    const reference = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#998877" } }).jpeg().toBuffer();
-+    const secret = "openrouter-test-key";
-+    const leaked = `data:image/png;base64,${selfie.toString("base64")}`;
-+    const fetchImpl = (async () => new Response(`bad ${secret} ${leaked}`, { status: 400 })) as typeof fetch;
-+    await expect(postOpenRouterReferenceEdit({
-+      apiKey: secret,
-+      modelId: "google/gemini-3.1-flash-image",
-+      prompt: "Image 1 is the person. Image 2 is the haircut.",
-+      selfiePng: selfie,
-+      referenceJpeg: reference,
-+      width: 80,
-+      height: 120,
-+      estimateUsd: 0.07,
-+      fetchImpl,
-+    })).rejects.toThrow(/data:image\/\[redacted\]/);
-+    const thrown = await postOpenRouterReferenceEdit({
-+      apiKey: secret,
-+      modelId: "google/gemini-3.1-flash-image",
-+      prompt: "Image 1 is the person.",
-+      selfiePng: selfie,
-+      referenceJpeg: reference,
-+      width: 80,
-+      height: 120,
-+      estimateUsd: 0.07,
-+      fetchImpl,
-+    }).catch((cause: unknown) => cause);
-+    const text = thrown instanceof Error ? thrown.message : "";
-+    expect(text).not.toContain(secret);
-+    expect(text).not.toContain(selfie.toString("base64").slice(0, 40));
-+    const logged = [...info.mock.calls, ...error.mock.calls].flat().map((part) => JSON.stringify(part)).join("\n");
-+    expect(logged).not.toContain(secret);
-+    expect(logged).not.toContain(selfie.toString("base64").slice(0, 24));
-+  });
-+
-+  it("keeps usage.cost as the actual charge and does not call a second model", async () => {
-+    const png = await sharp({ create: { width: 16, height: 24, channels: 3, background: "#d8c8b8" } }).png().toBuffer();
-+    const dataUrl = `data:image/png;base64,${png.toString("base64")}`;
-+    let calls = 0;
-+    let sent = "";
-+    const fetchImpl = (async (_url: string | URL, init?: RequestInit) => {
-+      calls += 1;
-+      sent = String(init?.body || "");
-+      return json({
-+        model: "google/gemini-3.1-flash-image",
-+        choices: [{ message: { images: [{ image_url: { url: dataUrl } }] } }],
-+        usage: { prompt_tokens: 10, completion_tokens: 1120, total_tokens: 1130, cost: 0.04 },
-+      });
-+    }) as typeof fetch;
-+    const selfie = await sharp({ create: { width: 12, height: 16, channels: 3, background: "#ccbbaa" } }).png().toBuffer();
-+    const reference = await sharp({ create: { width: 12, height: 12, channels: 3, background: "#998877" } }).jpeg().toBuffer();
-+    const result = await postOpenRouterReferenceEdit({
-+      apiKey: "openrouter-test-key",
-+      modelId: "google/gemini-3.1-flash-image",
-+      prompt: "Image 1 is the person. Image 2 is the haircut.",
-+      selfiePng: selfie,
-+      referenceJpeg: reference,
-+      width: 480,
-+      height: 640,
-+      estimateUsd: 0.07,
-+      fetchImpl,
-+    });
-+    expect(calls).toBe(1);
-+    expect(sent).toContain("\"models\":[\"google/gemini-3.1-flash-image\"]");
-+    expect(sent).toContain("\"allow_fallbacks\":false");
-+    expect(sent).not.toContain("\"route\"");
-+    expect(result.costFromUsage).toBe(true);
-+    expect(costUsdFromUsage("google/gemini-3.1-flash-image", result.usage)).toBe(0.04);
-+    const wrong = (async () => {
-+      const mismatch = (async () => json({
-+        model: "google/gemini-3-pro-image",
-+        choices: [{ message: { images: [{ image_url: { url: dataUrl } }] } }],
-+        usage: { cost: 0.11 },
-+      })) as typeof fetch;
-+      return postOpenRouterReferenceEdit({
-+        apiKey: "openrouter-test-key",
-+        modelId: "google/gemini-3.1-flash-image",
-+        prompt: "Image 1 is the person.",
-+        selfiePng: selfie,
-+        referenceJpeg: reference,
-+        width: 80,
-+        height: 120,
-+        estimateUsd: 0.07,
-+        fetchImpl: mismatch,
-+      });
-+    })();
-+    await expect(wrong).rejects.toBeInstanceOf(BilledProviderError);
-+    await expect(wrong).rejects.toThrow(/was not retried/);
-+  });
-+
-+  it("does not use the environment key when the saved key is off", async () => {
-+    await prisma.platformSetting.upsert({
-+      where: { key: "platform_openrouter_key_cipher" },
-+      update: { value: encryptSecret("openrouter-test-key") },
-+      create: { key: "platform_openrouter_key_cipher", value: encryptSecret("openrouter-test-key") },
-+    });
-+    await prisma.platformSetting.upsert({
-+      where: { key: "platform_openrouter_enabled" },
-+      update: { value: "false" },
-+      create: { key: "platform_openrouter_enabled", value: "false" },
-+    });
-+    process.env.OPENROUTER_API_KEY = "env-key-should-not-win";
-+    expect(await resolveOpenRouterKey()).toEqual({ ok: false, reason: "off" });
-+  });
-+});
 diff --git a/tests/unit/product.test.ts b/tests/unit/product.test.ts
 index c371951..094bd18 100644
 --- a/tests/unit/product.test.ts
