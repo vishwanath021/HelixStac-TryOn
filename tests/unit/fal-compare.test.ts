@@ -76,7 +76,6 @@ describe("fal and shutdown catalogue", () => {
       ["fal-ai/flux-2/edit", 2.96, 4.12],
       ["fal-ai/flux-2-pro/edit", 4.32, 7.2],
       ["fal-ai/qwen-image-edit-2511", 4.53, 10.29],
-      ["fal-ai/bytedance/seedream/v4/edit", 2.88, 2.88],
       ["fal-ai/flux-2/klein/9b/edit", 2.72, 3.77],
       ["fal-ai/flux-2/klein/4b/edit", 1.51, 3.43],
       ["fal-ai/nano-banana/edit", 3.74, 3.74],
@@ -113,15 +112,8 @@ describe("fal and shutdown catalogue", () => {
     });
     expect(nano?.aspect_ratio).toBe("2:3");
     expect(nano).not.toHaveProperty("enable_safety_checker");
-    const seedream = buildFalEditBody("fal-ai/bytedance/seedream/v4/edit", {
-      prompt: "edit",
-      selfieUrl: "https://cdn.example/selfie.png",
-      referenceUrl: "https://cdn.example/reference.jpg",
-      size: "1024x1536",
-    });
-    expect(seedream?.image_size).toEqual({ width: 1024, height: 1536 });
-    expect(seedream?.max_images).toBe(1);
     expect(falModel("fal-ai/qwen-image-edit-plus")).toBeNull();
+    expect(falModel("fal-ai/bytedance/seedream/v4/edit")).toBeNull();
   });
 
   it("prices the newer fal edits first and leaves their size to the endpoint", () => {
@@ -133,8 +125,9 @@ describe("fal and shutdown catalogue", () => {
       "bytedance/seedream/v5/lite/edit",
       "openai/gpt-image-2/edit",
     ]);
-    expect(falIds.at(-1)).toBe("fal-ai/bytedance/seedream/v4/edit");
-    expect(comparisonModel("fal-ai/bytedance/seedream/v4/edit")?.label).toContain("old, slow, not recommended");
+    expect(falIds.at(-1)).toBe("fal-ai/nano-banana/edit");
+    expect(falIds).not.toContain("fal-ai/bytedance/seedream/v4/edit");
+    expect(comparisonModel("fal-ai/bytedance/seedream/v4/edit")).toBeNull();
     expect(comparisonModel("fal-ai/nano-banana/edit")?.label).toContain("older, superseded");
     expect(comparisonModel("gpt-image-2")?.provider).toBe("openai");
     expect(comparisonModel("openai/gpt-image-2/edit")?.provider).toBe("fal");

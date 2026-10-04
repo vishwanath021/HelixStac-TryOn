@@ -126,14 +126,6 @@ export const FAL_COMPARISON_MODELS: readonly FalModelRow[] = [
     sizeMode: "aspect_ratio",
     maxInputs: 0,
   },
-  {
-    id: "fal-ai/bytedance/seedream/v4/edit",
-    label: "fal-ai/bytedance/seedream/v4/edit (old, slow, not recommended)",
-    experimental: true,
-    safetyChecker: true,
-    sizeMode: "image_size",
-    maxInputs: 10,
-  },
 ];
 
 export function falModel(id: string) {
@@ -234,13 +226,6 @@ export function falUsdRange(
       detail: "Token billed. The estimate is $0.054 for a 1024x1536 image at quality medium. quality is hard-set to medium and is never high. Output size is left to the endpoint default.",
     };
   }
-  if (id === "fal-ai/bytedance/seedream/v4/edit") {
-    return {
-      lowUsd: 0.03,
-      highUsd: 0.03,
-      detail: "$0.03 per image. The page prices the output image, not extra megapixels. image_size is sent explicitly so the 2048 default is not used. Minimum area is 921,600 pixels.",
-    };
-  }
   if (id === "fal-ai/nano-banana/edit") {
     return {
       lowUsd: 0.039,
@@ -268,10 +253,6 @@ export function quoteFalModel(id: string, width: number, height: number, referen
       ok: false as const,
       message: `This comparison is about ₹${estimateInr.toFixed(2)}, above the ₹${capInr.toFixed(0)} run cap. It was not sent.`,
     };
-  }
-  const [outW, outH] = size.split("x").map((part) => Number(part));
-  if (id === "fal-ai/bytedance/seedream/v4/edit" && outW * outH < 921_600) {
-    return { ok: false as const, message: `${id} needs an output of at least 921,600 pixels. The request was not sent.` };
   }
   const lowInr = exactInr(range.lowUsd);
   const highInr = exactInr(range.highUsd);
@@ -328,8 +309,7 @@ export function buildFalEditBody(id: string, args: { prompt: string; selfieUrl: 
   };
   if (row.sizeMode === "aspect_ratio") body.aspect_ratio = falAspectRatio(args.size);
   else body.image_size = { width, height };
-  if (row.id === "fal-ai/bytedance/seedream/v4/edit") body.max_images = 1;
   if (row.safetyChecker) body.enable_safety_checker = true;
-  if (row.id !== "fal-ai/bytedance/seedream/v4/edit") body.output_format = "png";
+  body.output_format = "png";
   return body;
 }
