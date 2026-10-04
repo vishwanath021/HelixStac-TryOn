@@ -33,6 +33,15 @@ export const DRIFT_LIMITS = {
   ssim: 0.8,
 } as const;
 
+/**
+ * Mean landmark distance after a similarity fit, divided by eye distance.
+ * SSIM, ear width, and the ratio deltas stay on the report for review.
+ * They do not set `flagged`.
+ */
+export const FACE_LANDMARK_LIMIT = 0.08;
+
+const FACE_CHECK_INDEXES = [...new Set<number>([...LEFT_EYE, ...RIGHT_EYE, ...LEFT_BROW, ...RIGHT_BROW, ...NOSE_BLOB, ...LIPS])];
+
 /** Feather stays a few pixels. A wide blend was pulling the generated pale edge onto the wall. */
 export const HAIR_FEATHER_PX = 3;
 export const HAIR_ERODE_PX = 2;
@@ -90,9 +99,59 @@ export type DriftReport = {
   browDelta: number;
   noseDelta: number;
   widthDelta: number;
+  /** Mean eyes/brows/nose/mouth error after similarity alignment, in eye-distance units. */
+  landmarkError: number;
   flagged: boolean;
   ratios: { brow: number; nose: number; width: number };
 };
+
+/** Eyes, brows, nose, and lips. Ears are left out because hair covers them. */
+export function faceCheckIndexes() {
+  return FACE_CHECK_INDEXES;
+}
+
+/**
+ * Fit a similarity from the compared anchors onto the original, then measure
+ * eyes, brows, nose, and mouth. A new haircut, a sofa, or a scale shift that
+ * the similarity explains does not increase this number.
+ */
+export function landmarkError(originalLandmarks: Point[], comparedLandmarks: Point[]) {
+  requireLandmarks(originalLandmarks);
+  requireLandmarks(comparedLandmarks);
+  const sim = fitSimilarity(alignmentAnchors(comparedLandmarks), alignmentAnchors(originalLandmarks));
+  const eye = faceRatios(originalLandmarks).eyeDist;
+  let sum = 0;
+  for (const index of FACE_CHECK_INDEXES) {
+    const mapped = applySimilarity(sim, comparedLandmarks[index]);
+    const point = originalLandmarks[index];
+    sum += Math.hypot(mapped.x - point.x, mapped.y - point.y);
+  }
+  return sum / FACE_CHECK_INDEXES.length / eye;
+}
+
+/** Green disks are the selfie. A red centre is the generated landmark after alignment. */
+export function drawFaceCheck(base: RgbImage, originalLandmarks: Point[], comparedLandmarks: Point[]): RgbImage {
+  const sim = fitSimilarity(alignmentAnchors(comparedLandmarks), alignmentAnchors(originalLandmarks));
+  const data = Buffer.from(base.data);
+  const paint = (point: Point, rgb: [number, number, number], radius: number) => {
+    const x0 = Math.round(point.x);
+    const y0 = Math.round(point.y);
+    for (let y = y0 - radius; y <= y0 + radius; y += 1) {
+      for (let x = x0 - radius; x <= x0 + radius; x += 1) {
+        if (x < 0 || y < 0 || x >= base.width || y >= base.height) continue;
+        const i = (y * base.width + x) * 3;
+        data[i] = rgb[0];
+        data[i + 1] = rgb[1];
+        data[i + 2] = rgb[2];
+      }
+    }
+  };
+  for (const index of FACE_CHECK_INDEXES) {
+    paint(originalLandmarks[index], [40, 220, 80], 2);
+    paint(applySimilarity(sim, comparedLandmarks[index]), [230, 40, 40], 0);
+  }
+  return { data, width: base.width, height: base.height };
+}
 
 export function luminance(image: RgbImage, index: number) {
   const i = index * 3;
@@ -148,8 +207,17 @@ export function faceDrift(args: {
   const noseDelta = Math.abs(left.nose - right.nose);
   const widthDelta = Math.abs(left.width - right.width);
   const ssim = ssimRegion(args.original, args.compared, args.zone);
-  const flagged = browDelta > DRIFT_LIMITS.brow || noseDelta > DRIFT_LIMITS.nose || widthDelta > DRIFT_LIMITS.width || ssim < DRIFT_LIMITS.ssim;
-  return { ssim, browDelta, noseDelta, widthDelta, flagged, ratios: { brow: right.brow, nose: right.nose, width: right.width } };
+  const error = landmarkError(args.originalLandmarks, args.comparedLandmarks);
+  const flagged = error > FACE_LANDMARK_LIMIT;
+  return {
+    ssim,
+    browDelta,
+    noseDelta,
+    widthDelta,
+    landmarkError: error,
+    flagged,
+    ratios: { brow: right.brow, nose: right.nose, width: right.width },
+  };
 }
 
 export function buildProtectedZone(args: { width: number; height: number; landmarks: Point[]; oldHair: Uint8Array }) {

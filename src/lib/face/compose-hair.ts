@@ -7,7 +7,7 @@ import {
   alignGeneratedToOriginal,
   buildProtectedZone,
   compositeHair,
-  DRIFT_LIMITS,
+  drawFaceCheck,
   unchangedWallDelta,
   faceDrift,
   faceRatios,
@@ -134,6 +134,7 @@ export type HairCompositeOutput = {
   compositePng: Buffer;
   overlayPng: Buffer;
   alignedPng: Buffer;
+  faceCheckPng: Buffer;
   rawDrift: DriftReport;
   compositeDrift: DriftReport;
   compositeLandmarksDetected: boolean;
@@ -184,13 +185,15 @@ export async function composeHairOnly(originalImage: Buffer, generatedImage: Buf
   });
   const originalRatios = faceRatios(originalSeg.points);
   const compositeSsim = ssimRegion(original, composited.image, zone);
+  const faceCheck = drawFaceCheck(original, originalSeg.points, generatedSeg.points);
   let compositeLandmarksDetected = false;
   let compositeDrift: DriftReport = {
     ssim: compositeSsim,
     browDelta: 0,
     noseDelta: 0,
     widthDelta: 0,
-    flagged: compositeSsim < DRIFT_LIMITS.ssim,
+    landmarkError: 0,
+    flagged: false,
     ratios: { brow: originalRatios.brow, nose: originalRatios.nose, width: originalRatios.width },
   };
   try {
@@ -210,9 +213,45 @@ export async function composeHairOnly(originalImage: Buffer, generatedImage: Buf
     compositePng: await encodePng(composited.image),
     overlayPng: await encodePng(overlay),
     alignedPng: await encodePng(aligned),
+    faceCheckPng: await encodePng(faceCheck),
     rawDrift,
     compositeDrift,
     compositeLandmarksDetected,
     wallBandDelta: unchangedWallDelta(original, composited.image, originalSeg.hair, newHair),
+  };
+}
+
+/** Landmark warning for the raw frame. No composite, no provider call. */
+export async function reviewProviderFace(originalImage: Buffer, generatedImage: Buffer) {
+  const original = await decodeRgb(originalImage);
+  const generated = await decodeRgb(generatedImage);
+  const [originalPng, generatedPng] = await Promise.all([encodePng(original), encodePng(generated)]);
+  const originalSeg = await segmentPortrait(originalPng);
+  const generatedSeg = await segmentPortrait(generatedPng);
+  if (originalSeg.hair.length !== original.width * original.height || generatedSeg.hair.length !== generated.width * generated.height) {
+    throw new UnreliableDetectionError("The hair mask does not match the frame. The face check did not run.");
+  }
+  const similarity = alignGeneratedToOriginal(generatedSeg.points, originalSeg.points);
+  const aligned = warpRgb(generated, similarity, original.width, original.height);
+  const newHair = warpMask(generatedSeg.hair, generated.width, generated.height, similarity, original.width, original.height);
+  const protectedZone = buildProtectedZone({
+    width: original.width,
+    height: original.height,
+    landmarks: originalSeg.points,
+    oldHair: originalSeg.hair,
+  });
+  const zone = faceDriftZone(protectedZone, originalSeg.hair, newHair);
+  const rawDrift = faceDrift({
+    original,
+    compared: aligned,
+    originalLandmarks: originalSeg.points,
+    comparedLandmarks: generatedSeg.points,
+    zone,
+  });
+  const faceCheck = drawFaceCheck(original, originalSeg.points, generatedSeg.points);
+  return {
+    rawDrift,
+    alignedPng: await encodePng(aligned),
+    faceCheckPng: await encodePng(faceCheck),
   };
 }

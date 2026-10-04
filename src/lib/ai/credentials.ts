@@ -40,6 +40,21 @@ export async function resolveProviderChoice(tenantId: string): Promise<ProviderC
   return { name: aiProviderName() };
 }
 
+/** Gemini key only. A comparison does not borrow the OpenAI key. */
+export async function resolveGeminiKey() {
+  const provider = await setting("platform_ai_provider");
+  const cipher = await setting("platform_ai_key_cipher");
+  if (provider === "gemini" && cipher) {
+    try {
+      const apiKey = decryptSecret(cipher);
+      if (apiKey) return apiKey;
+    } catch {
+      return null;
+    }
+  }
+  return process.env.GEMINI_API_KEY || null;
+}
+
 /** OpenAI key only. Benchmark mode does not use a Gemini key or a mock. */
 export async function resolveOpenAIKey() {
   const provider = await setting("platform_ai_provider");

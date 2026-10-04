@@ -15,7 +15,8 @@ const EXTRA = ["restored-output.png", "provider-input.png", "provider-reference.
 const COMPOSITE_STAGES: { file: string; caption: string }[] = [
   { file: "aligned-output.png", caption: "Aligned generated frame. This is not the raw provider output." },
   { file: "mask-overlay.png", caption: "Original hair in blue, generated hair in magenta, protected face in gold." },
-  { file: "hair-composite.png", caption: "Hair-only composite. This is not the raw provider output." },
+  { file: "hair-composite.png", caption: "Hair-only composite. Optional fallback. This is not the raw provider output and it is not the download." },
+  { file: "face-check.png", caption: "Eyes, brows, nose and mouth. Green is the selfie. Red is the generated face after alignment. A warning only. This does not accept or reject the image." },
 ];
 
 export default async function BenchmarkReviewPage({ params }: { params: Promise<{ id: string }> }) {

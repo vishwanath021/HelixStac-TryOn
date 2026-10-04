@@ -30,6 +30,8 @@ type Look = {
   composite?: string;
   compositeError?: string;
   rawFaceDrift?: boolean;
+  faceScore?: number | null;
+  modelLabel?: string;
 };
 
 type TryTool = "colour" | "style" | "brows" | "beard" | "nails";
@@ -66,6 +68,7 @@ export function TryOnApp({
   salonMode = false,
   demoMode = false,
   referenceModeAvailable = false,
+  comparisonModels = [],
 }: {
   config: SalonConfig;
   embed?: boolean;
@@ -76,6 +79,7 @@ export function TryOnApp({
   salonMode?: boolean;
   demoMode?: boolean;
   referenceModeAvailable?: boolean;
+  comparisonModels?: { id: string; label: string }[];
 }) {
   const lang = config.defaultLang || "en";
   const [sid, setSid] = useState("");
@@ -98,7 +102,9 @@ export function TryOnApp({
   const [hairComposite, setHairComposite] = useState(false);
   const [hairTexture, setHairTexture] = useState<AskedTexture>("natural");
   const [referenceAck, setReferenceAck] = useState(false);
-  const [referenceQuote, setReferenceQuote] = useState<{ model: string; quality: string; size: string; rupees: number; dollars: number; note: string } | null>(null);
+  const [referenceQuote, setReferenceQuote] = useState<{ model: string; provider: string; quality: string; size: string; rupees: number; dollars: number; note: string } | null>(null);
+  const [compareModel, setCompareModel] = useState(comparisonModels[0]?.id ?? "");
+  const [comparisons, setComparisons] = useState<Look[]>([]);
   const [referenceChoice, setReferenceChoice] = useState<{ id: string; name: string; serviceKeys: string[]; tool: Look["tool"] } | null>(null);
   const previewLock = useRef(false);
   const [progress, setProgress] = useState(0);
@@ -340,7 +346,7 @@ export function TryOnApp({
     await applyBlob(blob);
   }
 
-  async function stageReference(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }) {
+  async function stageReference(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }, modelId = compareModel) {
     setStyleId(chosen.id);
     setTool("style");
     if (!faceShot) {
@@ -361,7 +367,8 @@ export function TryOnApp({
     try {
       const width = faceShot.el.naturalWidth || 0;
       const height = faceShot.el.naturalHeight || 0;
-      const res = await fetch(`/api/v1/tryon/reference-quote?width=${width}&height=${height}&styleId=${encodeURIComponent(chosen.id)}`);
+      const modelQuery = modelId ? `&model=${encodeURIComponent(modelId)}` : "";
+      const res = await fetch(`/api/v1/tryon/reference-quote?width=${width}&height=${height}&styleId=${encodeURIComponent(chosen.id)}${modelQuery}`);
       const data = await res.json().catch(() => ({ message: "This reference try-on could not be quoted." }));
       if (!res.ok) {
         setReferenceQuote(null);
@@ -370,6 +377,7 @@ export function TryOnApp({
       }
       setReferenceQuote({
         model: String(data.model || ""),
+        provider: String(data.provider || ""),
         quality: String(data.quality || ""),
         size: String(data.size || ""),
         rupees: Number(data.rupees || 0),
@@ -397,8 +405,10 @@ export function TryOnApp({
       setError(data.message || "Could not delete that run.");
       return;
     }
-    setActive(null);
-    setStylePhase("pick");
+    const next = comparisons.filter((item) => item.referenceId !== active.referenceId);
+    setComparisons(next);
+    setActive(next[next.length - 1] ?? null);
+    if (!next.length) setStylePhase("pick");
     setReferenceAck(false);
   }
 
@@ -442,6 +452,7 @@ export function TryOnApp({
         body.set("confirm", "yes");
         if (hairComposite) body.set("hairComposite", "yes");
         if (hairTexture !== "natural") body.set("hairTexture", hairTexture);
+        if (compareModel) body.set("compareModel", compareModel);
       } else if (chosen.tool === "style" && shadeId) {
         body.set("shadeId", shadeId);
       }
@@ -470,7 +481,7 @@ export function TryOnApp({
             ].filter(Boolean).join(" ")
           : "";
         setNotice("");
-        setActive({
+        const look: Look = {
           id: data.id || crypto.randomUUID(),
           styleId: chosen.id,
           styleName: chosen.name,
@@ -480,6 +491,8 @@ export function TryOnApp({
           composite: data.compositeBase64 ? pngUrl(String(data.compositeBase64)) : "",
           compositeError: String(data.compositeError || ""),
           rawFaceDrift: Boolean(data.rawFaceDrift),
+          faceScore: data.faceScore == null ? null : Number(data.faceScore),
+          modelLabel: String(data.model || data.provider || ""),
           serviceKeys: chosen.serviceKeys,
           tool: chosen.tool,
           unvalidated: true,
@@ -487,7 +500,9 @@ export function TryOnApp({
           showCost: Boolean(data.showCost),
           detail,
           clothingWarning: data.clothingWarning || "",
-        });
+        };
+        setActive(look);
+        setComparisons((current) => [...current.filter((item) => item.modelLabel !== look.modelLabel), look]);
         setReferenceAck(false);
         setProgress(100);
         setStylePhase("result");
@@ -555,7 +570,7 @@ export function TryOnApp({
 
   async function downloadLook() {
     if (!active) return;
-    const response = await fetch(active.composite || active.after);
+    const response = await fetch(active.after);
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -618,22 +633,22 @@ export function TryOnApp({
         {showResult && active?.unvalidated ? (
           <div className="p-3">
             <p className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-white">Experimental, unvalidated</p>
-            <div className={active.composite ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
+            <div className="grid grid-cols-2 gap-2">
               <figure>
                 <figcaption className="mb-1 text-center text-[11px] text-white">Original</figcaption>
-                <img src={active.before} alt="Original selfie" className="max-h-80 w-full object-contain" />
+                <img src={active.before} alt="Original selfie" className="max-h-96 w-full object-contain" />
               </figure>
               <figure>
                 <figcaption className="mb-1 text-center text-[11px] text-white">Raw provider image</figcaption>
-                <img src={active.after} alt="Raw provider image, experimental and unvalidated" className="max-h-80 w-full object-contain" />
+                <img src={active.after} alt="Raw provider image, experimental and unvalidated" className="max-h-96 w-full object-contain" />
               </figure>
-              {active.composite && (
-                <figure>
-                  <figcaption className="mb-1 text-center text-[11px] text-white">Hair-only composite</figcaption>
-                  <img src={active.composite} alt="Hair-only composite" className="max-h-80 w-full object-contain" />
-                </figure>
-              )}
             </div>
+            {active.composite && (
+              <figure className="mx-auto mt-3 max-w-[46%]">
+                <figcaption className="mb-1 text-center text-[11px] text-white">Hair-only composite, optional</figcaption>
+                <img src={active.composite} alt="Optional hair-only composite" className="max-h-40 w-full object-contain" />
+              </figure>
+            )}
           </div>
         ) : showResult && active ? (
           <div>
@@ -732,10 +747,16 @@ export function TryOnApp({
           <h3 className="text-center font-serif text-2xl">{active.styleName}</h3>
           {active.unvalidated && (
             <div className="rounded-xl border border-line bg-white p-3 text-sm leading-6">
-              <p>Experimental, unvalidated. The middle image is the raw provider output. It was not accepted.</p>
-              {active.composite && <p className="mt-2">The download is the hair-only composite. That frame keeps this selfie outside the hair and is not the raw provider output.</p>}
+              <p>Experimental, unvalidated. The large image is the raw provider output. It was not accepted. The download is that raw image.</p>
+              {active.modelLabel && <p className="mt-2">Model {active.modelLabel}.</p>}
+              {active.composite && <p className="mt-2">The smaller image is the optional hair-only composite. It is not the download.</p>}
               {active.compositeError && <p className="mt-2">Hair-only composite failed: {active.compositeError} The paid call was not retried.</p>}
-              {active.rawFaceDrift && <p className="mt-2">The raw image changed the face enough to flag.</p>}
+              {active.rawFaceDrift && (
+                <p className="mt-2">
+                  Face may differ from your photo.
+                  {active.showCost && active.faceScore != null ? ` Score ${active.faceScore.toFixed(3)}.` : ""}
+                </p>
+              )}
               {active.clothingWarning === "clothing_changed" && <p className="mt-2">Warning: the neckline or shoulder band changed.</p>}
               {active.showCost && active.detail && <p className="mt-2">{active.detail}</p>}
               {active.showCost && active.referenceId && (
@@ -744,7 +765,25 @@ export function TryOnApp({
                   <button className="underline" type="button" onClick={() => void deleteReferenceRun()}>Delete now</button>
                 </p>
               )}
-              <p className="mt-2 text-muted">Photos stay on this server for 72 hours. Real family photos are personal data and are sent only to OpenAI.</p>
+              <p className="mt-2 text-muted">Photos stay on this server for 72 hours. Real family photos are personal data and are sent only to the provider for the model you confirmed.</p>
+            </div>
+          )}
+          {comparisons.length > 1 && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {comparisons.map((look) => (
+                <figure key={look.referenceId || look.id} className="rounded-xl border border-line bg-white p-3 text-sm leading-6">
+                  <figcaption className="font-medium">{look.modelLabel || look.styleName}</figcaption>
+                  <img src={look.after} alt="" className="mt-2 max-h-64 w-full object-contain" />
+                  {look.rawFaceDrift && (
+                    <p className="mt-2">
+                      Face may differ from your photo.
+                      {look.showCost && look.faceScore != null ? ` Score ${look.faceScore.toFixed(3)}.` : ""}
+                    </p>
+                  )}
+                  {look.showCost && look.detail && <p className="mt-2">{look.detail}</p>}
+                  <button className="mt-2 underline" type="button" onClick={() => setActive(look)}>Show this result</button>
+                </figure>
+              ))}
             </div>
           )}
           <p className="text-center text-sm text-muted">{t(lang, active.tool === "brows" ? "browDisclaimer" : active.tool === "beard" ? "beardDisclaimer" : active.tool === "nails" ? "nailDisclaimer" : "disclaimer")}</p>
@@ -773,14 +812,39 @@ export function TryOnApp({
                       setReferenceAck(false);
                       setReferenceQuote(null);
                       setReferenceChoice(null);
+                      if (!event.target.checked) setComparisons([]);
                     }}
                   />
                   <span>Reference mode (test)</span>
                 </label>
                 <p className="mt-2 text-muted">
                   Shown only on this super-admin session. Off, a hairstyle uses the normal preview. On, it sends your selfie and then the style photo, with no mask and no pasted face.
-                  Real family photos are personal data and are sent only to OpenAI. Files stay on this server for 72 hours.
+                  The result is the raw provider image. Real family photos are personal data and are sent only to the provider for the model you confirm. Files stay on this server for 72 hours.
                 </p>
+                {referenceMode && comparisonModels.length > 0 && (
+                  <label className="mt-3 block font-medium">
+                    Comparison model
+                    <select
+                      className="mt-1 block w-full rounded-xl border border-line bg-white px-3 py-2"
+                      value={compareModel}
+                      onChange={(event) => {
+                        const next = event.target.value;
+                        setCompareModel(next);
+                        setReferenceAck(false);
+                        if (referenceChoice) void stageReference(referenceChoice, next);
+                      }}
+                    >
+                      {comparisonModels.map((model) => (
+                        <option key={model.id} value={model.id}>{model.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {referenceMode && comparisonModels.length > 0 && (
+                  <p className="mt-2 text-muted">
+                    Each model is its own estimate, confirmation, and one call. Nothing runs until you confirm that model. There is no retry and no automatic substitution.
+                  </p>
+                )}
                 {referenceMode && (
                   <label className="mt-3 flex items-start gap-2 font-medium">
                     <input
@@ -797,7 +861,7 @@ export function TryOnApp({
                 )}
                 {referenceMode && (
                   <p className="mt-2 text-muted">
-                    After the paid image returns, this keeps the selfie for the face, beard, clothes and background. Only the hair region is taken from the generated image. This step does not make another provider call. If it fails, the raw image is still shown and the call is not sent again.
+                    Optional fallback, off by default. When it is on, a smaller second image keeps this selfie outside the hair. The large result and the download stay the raw provider image. This step does not make another provider call. If it fails, the raw image is still shown and the call is not sent again.
                   </p>
                 )}
                 {referenceMode && (
@@ -839,7 +903,7 @@ export function TryOnApp({
                     <p className="mt-1 text-muted">{referenceQuote.note}</p>
                     <label className="mt-2 flex items-start gap-2">
                       <input type="checkbox" className="mt-1" checked={referenceAck} onChange={(event) => setReferenceAck(event.target.checked)} />
-                      <span>I understand this makes one paid OpenAI call and does not retry.</span>
+                      <span>I understand this makes one paid call for this model and does not retry.</span>
                     </label>
                     <button className="btn mt-3" type="button" disabled={busy || !referenceAck} onClick={() => void preview(referenceChoice, true)}>
                       Try this hairstyle

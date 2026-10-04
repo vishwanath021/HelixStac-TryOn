@@ -70,6 +70,7 @@ async function main() {
   await writeFile(path.join(outDir, "mask-overlay.png"), result.overlayPng);
   await writeFile(path.join(outDir, "hair-composite.png"), result.compositePng);
   await writeFile(path.join(outDir, "aligned-output.png"), result.alignedPng);
+  await writeFile(path.join(outDir, "face-check.png"), result.faceCheckPng);
   const sheet = await contactSheet([
     { label: "Original", image: original },
     { label: "Raw", image: raw },

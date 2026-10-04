@@ -7,6 +7,8 @@ import {
   buildProtectedZone,
   compositeHair,
   DRIFT_LIMITS,
+  drawFaceCheck,
+  FACE_LANDMARK_LIMIT,
   faceDrift,
   HAIR_FEATHER_PX,
   HALO_MAX_DELTA,
@@ -169,43 +171,55 @@ describe("hair-only composite", () => {
     expect(read(image, 20, 16)).toEqual([10, 20, 30]);
   });
 
-  it("flags a redrawn face and passes an unchanged face", () => {
+  it("does not flag the same face with new hair, and does flag a redrawn brow", () => {
     const originalLandmarks = facePoints();
     const zone = new Uint8Array(width * height);
     for (let y = 24; y < 60; y += 1) {
       for (let x = 20; x < 60; x += 1) zone[y * width + x] = 255;
     }
     const original = blank([120, 90, 70]);
-    const same = faceDrift({
-      original,
-      compared: original,
-      originalLandmarks,
-      comparedLandmarks: originalLandmarks,
-      zone,
-    });
-    expect(same.flagged).toBe(false);
-    expect(same.ssim).toBeGreaterThan(0.99);
-
-    const redrawnLandmarks = facePoints();
-    for (const index of [...LEFT_BROW, ...RIGHT_BROW]) redrawnLandmarks[index] = { x: redrawnLandmarks[index].x, y: 8 };
-    const redrawn = blank([40, 40, 200]);
+    const newHair = blank([40, 40, 200]);
+    for (let y = 0; y < 18; y += 1) {
+      for (let x = 0; x < width; x += 1) paint(newHair, x, y, [20, 20, 20]);
+    }
     for (let y = 24; y < 60; y += 1) {
       for (let x = 20; x < 60; x += 1) {
         const on = (x + y) % 2 === 0;
         paint(original, x, y, on ? [20, 20, 20] : [230, 230, 230]);
-        paint(redrawn, x, y, on ? [230, 210, 40] : [20, 20, 180]);
+        paint(newHair, x, y, on ? [230, 210, 40] : [20, 20, 180]);
       }
     }
+    const shifted = originalLandmarks.map((point) => ({ ...point }));
+    shifted[EAR_LEFT] = { x: 74, y: 36 };
+    shifted[EAR_RIGHT] = { x: 6, y: 36 };
+    const kept = faceDrift({
+      original,
+      compared: newHair,
+      originalLandmarks,
+      comparedLandmarks: shifted,
+      zone,
+    });
+    expect(kept.ssim).toBeLessThan(DRIFT_LIMITS.ssim);
+    expect(kept.widthDelta).toBeGreaterThan(DRIFT_LIMITS.width);
+    expect(kept.landmarkError).toBeLessThan(FACE_LANDMARK_LIMIT);
+    expect(kept.flagged).toBe(false);
+
+    const redrawnLandmarks = facePoints();
+    for (const index of [...LEFT_BROW, ...RIGHT_BROW]) redrawnLandmarks[index] = { x: redrawnLandmarks[index].x, y: 8 };
     const drift = faceDrift({
       original,
-      compared: redrawn,
+      compared: newHair,
       originalLandmarks,
       comparedLandmarks: redrawnLandmarks,
       zone,
     });
     expect(drift.browDelta).toBeGreaterThan(DRIFT_LIMITS.brow);
-    expect(drift.ssim).toBeLessThan(DRIFT_LIMITS.ssim);
+    expect(drift.landmarkError).toBeGreaterThan(FACE_LANDMARK_LIMIT);
     expect(drift.flagged).toBe(true);
+
+    const overlay = drawFaceCheck(original, originalLandmarks, redrawnLandmarks);
+    expect(read(overlay, 28, 26)).toEqual([40, 220, 80]);
+    expect(read(overlay, 28, 8)).toEqual([230, 40, 40]);
   });
 
   it("keeps a white generated fringe off the original wall", () => {

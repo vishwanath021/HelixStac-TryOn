@@ -32,7 +32,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
       headers: {
         "content-type": MIME[path.extname(stage)] || "application/octet-stream",
         "cache-control": "no-store",
-        "x-benchmark-label": stage === "hair-composite.png" ? "hair-only-composite" : stage === "provider-response.png" ? "unvalidated-model-output" : "benchmark-stage",
+        "x-benchmark-label": stage === "hair-composite.png" ? "hair-only-composite" : stage === "provider-response.png" ? "unvalidated-model-output" : stage === "face-check.png" ? "face-landmark-check" : "benchmark-stage",
       },
     });
   } catch {

@@ -72,30 +72,44 @@ export function benchmarkQuality(): EditQuality {
   return BENCHMARK_QUALITY;
 }
 
-export function quoteBenchmark(width: number, height: number, reference = { width: 512, height: 512 }) {
-  const model = benchmarkModelId();
-  const quality = benchmarkQuality();
-  const caps = imageEditModel(model);
+export function benchmarkQuoteNote() {
+  return benchmarkInputSizeMode() === "tight"
+    ? "Estimate, actual from provider usage. Tight input (BENCHMARK_INPUT_SIZE) sends a 1024-edge selfie. A wide photo gets side bars and a smaller subject. The reference stays at its native size. Not an invoice."
+    : "Estimate, actual from provider usage. Image-input tokens are scaled from the first 1536×1024 run (10,885 image tokens for that canvas plus a 512 reference) with a 15% margin. Not an invoice.";
+}
+
+/** Token quote for one exact image-edit model. `inputFidelity` null omits the parameter. */
+export function quoteModelEdit(args: {
+  model: string;
+  quality: EditQuality;
+  width: number;
+  height: number;
+  reference?: { width: number; height: number };
+  inputFidelity: "high" | null;
+  note: string;
+}) {
+  const reference = args.reference ?? { width: 512, height: 512 };
+  const caps = imageEditModel(args.model);
   if (!caps) {
-    return { ok: false as const, message: `${model} is not a configured image-edit model. Benchmark mode did not substitute another model.` };
+    return { ok: false as const, message: `${args.model} is not a configured image-edit model. No other model was substituted.` };
   }
-  if (!caps.inputFidelity?.includes("high")) {
-    return { ok: false as const, message: `${model} does not accept input_fidelity=high. Benchmark mode did not send the request.` };
+  if (args.inputFidelity && !caps.inputFidelity?.includes(args.inputFidelity)) {
+    return { ok: false as const, message: `${args.model} does not accept input_fidelity=${args.inputFidelity}. The request was not sent.` };
   }
-  const size = benchmarkCanvasSize(width, height, caps.sizes);
+  const size = benchmarkCanvasSize(args.width, args.height, caps.sizes);
   const [canvasWidth, canvasHeight] = size.split("x").map((part) => Number(part));
-  const outputTokens = Math.ceil(OUTPUT_TOKEN_TABLE[quality][size] * OUTPUT_TOKEN_MARGIN);
+  const outputTokens = Math.ceil(OUTPUT_TOKEN_TABLE[args.quality][size] * OUTPUT_TOKEN_MARGIN);
   const imageInputTokens = estimateImageInputTokens(canvasWidth * canvasHeight, Math.max(1, reference.width) * Math.max(1, reference.height));
   const textInputTokens = TEXT_INPUT_TOKEN_ALLOWANCE;
-  const outputUsd = usdFromTokenCounts(model, { textIn: 0, imageIn: 0, output: outputTokens });
-  const imageInputUsd = usdFromTokenCounts(model, { textIn: 0, imageIn: imageInputTokens, output: 0 });
-  const textInputUsd = usdFromTokenCounts(model, { textIn: textInputTokens, imageIn: 0, output: 0 });
-  const estimateUsd = usdFromTokenCounts(model, { textIn: textInputTokens, imageIn: imageInputTokens, output: outputTokens });
+  const outputUsd = usdFromTokenCounts(args.model, { textIn: 0, imageIn: 0, output: outputTokens });
+  const imageInputUsd = usdFromTokenCounts(args.model, { textIn: 0, imageIn: imageInputTokens, output: 0 });
+  const textInputUsd = usdFromTokenCounts(args.model, { textIn: textInputTokens, imageIn: 0, output: 0 });
+  const estimateUsd = usdFromTokenCounts(args.model, { textIn: textInputTokens, imageIn: imageInputTokens, output: outputTokens });
   if (outputUsd == null || imageInputUsd == null || textInputUsd == null || estimateUsd == null) {
-    return { ok: false as const, message: `No token rates for ${model}. The request was not sent.` };
+    return { ok: false as const, message: `No token rates for ${args.model}. The request was not sent.` };
   }
-  if (outputListUsd(model, quality, size) == null) {
-    return { ok: false as const, message: `No published output price for ${model} ${quality} ${size}. The request was not sent.` };
+  if (outputListUsd(args.model, args.quality, size) == null) {
+    return { ok: false as const, message: `No published output price for ${args.model} ${args.quality} ${size}. The request was not sent.` };
   }
   const estimateInr = bufferedInr(estimateUsd);
   const capInr = benchmarkRunCapInr();
@@ -105,14 +119,13 @@ export function quoteBenchmark(width: number, height: number, reference = { widt
       message: `This benchmark is about ₹${estimateInr.toFixed(2)} including input tokens, above the ₹${capInr.toFixed(0)} run cap. It was not sent.`,
     };
   }
-  const inputSizeMode = benchmarkInputSizeMode();
   return {
     ok: true as const,
-    model,
-    quality,
+    model: args.model,
+    quality: args.quality,
     size,
     outputFormat: "png" as const,
-    inputFidelity: "high" as const,
+    inputFidelity: args.inputFidelity,
     n: 1 as const,
     estimateUsd,
     estimateInr,
@@ -123,11 +136,30 @@ export function quoteBenchmark(width: number, height: number, reference = { widt
     imageInputUsd,
     textInputTokens,
     textInputUsd,
-    inputSizeMode,
-    note: inputSizeMode === "tight"
-      ? "Estimate, actual from provider usage. Tight input (BENCHMARK_INPUT_SIZE) sends a 1024-edge selfie. A wide photo gets side bars and a smaller subject. The reference stays at its native size. Not an invoice."
-      : "Estimate, actual from provider usage. Image-input tokens are scaled from the first 1536×1024 run (10,885 image tokens for that canvas plus a 512 reference) with a 15% margin. Not an invoice.",
+    inputSizeMode: benchmarkInputSizeMode(),
+    note: args.note,
   };
+}
+
+export function quoteBenchmark(width: number, height: number, reference = { width: 512, height: 512 }) {
+  const model = benchmarkModelId();
+  const quality = benchmarkQuality();
+  const caps = imageEditModel(model);
+  if (!caps) {
+    return { ok: false as const, message: `${model} is not a configured image-edit model. Benchmark mode did not substitute another model.` };
+  }
+  if (!caps.inputFidelity?.includes("high")) {
+    return { ok: false as const, message: `${model} does not accept input_fidelity=high. Benchmark mode did not send the request.` };
+  }
+  return quoteModelEdit({
+    model,
+    quality,
+    width,
+    height,
+    reference,
+    inputFidelity: "high",
+    note: benchmarkQuoteNote(),
+  });
 }
 
 export async function prepareBenchmark(args: { jpeg: Buffer; styleId: string; colourName?: string; texture?: AskedTexture }) {
@@ -195,6 +227,7 @@ export async function writeBenchmarkStages(dir: string, stages: {
   aligned?: Buffer;
   maskOverlay?: Buffer;
   hairComposite?: Buffer;
+  faceCheck?: Buffer;
   validation: unknown;
   transform: FrameTransform;
 }) {
@@ -210,6 +243,7 @@ export async function writeBenchmarkStages(dir: string, stages: {
   if (stages.aligned) await writeFile(path.join(dir, "aligned-output.png"), stages.aligned);
   if (stages.maskOverlay) await writeFile(path.join(dir, "mask-overlay.png"), stages.maskOverlay);
   if (stages.hairComposite) await writeFile(path.join(dir, "hair-composite.png"), stages.hairComposite);
+  if (stages.faceCheck) await writeFile(path.join(dir, "face-check.png"), stages.faceCheck);
 }
 
 export async function restoredFromProvider(providerResponse: Buffer, transform: FrameTransform) {
@@ -226,6 +260,7 @@ export const BENCHMARK_STAGES = [
   "aligned-output.png",
   "mask-overlay.png",
   "hair-composite.png",
+  "face-check.png",
   "transform.json",
   "validation.json",
 ] as const;

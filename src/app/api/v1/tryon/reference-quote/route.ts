@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { quoteBenchmark } from "@/lib/ai/benchmark";
+import { quoteComparisonModel } from "@/lib/ai/compare-models";
 import { readHairstyleReference } from "@/lib/ai/style-reference";
 import { requireSuper } from "@/lib/session";
 
@@ -20,13 +21,13 @@ export async function GET(req: Request) {
   }
   const referenceBytes = readHairstyleReference(styleId);
   const referenceMeta = referenceBytes ? await sharp(referenceBytes, { failOn: "none" }).metadata() : null;
-  const quote = quoteBenchmark(width, height, {
-    width: referenceMeta?.width || 512,
-    height: referenceMeta?.height || 512,
-  });
+  const requested = url.searchParams.get("model") || "";
+  const referenceSize = { width: referenceMeta?.width || 512, height: referenceMeta?.height || 512 };
+  const quote = requested ? quoteComparisonModel(requested, width, height, referenceSize) : quoteBenchmark(width, height, referenceSize);
   if (!quote.ok) return NextResponse.json({ error: "QUOTE", message: quote.message }, { status: 400 });
   return NextResponse.json({
     model: quote.model,
+    provider: "provider" in quote ? quote.provider : "openai",
     quality: quote.quality,
     size: quote.size,
     rupees: quote.estimateInr,

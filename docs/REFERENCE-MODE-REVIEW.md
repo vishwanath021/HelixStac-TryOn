@@ -236,7 +236,7 @@ The matte is the segmenter mask eroded by 2 pixels, then a radius-2 guided filte
 
 `validation.json` keeps `accepted: false`. `compositeApplied` is true only when the composite file was written. `provider-response.png` remains the raw provider body. `hair-composite.png` is a different file and the file route labels it `hair-only-composite`. A failed composite stores `compositeError` and does not retry the paid call.
 
-Face drift is separate from the clothing check. It compares scale-free brow, nose and face-width ratios, plus SSIM on protected skin that neither hair mask claims. The raw Messy Texture replay was flagged (SSIM 0.77, nose ratio delta 0.072). Its composite was not (SSIM 1.0). The synthetic pixie raw was not flagged on those limits (SSIM 0.83, geometry inside the limits). That pixie face was the run whose problem was the neckline, not a redrawn face. Thresholds live in `DRIFT_LIMITS`.
+The first face check compared scale-free brow, nose and ear-width ratios, plus SSIM on protected skin that neither hair mask claims. That check is no longer what sets the warning. See "Raw result and model comparison" below. The old Messy Texture replay was flagged by SSIM 0.77 and a nose ratio delta of 0.072. The synthetic pixie raw was not (SSIM 0.83). Those numbers stay in the report for review. `DRIFT_LIMITS` is no longer the accept/reject rule, and this path does not reject.
 
 Offline replay, no provider call:
 
@@ -268,6 +268,30 @@ Every current style lacks a curly reference. Proposed files, not generated:
 
 The same `{id}-curly.jpg` name works for the other straight and wavy styles when a curly reference is added later.
 
+## Raw result and model comparison
+
+A super-admin test of Butterfly Layers on a real portrait (his wife) is the reason for this pass. The raw `gpt-image-1.5` frame looked like a photograph of her: the face stayed, the hairline was natural, the hair was layered waves, and the shirt stayed. The hair-only composite looked worse: jagged edges, white patches at the shoulders and neck, and a parting that sat on the head like a sticker. The face check labelled that raw frame as changed too much. That was a false positive. On his own earlier Messy Texture selfie the raw frame did redraw the face, so the check still has to be able to warn.
+
+The public try-on at tjhbagalur.com was the visual reference for "a regenerated whole photo with an accurate face and a natural hairline", not a paste. This repository does not copy that site and does not claim its model.
+
+The raw provider image is now the result and the download. It stays labelled experimental and unvalidated. `accepted` stays false because the frame has not been reviewed, not because of the face check. Hair-only composite is an optional fallback, off by default, shown smaller beside the raw image. Turning it on does not make a second provider call. A failed composite keeps the raw image.
+
+The face check is a warning. The sentence is "Face may differ from your photo." The numeric score is included only when the viewer is a super-admin. The score is the mean distance of the eyes, brows, nose, and mouth after a similarity transform fitted to the eye centres, nose tip, and mouth centre, divided by the eye distance. It warns only when that residual is above `FACE_LANDMARK_LIMIT` (0.08). SSIM, ear-to-ear width, and the old brow and nose ratios are still stored. They do not set the warning. Hair, sofa, shirt, and a scale shift that the similarity explains were the likely cause of the false positive: ear landmarks move when hair covers them, and SSIM on the skin zone moves when the hair or the background moves. A synthetic same-face case with new hair pixels and moved ears is not warned. A synthetic case that moves the brows is warned. `face-check.png` draws the selfie landmarks in green and the aligned generated landmarks in red so the check can be reviewed by eye. Nothing in that check rejects the HTTP response.
+
+Comparison is explicit and never automatic. On the salon page, a super-admin in reference mode picks one model, reads that model's estimate, confirms, and runs one call. Another model is another estimate and another confirmation. There is no retry and no silent substitution. The request fingerprint includes the model id, so a `gpt-image-1.5` result is not replayed as `gpt-image-2`.
+
+The catalogue is an exact-id table in `src/lib/ai/compare-models.ts`. A prefix such as `gpt-image` or `gemini`, and a different id such as `gpt-image-2.5` or `gemini-3.1-flash-lite-image`, is refused before any call.
+
+| Model | What is sent | Portrait medium estimate |
+|---|---|---|
+| `gpt-image-1.5` | OpenAI edits, `input_fidelity=high`, selfie then the style reference, no mask | about ₹17.00 ($0.164), size `1024x1536` |
+| `gpt-image-2` | Same edit, `input_fidelity` omitted. The prompting guide says image inputs are always high fidelity. If the key rejects the id, the run returns `UNKNOWN_MODEL` and does not call another model. | about ₹16.60 ($0.160), size `1024x1536` |
+| `gemini-3.1-flash-image` | One `generateContent` with the sanitized selfie, then the style reference, then the same reference prompt. No mask, no square pad, no OpenAI fallback. Refused before the call when no Gemini key is configured. | about ₹7.20 ($0.069), size `1K` |
+
+A wide selfie uses `1536x1024` instead: about ₹16.90 for `gpt-image-1.5` and ₹16.50 for `gpt-image-2`. A square selfie uses `1024x1024`: about ₹11.90 and ₹11.70. Gemini stays on the 1K token allowance either way. These are buffered estimates at FX 96 with the 8% margin, not invoices. OpenAI image-input tokens are scaled from the first 1536×1024 run with a 15% margin. `gpt-image-2` output tokens use the pre-2 guide table as an allowance, priced at $30 per million image-output tokens, $8 per million image-input tokens, and $5 per million text-input tokens. The published per-image output price for medium portrait is $0.041 for `gpt-image-2` and $0.05 for `gpt-image-1.5`, before input tokens. The quote is the higher token allowance so a run over the ₹30 cap is refused before the call. Quality stays medium. High quality on a portrait `gpt-image-2` canvas can exceed that cap and is refused without a call. Gemini uses 1,120 tokens per input image and 1,120 tokens for a 1K output at the `gemini-3.1-flash-image` rates ($0.50 per million input, $60 per million image output).
+
+Each result stays on the page. A second model appears beside the first with that model's usage, latency, and actual cost. The actual cost is shown only to the super-admin.
+
 ## How to run a controlled paid test locally
 
 ```bash
@@ -281,8 +305,8 @@ npm run dev
 1. Open http://localhost:3000/login and sign in as `super@helixstac.app` / `SuperAdmin#2026`.
 2. Open http://localhost:3000/super/ai. If the platform provider is not already OpenAI, paste the key there. Do not put the key in git.
 3. Optional, no charge: `npm run benchmark:quote`.
-4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. For a hair-only result, also tick **Hair-only composite**. Set **Hair texture** to **Curly** when the selfie is curly and the catalogue JPEG is straight. Those controls are absent until Reference mode is on, and they are absent for a guest. Upload or take a selfie, pick a style, read the texture warning if Image 2 does not match, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick **I understand this makes one paid OpenAI call and does not retry**, and press **Try this hairstyle**.
-5. With the composite off, the page shows the original beside the raw result. With it on, the page shows original, raw provider image, and hair-only composite. The download is the composite. The raw image stays labelled unvalidated. A neckline shift shows a clothing warning. A redrawn raw face shows a drift flag. **Delete now** removes that run, or leave the files for 72 hours. Do not commit the photos. The composite needs `pip install -r scripts/requirements-vision.txt` first. Without it, the request is refused before any paid call.
+4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. Leave **Hair-only composite** off unless you want the smaller fallback. Set **Hair texture** to **Curly** when the selfie is curly and the catalogue JPEG is straight. Pick **Comparison model**. Those controls are absent until Reference mode is on, and they are absent for a guest. Upload or take a selfie, pick a style, read the texture warning if Image 2 does not match, read that model's estimate, tick **I understand this makes one paid call for this model and does not retry**, and press **Try this hairstyle**. To compare a second model, change **Comparison model**, read the new estimate, tick the box again, and press **Try this hairstyle** once more. That is a separate call.
+5. The large image is the raw provider output. The download is that raw image. A hair-only composite, when the fallback was on, is the smaller image and is not the download. The raw image stays labelled unvalidated. A neckline shift shows a clothing warning. A face warning says the face may differ and, for the super-admin, shows the landmark score. Open **saved stages** and look at `face-check.png` (green selfie landmarks, red aligned generated landmarks). **Delete now** removes that run, or leave the files for 72 hours. Do not commit the photos. The face check and the optional composite need `pip install -r scripts/requirements-vision.txt`. A missing vision install still returns the raw image after a paid call when the composite box is off. With the composite box on, a missing install is refused before the paid call.
 6. The benchmark form still works: on `/super/ai`, pick a hairstyle, choose a selfie, tick the confirmation, and press **Run benchmark**. Open the result link. The right image is `provider-response.png`, labelled UNVALIDATED. `validation.json` stays `accepted: false`.
 
 `BENCHMARK_INPUT_SIZE=1024` in `.env`, then restart `npm run dev`, if you want a second run on a smaller canvas to compare cost. Leave it unset for the same 1536-class request as the first pixie run.

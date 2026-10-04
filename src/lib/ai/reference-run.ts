@@ -1,14 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { NextResponse } from "next/server";
+import sharp from "sharp";
 import { benchmarkDir, prepareBenchmark, restoredFromProvider, writeBenchmarkStages } from "@/lib/ai/benchmark";
+import { prepareComparison } from "@/lib/ai/compare-models";
 import type { AskedTexture } from "@/lib/ai/reference-texture";
-import { composeHairOnly } from "@/lib/face/compose-hair";
+import { composeHairOnly, reviewProviderFace } from "@/lib/face/compose-hair";
 import { assertVisionReady } from "@/lib/face/vision-assets";
 import type { DriftReport } from "@/lib/face/hair-composite";
 import { assessClothing } from "@/lib/ai/clothing-check";
-import { resolveOpenAIKey } from "@/lib/ai/credentials";
+import { resolveGeminiKey, resolveOpenAIKey } from "@/lib/ai/credentials";
 import { editFormFields } from "@/lib/ai/edit-request";
+import { postGeminiReferenceEdit } from "@/lib/ai/gemini-reference";
 import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
 import { postImageEdit } from "@/lib/ai/openai";
 import { completeGenerationJob, failGenerationJob } from "@/lib/ai/dedupe";
@@ -50,6 +53,7 @@ export type ReferenceSuccess = {
   ok: true;
   id: string;
   callId: string;
+  provider: "openai" | "gemini";
   model: string;
   quality: string;
   size: string;
@@ -64,6 +68,7 @@ export type ReferenceSuccess = {
   compositePng: Buffer | null;
   compositeError: string;
   rawFaceDrift: boolean;
+  faceScore: number | null;
   hairComposite: boolean;
   message: string;
 };
@@ -91,6 +96,7 @@ export async function executeReferenceEdit(args: {
   tool: string;
   hairComposite?: boolean;
   hairTexture?: AskedTexture;
+  modelId?: string;
 }): Promise<ReferenceSuccess | ReferenceFailure> {
   if (args.hairComposite) {
     try {
@@ -101,24 +107,49 @@ export async function executeReferenceEdit(args: {
     }
   }
   await purgeOldBenchmarks().catch(() => undefined);
-  const prepared = await prepareBenchmark({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture });
+  const requestedModel = args.modelId?.trim() || "";
+  const prepared = requestedModel
+    ? await prepareComparison({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture, modelId: requestedModel })
+    : await prepareBenchmark({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture });
   if (!prepared.ok) {
     return { ok: false, httpStatus: 400, error: "QUOTE", message: prepared.message, outcome: "quote" };
   }
-  const apiKey = await resolveOpenAIKey();
+  const provider = "provider" in prepared ? prepared.provider : "openai";
+  const apiKey = provider === "gemini" ? await resolveGeminiKey() : await resolveOpenAIKey();
   if (!apiKey) {
-    return {
-      ok: false,
-      httpStatus: 400,
-      error: "NO_OPENAI_KEY",
-      outcome: "key",
-      message: "Add an OpenAI key on AI settings. Reference mode does not call Gemini, a mock, or another model.",
-    };
+    return provider === "gemini"
+      ? {
+          ok: false,
+          httpStatus: 400,
+          error: "NO_GEMINI_KEY",
+          outcome: "key",
+          message: "Add a Gemini key on AI settings. This comparison does not call OpenAI instead.",
+        }
+      : {
+          ok: false,
+          httpStatus: 400,
+          error: "NO_OPENAI_KEY",
+          outcome: "key",
+          message: "Add an OpenAI key on AI settings. Reference mode does not call Gemini, a mock, or another model.",
+        };
   }
 
   const { quote, planned, fitted, reference, style } = prepared;
+  const inputPng = fitted?.png ?? ("selfiePng" in prepared ? prepared.selfiePng : Buffer.alloc(0));
+  const inputMeta = await sharp(inputPng, { failOn: "none" }).metadata();
+  const transform = fitted?.transform ?? {
+    sourceWidth: inputMeta.width || 1,
+    sourceHeight: inputMeta.height || 1,
+    targetWidth: inputMeta.width || 1,
+    targetHeight: inputMeta.height || 1,
+    contentWidth: inputMeta.width || 1,
+    contentHeight: inputMeta.height || 1,
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1,
+  };
   const gate = await beginPaidCall({
-    provider: "openai",
+    provider,
     quality: quote.quality,
     model: quote.model,
     tenantId: args.tenantId,
@@ -150,7 +181,8 @@ export async function executeReferenceEdit(args: {
     model: quote.model,
     quality: quote.quality,
     size: quote.size,
-    inputFidelity: "high",
+    inputFidelity: quote.inputFidelity || "omitted",
+    provider,
     outputFormat: "png",
     referencePixels: { width: prepared.referenceWidth, height: prepared.referenceHeight },
     note: "The skin-colour face blob was not used. Alignment is not a haircut score. No original face was pasted back.",
@@ -163,10 +195,10 @@ export async function executeReferenceEdit(args: {
   await writeBenchmarkStages(dir, {
     original: args.original,
     sanitized: args.jpeg,
-    providerInput: fitted.png,
+    providerInput: inputPng,
     reference,
     validation,
-    transform: fitted.transform,
+    transform,
   });
   await prisma.benchmarkRun.create({
     data: {
@@ -184,30 +216,49 @@ export async function executeReferenceEdit(args: {
     },
   });
 
-  const fields = editFormFields(planned);
-  const body = new FormData();
-  for (const [key, value] of Object.entries(fields)) body.set(key, value);
-  body.append("image[]", new Blob([new Uint8Array(fitted.png)], { type: "image/png" }), "selfie.png");
-  body.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
-
   try {
     const started = Date.now();
-    const response = await postImageEdit(apiKey, body);
-    const payload = (await response.json()) as {
-      data?: { b64_json?: string }[];
-      usage?: {
-        input_tokens?: number;
-        output_tokens?: number;
-        total_tokens?: number;
-        input_tokens_details?: { text_tokens?: number; image_tokens?: number };
+    let usage: ReturnType<typeof usageFrom>;
+    let providerResponse: Buffer;
+    if (provider === "gemini") {
+      const prompt = "prompt" in prepared ? prepared.prompt : planned?.prompt || "";
+      const gemini = await postGeminiReferenceEdit({
+        apiKey,
+        model: quote.model,
+        prompt,
+        selfiePng: inputPng,
+        referenceJpeg: reference,
+      });
+      usage = gemini.usage;
+      providerResponse = gemini.image;
+    } else {
+      if (!planned) {
+        throw new UnknownModelError(`${quote.model} is not a configured image-edit model. No other model was called.`);
+      }
+      const fields = editFormFields(planned);
+      const body = new FormData();
+      for (const [key, value] of Object.entries(fields)) body.set(key, value);
+      body.append("image[]", new Blob([new Uint8Array(inputPng)], { type: "image/png" }), "selfie.png");
+      body.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
+      const response = await postImageEdit(apiKey, body);
+      const payload = (await response.json()) as {
+        data?: { b64_json?: string }[];
+        usage?: {
+          input_tokens?: number;
+          output_tokens?: number;
+          total_tokens?: number;
+          input_tokens_details?: { text_tokens?: number; image_tokens?: number };
+        };
       };
-    };
-    const usage = usageFrom(payload);
+      usage = usageFrom(payload);
+      const b64 = payload.data?.[0]?.b64_json;
+      if (!b64) throw new BilledProviderError(quote.estimateUsd, usage);
+      providerResponse = Buffer.from(b64, "base64");
+    }
     const latencyMs = Date.now() - started;
-    const b64 = payload.data?.[0]?.b64_json;
-    if (!b64) throw new BilledProviderError(quote.estimateUsd, usage);
-    const providerResponse = Buffer.from(b64, "base64");
-    const restored = await restoredFromProvider(providerResponse, fitted.transform);
+    const restored = provider === "gemini"
+      ? await sharp(providerResponse, { failOn: "none" }).rotate().png().toBuffer()
+      : await restoredFromProvider(providerResponse, transform);
     const clothing = await assessClothing(args.jpeg, restored).catch((): Awaited<ReturnType<typeof assessClothing>> => ({
       warning: null,
       meanDelta: 0,
@@ -218,10 +269,12 @@ export async function executeReferenceEdit(args: {
     }));
     let compositePng: Buffer | null = null;
     let compositeError = "";
+    let faceCheckError = "";
     let rawDrift: DriftReport | null = null;
     let compositeDrift: DriftReport | null = null;
     let aligned: Buffer | undefined;
     let maskOverlayPng: Buffer | undefined;
+    let faceCheckPng: Buffer | undefined;
     let compositeLandmarksDetected = false;
     if (args.hairComposite) {
       try {
@@ -229,6 +282,7 @@ export async function executeReferenceEdit(args: {
         compositePng = composed.compositePng;
         aligned = composed.alignedPng;
         maskOverlayPng = composed.overlayPng;
+        faceCheckPng = composed.faceCheckPng;
         rawDrift = composed.rawDrift;
         compositeDrift = composed.compositeDrift;
         compositeLandmarksDetected = composed.compositeLandmarksDetected;
@@ -236,10 +290,20 @@ export async function executeReferenceEdit(args: {
         compositeError = error instanceof Error ? error.message : "Hair-only composite failed.";
       }
     }
+    if (!rawDrift) {
+      try {
+        const review = await reviewProviderFace(args.jpeg, restored);
+        rawDrift = review.rawDrift;
+        aligned = aligned || review.alignedPng;
+        faceCheckPng = faceCheckPng || review.faceCheckPng;
+      } catch (error) {
+        faceCheckError = error instanceof Error ? error.message : "The face check did not run.";
+      }
+    }
     await writeBenchmarkStages(dir, {
       original: args.original,
       sanitized: args.jpeg,
-      providerInput: fitted.png,
+      providerInput: inputPng,
       reference,
       providerResponse,
       restored,
@@ -253,18 +317,22 @@ export async function executeReferenceEdit(args: {
         usage: usage || null,
         compositeApplied: Boolean(compositePng),
         compositeError,
+        faceCheckError,
         compositeLandmarksDetected,
         rawFaceDrift: rawDrift,
         compositeFaceDrift: compositeDrift,
+        faceCheck: "Eyes, brows, nose and mouth after similarity alignment. flagged is a warning, not a rejection.",
         stages: {
           rawProviderResponse: "provider-response.png",
           hairComposite: compositePng ? "hair-composite.png" : "",
+          faceCheck: faceCheckPng ? "face-check.png" : "",
         },
       },
-      transform: fitted.transform,
+      transform,
       aligned,
       maskOverlay: maskOverlayPng,
       hairComposite: compositePng || undefined,
+      faceCheck: faceCheckPng,
     });
     const usd = costUsdFromUsage(quote.model, usage) ?? quote.estimateUsd;
     await finalizePaidCall(gate.id, {
@@ -278,13 +346,14 @@ export async function executeReferenceEdit(args: {
       imageSize: quote.size,
     });
     const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
-    let message = `Unvalidated model output. One provider call. No mask, no face paste, no retry.${clothingNote}`;
+    let message = `Unvalidated model output. The raw provider image is the result. One provider call. No mask, no face paste, no retry.${clothingNote}`;
+    if (rawDrift?.flagged) message += " Face may differ from your photo.";
     if (args.hairComposite && compositePng) {
-      message += " Hair-only composite saved separately. It is not the raw provider image.";
-      if (rawDrift?.flagged) message += " Raw face drift flagged.";
+      message += " Hair-only composite saved separately as an optional fallback. It is not the download.";
     } else if (args.hairComposite) {
       message += ` Hair-only composite failed: ${compositeError} The paid call was not retried.`;
     }
+    if (faceCheckError) message += ` Face check did not run: ${faceCheckError}`;
     await prisma.benchmarkRun.update({
       where: { id },
       data: {
@@ -304,6 +373,7 @@ export async function executeReferenceEdit(args: {
       ok: true,
       id,
       callId: gate.id,
+      provider,
       model: quote.model,
       quality: quote.quality,
       size: quote.size,
@@ -318,6 +388,7 @@ export async function executeReferenceEdit(args: {
       compositePng,
       compositeError,
       rawFaceDrift: Boolean(rawDrift?.flagged),
+      faceScore: rawDrift ? rawDrift.landmarkError : null,
       hairComposite: Boolean(args.hairComposite),
       message,
     };
@@ -380,6 +451,7 @@ export function tryOnReferencePayload(run: ReferenceSuccess, revealCost: boolean
     hairComposite: run.hairComposite,
     compositeError: run.compositeError,
     rawFaceDrift: run.rawFaceDrift,
+    provider: run.provider,
   };
   if (run.compositePng) body.compositeBase64 = run.compositePng.toString("base64");
   if (revealCost) {
@@ -389,6 +461,8 @@ export function tryOnReferencePayload(run: ReferenceSuccess, revealCost: boolean
     body.actualDollars = run.actualUsd;
     body.latencyMs = run.latencyMs;
     body.usage = run.usage;
+    body.model = run.model;
+    if (run.faceScore != null) body.faceScore = run.faceScore;
   }
   return body;
 }
@@ -406,6 +480,7 @@ export async function runTryOnReference(args: {
   revealCost: boolean;
   hairComposite?: boolean;
   hairTexture?: AskedTexture;
+  modelId?: string;
 }) {
   const executed = await executeReferenceEdit({
     jpeg: args.jpeg,
@@ -416,6 +491,7 @@ export async function runTryOnReference(args: {
     tool: "reference",
     hairComposite: args.hairComposite,
     hairTexture: args.hairTexture,
+    modelId: args.modelId,
   });
   if (!executed.ok) {
     await failGenerationJob(args.jobId, { outcome: executed.outcome, message: executed.message, callId: executed.callId });

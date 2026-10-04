@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { TryOnApp } from "@/components/tryon/TryOnApp";
+import { comparisonChoices } from "@/lib/ai/compare-models";
 import { showReferenceToggle } from "@/lib/ai/reference-mode";
 import { usingDemoProvider } from "@/lib/env";
 import { verifySalonToken } from "@/lib/preview-access";
@@ -24,6 +25,7 @@ export default async function SalonPage({
   if (!tenant) notFound();
   const config = toSalonConfig(tenant);
   const salonMode = verifySalonToken(query.salon || "", tenant.id, tenant.salonNonce);
+  const referenceModeAvailable = showReferenceToggle(await isSuperSession());
   return (
     <TryOnApp
       config={config}
@@ -33,7 +35,8 @@ export default async function SalonPage({
       salonToken={salonMode ? query.salon : undefined}
       salonMode={salonMode}
       demoMode={usingDemoProvider()}
-      referenceModeAvailable={showReferenceToggle(await isSuperSession())}
+      referenceModeAvailable={referenceModeAvailable}
+      comparisonModels={referenceModeAvailable ? comparisonChoices() : []}
     />
   );
 }

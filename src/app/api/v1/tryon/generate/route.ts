@@ -141,6 +141,7 @@ export async function POST(req: Request) {
   });
   const wantHair = hairCompositeRequested(wantReference, String(form.get("hairComposite") || "") === "yes");
   const askedTexture = wantReference ? parseAskedTexture(String(form.get("hairTexture") || "")) : "natural";
+  const compareModel = wantReference ? String(form.get("compareModel") || "").trim() : "";
   if (wantReference && String(form.get("confirm") || "") !== "yes") {
     return NextResponse.json({ error: "CONFIRM", message: "Confirm the estimated cost before this paid call." }, { status: 400 });
   }
@@ -151,7 +152,7 @@ export async function POST(req: Request) {
     const claim = await claimGenerationJob({
       tenantId: tenant.id,
       requestId,
-      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: wantReference ? "" : shadeId || "", mode: wantReference ? referenceFingerprintMode(wantHair, askedTexture) : "production" }),
+      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: wantReference ? "" : shadeId || "", mode: wantReference ? referenceFingerprintMode(wantHair, askedTexture, compareModel) : "production" }),
     });
     if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
     if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
@@ -185,6 +186,7 @@ export async function POST(req: Request) {
       revealCost: await isSuperSession(),
       hairComposite: wantHair,
       hairTexture: askedTexture,
+      modelId: compareModel,
     });
   }
 

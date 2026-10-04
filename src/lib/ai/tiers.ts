@@ -132,6 +132,9 @@ function tokenRates(model: string): TokenRates | null {
   if (model === "gpt-image-1-mini") return { textIn: 2, imageIn: 2.5, imageOut: 8, textOut: 8 };
   if (model === "gpt-image-1.5") return { textIn: 5, imageIn: 8, imageOut: 32, textOut: 32 };
   if (model === "gpt-image-1") return { textIn: 5, imageIn: 10, imageOut: 40, textOut: 40 };
+  // Exact id. Guide checked 4 Oct 2026: image output $30/1M, text input $5/1M, image input $8/1M.
+  if (model === "gpt-image-2") return { textIn: 5, imageIn: 8, imageOut: 30, textOut: 30 };
+  if (model === "gemini-3.1-flash-image") return { textIn: 0.5, imageIn: 0.5, imageOut: 60, textOut: 3 };
   if (model.includes("flash-lite-image")) return { textIn: 0.25, imageIn: 0.25, imageOut: 30, textOut: 1.5 };
   if (model.includes("flash-image")) return { textIn: 0.5, imageIn: 0.5, imageOut: 60, textOut: 3 };
   return null;
