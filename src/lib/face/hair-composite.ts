@@ -19,7 +19,7 @@ import {
   RIGHT_IRIS,
   UPPER_LIP,
 } from "@/lib/face/landmarks";
-import { dilateMask, distanceFromOff, fillPolygon, sampleBilinear, stampDisks, type RgbImage } from "@/lib/face/raster";
+import { dilateMask, distanceFromOff, distanceToOn, erodeMask, fillPolygon, nearestOnIndex, sampleBilinear, stampDisks, type RgbImage } from "@/lib/face/raster";
 import { applySimilarity, fitSimilarity, invertSimilarity, type Point, type Similarity } from "@/lib/face/similarity";
 
 export class UnreliableDetectionError extends Error {
@@ -32,6 +32,13 @@ export const DRIFT_LIMITS = {
   width: 0.08,
   ssim: 0.8,
 } as const;
+
+/** Feather stays a few pixels. A wide blend was pulling the generated pale edge onto the wall. */
+export const HAIR_FEATHER_PX = 3;
+export const HAIR_ERODE_PX = 2;
+export const HALO_BAND_PX = 4;
+/** Mean per-channel difference vs the original wall, in the band outside the true hair. */
+export const HALO_MAX_DELTA = 14;
 
 const C1 = (0.01 * 255) ** 2;
 const C2 = (0.03 * 255) ** 2;
@@ -249,11 +256,6 @@ export function warpMask(mask: Uint8Array, srcWidth: number, srcHeight: number, 
   return out;
 }
 
-function clampGain(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return 1;
-  return Math.max(0.75, Math.min(1.35, value));
-}
-
 export function compositeHair(args: {
   original: RgbImage;
   aligned: RgbImage;
@@ -269,38 +271,283 @@ export function compositeHair(args: {
   const width = original.width;
   const height = original.height;
   if (aligned.width !== width || aligned.height !== height) throw new Error("The aligned frame must match the original.");
-  const feather = args.featherPx ?? Math.max(4, Math.round(0.012 * Math.min(width, height)));
+  const feather = args.featherPx ?? HAIR_FEATHER_PX;
+  if (feather <= 0) return hardComposite(args, width, height);
+  return refinedComposite(args, width, height, feather);
+}
+
+function hardComposite(args: {
+  original: RgbImage;
+  aligned: RgbImage;
+  oldHair: Uint8Array;
+  newHair: Uint8Array;
+  garments: Uint8Array;
+  skin: Uint8Array;
+  protectedZone: Uint8Array;
+  dilatePx?: number;
+}, width: number, height: number) {
   const dilatePx = args.dilatePx ?? Math.max(4, Math.round(0.015 * Math.min(width, height)));
   const edit = buildEditMask({ ...args, width, height, dilatePx });
-  const inside = distanceFromOff(edit, width, height);
-  const ringRadius = Math.max(feather, 6);
-  const ring = dilateMask(edit, width, height, ringRadius);
-  const originalSum = [0, 0, 0];
-  const alignedSum = [0, 0, 0];
-  let ringCount = 0;
+  const data = Buffer.from(args.original.data);
   for (let i = 0; i < edit.length; i += 1) {
-    if (ring[i] < 128 || edit[i] >= 128) continue;
+    if (edit[i] < 128) continue;
     const o = i * 3;
-    originalSum[0] += original.data[o];
-    originalSum[1] += original.data[o + 1];
-    originalSum[2] += original.data[o + 2];
-    alignedSum[0] += aligned.data[o];
-    alignedSum[1] += aligned.data[o + 1];
-    alignedSum[2] += aligned.data[o + 2];
-    ringCount += 1;
+    data[o] = args.aligned.data[o];
+    data[o + 1] = args.aligned.data[o + 1];
+    data[o + 2] = args.aligned.data[o + 2];
   }
-  const gains = [0, 1, 2].map((channel) => (ringCount > 20 && alignedSum[channel] > 0 ? clampGain(originalSum[channel] / alignedSum[channel]) : 1));
-  const data = Buffer.alloc(width * height * 3);
-  for (let i = 0; i < edit.length; i += 1) {
-    const alpha = edit[i] < 128 ? 0 : feather <= 0 ? 1 : Math.min(1, inside[i] / feather);
-    const o = i * 3;
-    const hairPixel = args.newHair[i] >= 128;
-    for (let channel = 0; channel < 3; channel += 1) {
-      const generated = hairPixel ? Math.max(0, Math.min(255, Math.round(aligned.data[o + channel] * gains[channel]))) : aligned.data[o + channel];
-      data[o + channel] = Math.round(original.data[o + channel] * (1 - alpha) + generated * alpha);
+  return { image: { data, width, height }, edit, gains: [1, 1, 1], featherPx: 0 };
+}
+
+type Rgb = [number, number, number];
+
+function pixelAt(image: RgbImage, index: number): Rgb {
+  const o = index * 3;
+  return [image.data[o], image.data[o + 1], image.data[o + 2]];
+}
+
+function colourDistance(a: Rgb, b: Rgb) {
+  return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
+}
+
+function lumaOf(rgb: Rgb) {
+  return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+}
+
+function meanRgb(original: RgbImage, accept: (index: number) => boolean, minCount: number): Rgb | null {
+  const sum = [0, 0, 0];
+  let count = 0;
+  for (let i = 0; i < original.width * original.height; i += 1) {
+    if (!accept(i)) continue;
+    const rgb = pixelAt(original, i);
+    sum[0] += rgb[0];
+    sum[1] += rgb[1];
+    sum[2] += rgb[2];
+    count += 1;
+  }
+  if (count < minCount) return null;
+  return [sum[0] / count, sum[1] / count, sum[2] / count];
+}
+
+function estimateWall(original: RgbImage, blocked: Uint8Array, near: Uint8Array): Rgb {
+  return meanRgb(original, (index) => blocked[index] < 128 && near[index] >= 128, 8)
+    ?? meanRgb(original, (index) => blocked[index] < 128, 1)
+    ?? [210, 205, 198];
+}
+
+/**
+ * Wall pixels a few pixels outside the hair, keeping the brighter half so a
+ * dark unmasked fringe does not pull the fill gray.
+ */
+function knownWallMask(original: RgbImage, blocked: Uint8Array, awayFromHair: Uint8Array) {
+  const lumas: number[] = [];
+  const provisional = new Uint8Array(blocked.length);
+  for (let i = 0; i < blocked.length; i += 1) {
+    if (blocked[i] >= 128 || awayFromHair[i] >= 128) continue;
+    provisional[i] = 255;
+    lumas.push(lumaOf(pixelAt(original, i)));
+  }
+  if (lumas.length < 30) return provisional;
+  lumas.sort((a, b) => a - b);
+  const median = lumas[lumas.length >> 1];
+  const out = new Uint8Array(blocked.length);
+  let count = 0;
+  for (let i = 0; i < provisional.length; i += 1) {
+    if (provisional[i] < 128) continue;
+    if (lumaOf(pixelAt(original, i)) < median - 18) continue;
+    out[i] = 255;
+    count += 1;
+  }
+  return count >= 30 ? out : provisional;
+}
+
+/**
+ * Trimap from the segmenter: eroded hair is definite foreground, the outside is
+ * definite original, and a few pixels of rim are unknown. A guided filter snaps
+ * that rim to the aligned luminance, then pale spill that matches the wall is dropped.
+ */
+function refineHairAlpha(aligned: RgbImage, newHair: Uint8Array, wall: Rgb, hairMean: Rgb, feather: number) {
+  const width = aligned.width;
+  const height = aligned.height;
+  const eroded = erodeMask(newHair, width, height, HAIR_ERODE_PX);
+  const guided = guidedAlpha(aligned, eroded, 2, 80);
+  const alpha = new Float32Array(newHair.length);
+  const inside = distanceFromOff(eroded, width, height);
+  for (let i = 0; i < alpha.length; i += 1) {
+    if (newHair[i] < 128 && eroded[i] < 128) continue;
+    const gen = pixelAt(aligned, i);
+    const paleSpill = lumaOf(gen) > lumaOf(hairMean) + 28 && colourDistance(gen, wall) + 8 < colourDistance(gen, hairMean);
+    if (paleSpill) continue;
+    const soft = eroded[i] >= 128 ? Math.min(1, inside[i] / feather) : Math.min(0.35, guided[i]);
+    alpha[i] = soft;
+  }
+  return alpha;
+}
+
+function guidedAlpha(guideImage: RgbImage, mask: Uint8Array, radius: number, eps: number) {
+  const width = guideImage.width;
+  const height = guideImage.height;
+  const n = width * height;
+  const guide = new Float32Array(n);
+  const input = new Float32Array(n);
+  for (let i = 0; i < n; i += 1) {
+    guide[i] = lumaOf(pixelAt(guideImage, i)) / 255;
+    input[i] = mask[i] >= 128 ? 1 : 0;
+  }
+  const meanI = boxMean(guide, width, height, radius);
+  const meanP = boxMean(input, width, height, radius);
+  const ip = new Float32Array(n);
+  const ii = new Float32Array(n);
+  for (let i = 0; i < n; i += 1) {
+    ip[i] = guide[i] * input[i];
+    ii[i] = guide[i] * guide[i];
+  }
+  const meanIp = boxMean(ip, width, height, radius);
+  const meanIi = boxMean(ii, width, height, radius);
+  const a = new Float32Array(n);
+  const b = new Float32Array(n);
+  for (let i = 0; i < n; i += 1) {
+    const varI = meanIi[i] - meanI[i] * meanI[i];
+    const cov = meanIp[i] - meanI[i] * meanP[i];
+    a[i] = cov / (varI + eps / (255 * 255));
+    b[i] = meanP[i] - a[i] * meanI[i];
+  }
+  const meanA = boxMean(a, width, height, radius);
+  const meanB = boxMean(b, width, height, radius);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i += 1) out[i] = Math.max(0, Math.min(1, meanA[i] * guide[i] + meanB[i]));
+  return out;
+}
+
+function boxMean(src: Float32Array, width: number, height: number, radius: number) {
+  const integral = new Float64Array((width + 1) * (height + 1));
+  for (let y = 0; y < height; y += 1) {
+    let row = 0;
+    for (let x = 0; x < width; x += 1) {
+      row += src[y * width + x];
+      integral[(y + 1) * (width + 1) + (x + 1)] = integral[y * (width + 1) + (x + 1)] + row;
     }
   }
-  return { image: { data, width, height }, edit, gains, featherPx: feather };
+  const out = new Float32Array(src.length);
+  for (let y = 0; y < height; y += 1) {
+    const y0 = Math.max(0, y - radius);
+    const y1 = Math.min(height - 1, y + radius);
+    for (let x = 0; x < width; x += 1) {
+      const x0 = Math.max(0, x - radius);
+      const x1 = Math.min(width - 1, x + radius);
+      const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+      const sum = integral[(y1 + 1) * (width + 1) + (x1 + 1)] - integral[y0 * (width + 1) + (x1 + 1)] - integral[(y1 + 1) * (width + 1) + x0] + integral[y0 * (width + 1) + x0];
+      out[y * width + x] = sum / area;
+    }
+  }
+  return out;
+}
+
+function refinedComposite(args: {
+  original: RgbImage;
+  aligned: RgbImage;
+  oldHair: Uint8Array;
+  newHair: Uint8Array;
+  garments: Uint8Array;
+  skin: Uint8Array;
+  protectedZone: Uint8Array;
+}, width: number, height: number, feather: number) {
+  const { original, aligned } = args;
+  const hairUnion = new Uint8Array(args.oldHair.length);
+  for (let i = 0; i < hairUnion.length; i += 1) if (args.oldHair[i] >= 128 || args.newHair[i] >= 128) hairUnion[i] = 255;
+  const near = dilateMask(hairUnion, width, height, 12);
+  const blocked = new Uint8Array(hairUnion.length);
+  for (let i = 0; i < blocked.length; i += 1) {
+    if (hairUnion[i] >= 128 || args.garments[i] >= 128 || args.skin[i] >= 128 || args.protectedZone[i] >= 128) blocked[i] = 255;
+  }
+  const wall = estimateWall(original, blocked, near);
+  const away = dilateMask(hairUnion, width, height, 6);
+  const wallSource = nearestOnIndex(knownWallMask(original, blocked, away), width, height);
+  const localWall = (index: number): Rgb => {
+    const src = wallSource[index];
+    return src >= 0 ? pixelAt(original, src) : wall;
+  };
+  const core = erodeMask(args.newHair, width, height, HAIR_ERODE_PX);
+  const hairSum = [0, 0, 0];
+  let hairCount = 0;
+  for (let i = 0; i < core.length; i += 1) {
+    if (core[i] < 128) continue;
+    const rgb = pixelAt(aligned, i);
+    hairSum[0] += rgb[0];
+    hairSum[1] += rgb[1];
+    hairSum[2] += rgb[2];
+    hairCount += 1;
+  }
+  const hairMean: Rgb = hairCount > 10 ? [hairSum[0] / hairCount, hairSum[1] / hairCount, hairSum[2] / hairCount] : [30, 20, 15];
+  const alpha = refineHairAlpha(aligned, args.newHair, wall, hairMean, feather);
+  const oldNear = dilateMask(args.oldHair, width, height, 2);
+  const edit = new Uint8Array(alpha.length);
+  const data = Buffer.from(original.data);
+  for (let i = 0; i < alpha.length; i += 1) {
+    if (args.protectedZone[i] >= 128) continue;
+    if (args.garments[i] >= 128 && args.oldHair[i] < 128) continue;
+    if (args.skin[i] >= 128 && args.oldHair[i] < 128 && args.newHair[i] < 128) continue;
+    const o = i * 3;
+    const cover = alpha[i];
+    if (cover > 0.04 && core[i] < 128 && args.oldHair[i] < 128) continue;
+    if (cover > 0.04) {
+      edit[i] = 255;
+      const generated = pixelAt(aligned, i);
+      const base = pixelAt(original, i);
+      const background = args.oldHair[i] >= 128 ? localWall(i) : base;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const unmixed = cover >= 0.98
+          ? generated[channel]
+          : Math.max(0, Math.min(255, (generated[channel] - (1 - cover) * background[channel]) / cover));
+        data[o + channel] = Math.round(unmixed * cover + base[channel] * (1 - cover));
+      }
+      continue;
+    }
+    const originalPixel = pixelAt(original, i);
+    const fringe = args.oldHair[i] < 128 && oldNear[i] >= 128 && args.newHair[i] < 128 && lumaOf(originalPixel) + 20 < lumaOf(localWall(i));
+    if ((args.oldHair[i] >= 128 && args.newHair[i] < 128) || fringe) {
+      const generated = pixelAt(aligned, i);
+      const local = localWall(i);
+      const palerThanWall = lumaOf(generated) > lumaOf(local) + 8;
+      const matched = !palerThanWall && colourDistance(generated, local) <= 30;
+      edit[i] = 255;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const filled = matched ? local[channel] + (generated[channel] - local[channel]) * 0.25 : local[channel];
+        data[o + channel] = Math.max(0, Math.min(255, Math.round(filled)));
+      }
+    }
+  }
+  return { image: { data, width, height }, edit, gains: [1, 1, 1], featherPx: feather };
+}
+
+/** Mean per-channel change on wall pixels beside the new hair. Old hair is excluded so a removed length is not counted as a halo. */
+export function unchangedWallDelta(original: RgbImage, result: RgbImage, oldHair: Uint8Array, newHair: Uint8Array, bandPx = HALO_BAND_PX) {
+  const dist = distanceToOn(newHair, original.width, original.height);
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < newHair.length; i += 1) {
+    if (newHair[i] >= 128 || oldHair[i] >= 128 || dist[i] < 1 || dist[i] > bandPx) continue;
+    const left = pixelAt(original, i);
+    const right = pixelAt(result, i);
+    sum += colourDistance(left, right);
+    count += 1;
+  }
+  return count ? sum / count / 3 : 0;
+}
+
+/** Mean per-channel difference between the composite and the original, in the band outside `hair`. */
+export function backgroundEdgeDelta(original: RgbImage, result: RgbImage, hair: Uint8Array, bandPx = HALO_BAND_PX) {
+  const dist = distanceToOn(hair, original.width, original.height);
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < hair.length; i += 1) {
+    if (hair[i] >= 128 || dist[i] < 1 || dist[i] > bandPx) continue;
+    const left = pixelAt(original, i);
+    const right = pixelAt(result, i);
+    sum += colourDistance(left, right);
+    count += 1;
+  }
+  return count ? sum / count / 3 : 0;
 }
 
 export function maskOverlay(original: RgbImage, oldHair: Uint8Array, newHair: Uint8Array, protectedZone: Uint8Array): RgbImage {

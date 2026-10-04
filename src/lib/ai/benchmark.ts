@@ -2,7 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { styleById } from "@/data/styles";
-import { readHairstyleReference } from "@/lib/ai/style-reference";
+import { parseAskedTexture, selectReferenceVariant, type AskedTexture } from "@/lib/ai/reference-texture";
+import { existingHairstyleFiles, hairstyleReferenceFile, readHairstyleReference } from "@/lib/ai/style-reference";
 import {
   BENCHMARK_MODEL,
   BENCHMARK_QUALITY,
@@ -129,10 +130,20 @@ export function quoteBenchmark(width: number, height: number, reference = { widt
   };
 }
 
-export async function prepareBenchmark(args: { jpeg: Buffer; styleId: string; colourName?: string }) {
+export async function prepareBenchmark(args: { jpeg: Buffer; styleId: string; colourName?: string; texture?: AskedTexture }) {
   const style = styleById(args.styleId);
   if (!style) return { ok: false as const, message: "That style is not in the catalogue." };
-  const reference = readHairstyleReference(style.id);
+  const asked = parseAskedTexture(args.texture || "natural");
+  const textureChoice = selectReferenceVariant({
+    styleId: style.id,
+    styleName: style.name,
+    referenceTexture: style.referenceTexture,
+    asked,
+    files: existingHairstyleFiles(style.id),
+  });
+  const preferred = textureChoice.fileName === `${style.id}.jpg` ? undefined : textureChoice.fileName;
+  const referencePath = hairstyleReferenceFile(style.id, "styles", preferred);
+  const reference = referencePath ? readHairstyleReference(style.id, "styles", preferred) : null;
   if (!reference) {
     return {
       ok: false as const,
@@ -148,7 +159,7 @@ export async function prepareBenchmark(args: { jpeg: Buffer; styleId: string; co
   if (!quote.ok) return quote;
   const planned = planImageEdit({
     model: quote.model,
-    prompt: buildReferencePrompt(style, args.colourName),
+    prompt: buildReferencePrompt(style, args.colourName, asked === "natural" ? undefined : asked),
     quality: quote.quality,
     size: quote.size,
     outputFormat: "png",
@@ -164,8 +175,12 @@ export async function prepareBenchmark(args: { jpeg: Buffer; styleId: string; co
     quote,
     planned: planned.plan,
     reference,
+    referenceFile: referencePath ? path.basename(referencePath) : textureChoice.fileName,
     referenceWidth: referenceMeta.width || 0,
     referenceHeight: referenceMeta.height || 0,
+    texture: asked,
+    referenceTexture: textureChoice.referenceTexture,
+    textureWarning: textureChoice.warning,
     fitted,
   };
 }

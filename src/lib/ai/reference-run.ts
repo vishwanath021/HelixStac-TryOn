@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { benchmarkDir, prepareBenchmark, restoredFromProvider, writeBenchmarkStages } from "@/lib/ai/benchmark";
+import type { AskedTexture } from "@/lib/ai/reference-texture";
 import { composeHairOnly } from "@/lib/face/compose-hair";
 import { assertVisionReady } from "@/lib/face/vision-assets";
 import type { DriftReport } from "@/lib/face/hair-composite";
@@ -89,6 +90,7 @@ export async function executeReferenceEdit(args: {
   source: "benchmark" | "tryon";
   tool: string;
   hairComposite?: boolean;
+  hairTexture?: AskedTexture;
 }): Promise<ReferenceSuccess | ReferenceFailure> {
   if (args.hairComposite) {
     try {
@@ -99,7 +101,7 @@ export async function executeReferenceEdit(args: {
     }
   }
   await purgeOldBenchmarks().catch(() => undefined);
-  const prepared = await prepareBenchmark({ jpeg: args.jpeg, styleId: args.styleId });
+  const prepared = await prepareBenchmark({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture });
   if (!prepared.ok) {
     return { ok: false, httpStatus: 400, error: "QUOTE", message: prepared.message, outcome: "quote" };
   }
@@ -153,6 +155,10 @@ export async function executeReferenceEdit(args: {
     referencePixels: { width: prepared.referenceWidth, height: prepared.referenceHeight },
     note: "The skin-colour face blob was not used. Alignment is not a haircut score. No original face was pasted back.",
     hairCompositeRequested: Boolean(args.hairComposite),
+    hairTexture: prepared.texture,
+    referenceTexture: prepared.referenceTexture,
+    textureWarning: prepared.textureWarning,
+    referenceFile: prepared.referenceFile,
   };
   await writeBenchmarkStages(dir, {
     original: args.original,
@@ -399,6 +405,7 @@ export async function runTryOnReference(args: {
   requestId: string;
   revealCost: boolean;
   hairComposite?: boolean;
+  hairTexture?: AskedTexture;
 }) {
   const executed = await executeReferenceEdit({
     jpeg: args.jpeg,
@@ -408,6 +415,7 @@ export async function runTryOnReference(args: {
     source: "tryon",
     tool: "reference",
     hairComposite: args.hairComposite,
+    hairTexture: args.hairTexture,
   });
   if (!executed.ok) {
     await failGenerationJob(args.jobId, { outcome: executed.outcome, message: executed.message, callId: executed.callId });

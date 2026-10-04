@@ -1,3 +1,8 @@
+import { referenceTextureFor, type ReferenceTexture } from "@/data/hair-texture";
+
+export type { ReferenceTexture } from "@/data/hair-texture";
+export { referenceTextureFor } from "@/data/hair-texture";
+
 export type Gender = "women" | "men" | "kids";
 export type FaceShape = "oval" | "round" | "square" | "heart" | "oblong" | "diamond";
 export type HairType = "straight" | "wavy" | "curly" | "thick" | "thin";
@@ -12,6 +17,8 @@ export type StyleDef = {
   prompt: string;
   /** How long the selected cut is. Used by the reference-mode prompt, not by the production mask. */
   lengthCategory: LengthCategory;
+  /** What the shipped reference JPEG actually shows. Curly is unused: none of the current files are curly. */
+  referenceTexture: ReferenceTexture;
   tags: string[];
   faceShapes: FaceShape[];
   hairTypes: HairType[];
@@ -19,7 +26,7 @@ export type StyleDef = {
 };
 
 type Draft = Pick<StyleDef, "id" | "name" | "gender" | "category" | "description" | "prompt"> &
-  Partial<Pick<StyleDef, "lengthCategory" | "tags" | "faceShapes" | "hairTypes" | "serviceKeys">>;
+  Partial<Pick<StyleDef, "lengthCategory" | "tags" | "faceShapes" | "hairTypes" | "serviceKeys" | "referenceTexture">>;
 
 export function lengthCategoryFor(style: { id?: string; category?: string; lengthCategory?: LengthCategory }): LengthCategory {
   if (style.lengthCategory) return style.lengthCategory;
@@ -40,6 +47,7 @@ function s(draft: Draft): StyleDef {
   return {
     ...draft,
     lengthCategory: draft.lengthCategory ?? lengthCategoryFor(draft),
+    referenceTexture: draft.referenceTexture ?? referenceTextureFor(draft),
     tags: draft.tags ?? [draft.category],
     faceShapes: draft.faceShapes ?? ["oval"],
     hairTypes: draft.hairTypes ?? ["straight", "wavy", "thick"],

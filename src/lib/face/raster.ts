@@ -61,6 +61,68 @@ export function distanceFromOff(mask: Uint8Array, width: number, height: number)
   return dist;
 }
 
+/** Index of the nearest on-pixel, or -1 when the mask is empty. */
+export function nearestOnIndex(mask: Uint8Array, width: number, height: number) {
+  const n = width * height;
+  const inf = 1e8;
+  const dist = new Float32Array(n);
+  const src = new Int32Array(n);
+  for (let i = 0; i < n; i += 1) {
+    if (mask[i] >= 128) {
+      dist[i] = 0;
+      src[i] = i;
+    } else {
+      dist[i] = inf;
+      src[i] = -1;
+    }
+  }
+  const diag = 1.41421356;
+  const consider = (i: number, j: number, step: number) => {
+    if (src[j] < 0) return;
+    const next = dist[j] + step;
+    if (next < dist[i]) {
+      dist[i] = next;
+      src[i] = src[j];
+    }
+  };
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = y * width + x;
+      if (x > 0) consider(i, i - 1, 1);
+      if (y > 0) consider(i, i - width, 1);
+      if (x > 0 && y > 0) consider(i, i - width - 1, diag);
+      if (x + 1 < width && y > 0) consider(i, i - width + 1, diag);
+    }
+  }
+  for (let y = height - 1; y >= 0; y -= 1) {
+    for (let x = width - 1; x >= 0; x -= 1) {
+      const i = y * width + x;
+      if (x + 1 < width) consider(i, i + 1, 1);
+      if (y + 1 < height) consider(i, i + width, 1);
+      if (x + 1 < width && y + 1 < height) consider(i, i + width + 1, diag);
+      if (x > 0 && y + 1 < height) consider(i, i + width - 1, diag);
+    }
+  }
+  return src;
+}
+
+/** Distance in pixels to the nearest mask pixel that is on. Off pixels grow from the hair edge. */
+export function distanceToOn(mask: Uint8Array, width: number, height: number) {
+  const inf = 1e8;
+  const dist = new Float32Array(width * height);
+  for (let i = 0; i < dist.length; i += 1) dist[i] = mask[i] >= 128 ? 0 : inf;
+  chamfer(dist, width, height);
+  return dist;
+}
+
+export function erodeMask(mask: Uint8Array, width: number, height: number, radius: number) {
+  if (radius <= 0) return Uint8Array.from(mask);
+  const inside = distanceFromOff(mask, width, height);
+  const out = new Uint8Array(mask.length);
+  for (let i = 0; i < out.length; i += 1) if (mask[i] >= 128 && inside[i] > radius) out[i] = 255;
+  return out;
+}
+
 export function dilateMask(mask: Uint8Array, width: number, height: number, radius: number) {
   if (radius <= 0) return Uint8Array.from(mask);
   const inf = 1e8;

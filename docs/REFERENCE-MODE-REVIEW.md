@@ -27,7 +27,7 @@ This follow-up did not place a new paid call. The owner's first paid benchmark i
 | output_format | `png` | Lossless inspection file. |
 | size | `1024x1024`, `1536x1024`, or `1024x1536` | Chosen from the selfie aspect. Ratio above 1.15 is landscape. Ratio below 1/1.15 is portrait. Otherwise square. `BENCHMARK_INPUT_SIZE=1024` is off by default and forces a 1024 edge (square, or `1024x1536` for a tall photo). |
 | image[0] | `selfie.png` | Sanitized selfie, uniform-scaled into the chosen size. Bars use the border mean. No stretch. |
-| image[1] | `style-reference.jpg` | `public/styles/{id}@2x.jpg`, else `{id}-large.jpg`, else `{id}.jpg`. |
+| image[1] | `style-reference.jpg` | A texture sibling `{id}-curly.jpg`, `{id}-wavy.jpg`, or `{id}-straight.jpg` when that file exists and the super-admin asked for it. Otherwise `public/styles/{id}@2x.jpg`, else `{id}-large.jpg`, else `{id}.jpg`. |
 | mask | omitted | The prompt has no mask sentence on this path. |
 | seed, strength, guidance, guidance_scale | omitted | `FORBIDDEN_EDIT_FIELDS`. |
 
@@ -228,9 +228,11 @@ The generate route then uses the same reference edit as the benchmark: `gpt-imag
 
 A second checkbox, **Hair-only composite**, appears only while Reference mode is on. It is off by default. Guests never see it. The benchmark form on `/super/ai` does not use it.
 
-The paid request is unchanged: one reference edit, the same quote, confirmation, request-id dedup, ₹500 ledger and ₹30 run cap. `hairComposite=yes` is ignored unless reference mode is already active. The fingerprint mode is `reference-hair`, so it does not replay a pure reference result. The vision models and Python mediapipe are checked before `beginPaidCall`. A missing file returns 400 and does not call the provider.
+The paid request is unchanged: one reference edit, the same quote, confirmation, request-id dedup, ₹500 ledger and ₹30 run cap. `hairComposite=yes` is ignored unless reference mode is already active. The fingerprint mode is `reference-hair`, or `reference-hair-curly` / `reference-hair-wavy` / `reference-hair-straight` when Hair texture is set, so it does not replay a different texture. The vision models and Python mediapipe are checked before `beginPaidCall`. A missing file returns 400 and does not call the provider.
 
-After the provider PNG returns, the letterbox is cropped with the recorded frame transform, then a landmark similarity maps that frame onto the sanitized selfie. Hair comes from MediaPipe's hair segmenter on both images. Clothes and accessories come from the selfie multiclass model (categories 4 and 5). The protected zone is built from Face Landmarker points: eyes, brows, nose, mouth, the beard and moustache, ears only where the old hair does not cover them, and face-oval skin that is not already hair. The skin-colour blob is not a hair mask. The composite copies generated pixels only inside the dilated old hair plus the new hair, minus that protected zone and minus garments that the old hair did not cover. Edges are feathered. A per-channel gain from the ring around the edit is applied only on the new hair, clamped between 0.75 and 1.35.
+After the provider PNG returns, the letterbox is cropped with the recorded frame transform, then a landmark similarity maps that frame onto the sanitized selfie. Hair comes from MediaPipe's hair segmenter on both images. Clothes and accessories come from the selfie multiclass model (categories 4 and 5). The protected zone is built from Face Landmarker points: eyes, brows, nose, mouth, the beard and moustache, ears only where the old hair does not cover them, and face-oval skin that is not already hair. The skin-colour blob is not a hair mask.
+
+The matte is the segmenter mask eroded by 2 pixels, then a radius-2 guided filter on the aligned luminance. Pale spill that is lighter than the hair and closer to the wall is dropped, including inside that core, so the model's background is not pulled into the hair. Feather is 3 pixels and only where the eroded core covers old hair. It does not paint generated pixels onto wall that the old hair did not cover. Where old hair is removed, the fill is the nearest original wall pixel a few pixels outside the hair, keeping the brighter half of that ring so a dark unmasked fringe does not turn the fill gray. The generated background is mixed in only when it is not paler than that wall and is within 30 per-channel counts. A 2-pixel dark fringe just outside the old hair mask is replaced with that same wall tone. `backgroundEdgeDelta` measures the band outside a known hair mask. The unit fixture keeps that mean under `HALO_MAX_DELTA` (14) while a naive copy of the white model background does not. `unchangedWallDelta` on the replays was 2.4 for the real face and 0.3 for the synthetic pixie.
 
 `validation.json` keeps `accepted: false`. `compositeApplied` is true only when the composite file was written. `provider-response.png` remains the raw provider body. `hair-composite.png` is a different file and the file route labels it `hair-only-composite`. A failed composite stores `compositeError` and does not retry the paid call.
 
@@ -242,7 +244,29 @@ Offline replay, no provider call:
 npm run replay:composite -- --original sanitized-input.jpg --raw provider-response.png --out /tmp/replay-pixie --label synthetic-pixie
 ```
 
-The synthetic contact sheet is original, raw, mask overlay, composite. Hair texture is a separate limit: the Messy Texture raw drew straight, spiky hair over curly hair, and the composite can only place the hair the model actually drew. It does not invent the original curl. The beard, black t-shirt and wall in that replay stayed with the selfie. About 6% of those pixels changed. The synthetic pixie composite changed about 16%, in line with the hair mask.
+The synthetic contact sheet is original, raw, mask overlay, composite. The beard, black t-shirt and wall in the real-face replay stayed with the selfie. The raw Messy Texture frame is still flagged (SSIM 0.773, nose ratio delta 0.072). Its composite is not (SSIM 1.0). The synthetic pixie raw is not flagged (SSIM 0.832). Its composite is not flagged (SSIM 1.0). Changed pixels are about 8% on the real face after the tighter matte. The wall beside the new hair moved by 2.4 counts per channel on that replay and 0.3 on the synthetic one.
+
+Hair texture is still a separate limit. The saved Messy Texture raw drew straight, spiky hair over curly hair. The composite can only place the hair the model actually drew. It does not invent the original curl.
+
+## Hair texture
+
+Reference mode always tells the model to keep the texture in Image 1 (curly, wavy, straight, or coily) and to take only silhouette, length, layering, fringe and parting from Image 2. A super-admin **Hair texture** select on the salon page defaults to **Keep natural**. Straight, Wavy, or Curly is posted only when it is changed, and the prompt then adds one sentence that a texture change was requested and that Image 2 does not supply it. The production `buildStylePrompt` is unchanged. Guests do not see the select. The `/super/ai` benchmark form does not have it; that path still gets the keep-texture sentence because it uses `buildReferencePrompt`.
+
+Each style has `referenceTexture` in `src/data/styles.ts`. It describes the shipped JPEG, not what a client can wear. `beach-waves` and `soft-waves` are `wavy`. The other 57 styles are `straight`. None of the current files are curly. Names such as `soft-curls`, `curly-top-fade`, and `kids-curly-crop` are straight in the file.
+
+`selectReferenceVariant` keeps Image 2 as the selected cut. If `public/styles/{id}-{asked}.jpg` exists it is sent instead of the straight JPEG. If it does not, and the shipped texture differs, the UI shows: the reference is that other texture, no variant is in the catalogue, and the prompt still keeps texture from Image 1. Keep natural does not warn.
+
+Every current style lacks a curly reference. Proposed files, not generated:
+
+- `public/styles/messy-texture-curly.jpg`
+- `public/styles/curly-top-fade-curly.jpg`
+- `public/styles/soft-curls-curly.jpg`
+- `public/styles/kids-curly-crop-curly.jpg`
+- `public/styles/pixie-curly.jpg`
+- `public/styles/mid-fade-curly.jpg`
+- `public/styles/textured-crop-curly.jpg`
+
+The same `{id}-curly.jpg` name works for the other straight and wavy styles when a curly reference is added later.
 
 ## How to run a controlled paid test locally
 
@@ -257,7 +281,7 @@ npm run dev
 1. Open http://localhost:3000/login and sign in as `super@helixstac.app` / `SuperAdmin#2026`.
 2. Open http://localhost:3000/super/ai. If the platform provider is not already OpenAI, paste the key there. Do not put the key in git.
 3. Optional, no charge: `npm run benchmark:quote`.
-4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. For a hair-only result, also tick **Hair-only composite**. That box is absent until Reference mode is on, and it is absent for a guest. Upload or take a selfie, pick a style, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick **I understand this makes one paid OpenAI call and does not retry**, and press **Try this hairstyle**.
+4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. For a hair-only result, also tick **Hair-only composite**. Set **Hair texture** to **Curly** when the selfie is curly and the catalogue JPEG is straight. Those controls are absent until Reference mode is on, and they are absent for a guest. Upload or take a selfie, pick a style, read the texture warning if Image 2 does not match, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick **I understand this makes one paid OpenAI call and does not retry**, and press **Try this hairstyle**.
 5. With the composite off, the page shows the original beside the raw result. With it on, the page shows original, raw provider image, and hair-only composite. The download is the composite. The raw image stays labelled unvalidated. A neckline shift shows a clothing warning. A redrawn raw face shows a drift flag. **Delete now** removes that run, or leave the files for 72 hours. Do not commit the photos. The composite needs `pip install -r scripts/requirements-vision.txt` first. Without it, the request is refused before any paid call.
 6. The benchmark form still works: on `/super/ai`, pick a hairstyle, choose a selfie, tick the confirmation, and press **Run benchmark**. Open the result link. The right image is `provider-response.png`, labelled UNVALIDATED. `validation.json` stays `accepted: false`.
 
@@ -269,6 +293,7 @@ npm run dev
 - `input_fidelity=high` was accepted on that first call. A future key that rejects it still fails the run with no fallback.
 - The quote is an estimate with a 15% image-token margin. The stored actual cost is the provider usage. They will differ.
 - References are 512×512. Several men's cuts look alike, and several show stubble. Listed above as needing regeneration.
+- No catalogue JPEG is curly. A curly selfie with **Keep natural** or **Curly** still receives a straight Image 2 unless `{id}-curly.jpg` is added. The prompt can ask for the selfie texture. It cannot force the model to ignore a straight reference, and the composite cannot curl hair the model drew straight.
 - A new guest click uses a new request id and can bill again after a lost response.
 - Spend reservations and dedupe share state only through the database. The in-process queue is single-process.
 - Guest production still uses the square pad, the heuristic mask, and the face composite. This benchmark does not replace that path.

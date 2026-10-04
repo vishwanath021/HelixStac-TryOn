@@ -8,6 +8,7 @@ import {
   buildProtectedZone,
   compositeHair,
   DRIFT_LIMITS,
+  unchangedWallDelta,
   faceDrift,
   faceRatios,
   maskOverlay,
@@ -136,6 +137,7 @@ export type HairCompositeOutput = {
   rawDrift: DriftReport;
   compositeDrift: DriftReport;
   compositeLandmarksDetected: boolean;
+  wallBandDelta: number;
 };
 
 /**
@@ -211,5 +213,6 @@ export async function composeHairOnly(originalImage: Buffer, generatedImage: Buf
     rawDrift,
     compositeDrift,
     compositeLandmarksDetected,
+    wallBandDelta: unchangedWallDelta(original, composited.image, originalSeg.hair, newHair),
   };
 }

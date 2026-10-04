@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { ColourStage } from "@/components/tryon/ColourStage";
+import { ReferenceTextureWarning } from "@/components/tryon/ReferenceTextureWarning";
 import { StyleCard } from "@/components/tryon/StyleCard";
 import { t } from "@/data/i18n";
 import { captureShouldMirror } from "@/lib/capture";
 import { classifySkinPhoto } from "@/lib/hand-photo";
+import { parseAskedTexture, type AskedTexture } from "@/lib/ai/reference-texture";
 import type { SalonConfig } from "@/lib/salon";
 import { normalizeWhatsAppPhone } from "@/lib/whatsapp";
 
@@ -94,6 +96,7 @@ export function TryOnApp({
   const [busy, setBusy] = useState(false);
   const [referenceMode, setReferenceMode] = useState(false);
   const [hairComposite, setHairComposite] = useState(false);
+  const [hairTexture, setHairTexture] = useState<AskedTexture>("natural");
   const [referenceAck, setReferenceAck] = useState(false);
   const [referenceQuote, setReferenceQuote] = useState<{ model: string; quality: string; size: string; rupees: number; dollars: number; note: string } | null>(null);
   const [referenceChoice, setReferenceChoice] = useState<{ id: string; name: string; serviceKeys: string[]; tool: Look["tool"] } | null>(null);
@@ -438,6 +441,7 @@ export function TryOnApp({
         body.set("referenceMode", "yes");
         body.set("confirm", "yes");
         if (hairComposite) body.set("hairComposite", "yes");
+        if (hairTexture !== "natural") body.set("hairTexture", hairTexture);
       } else if (chosen.tool === "style" && shadeId) {
         body.set("shadeId", shadeId);
       }
@@ -762,7 +766,10 @@ export function TryOnApp({
                     checked={referenceMode}
                     onChange={(event) => {
                       setReferenceMode(event.target.checked);
-                      if (!event.target.checked) setHairComposite(false);
+                      if (!event.target.checked) {
+                        setHairComposite(false);
+                        setHairTexture("natural");
+                      }
                       setReferenceAck(false);
                       setReferenceQuote(null);
                       setReferenceChoice(null);
@@ -792,6 +799,37 @@ export function TryOnApp({
                   <p className="mt-2 text-muted">
                     After the paid image returns, this keeps the selfie for the face, beard, clothes and background. Only the hair region is taken from the generated image. This step does not make another provider call. If it fails, the raw image is still shown and the call is not sent again.
                   </p>
+                )}
+                {referenceMode && (
+                  <label className="mt-3 block font-medium">
+                    Hair texture
+                    <select
+                      className="mt-1 block w-full rounded-xl border border-line bg-white px-3 py-2"
+                      value={hairTexture}
+                      onChange={(event) => {
+                        setHairTexture(parseAskedTexture(event.target.value));
+                        setReferenceAck(false);
+                      }}
+                    >
+                      <option value="natural">Keep natural</option>
+                      <option value="straight">Straight</option>
+                      <option value="wavy">Wavy</option>
+                      <option value="curly">Curly</option>
+                    </select>
+                  </label>
+                )}
+                {referenceMode && (
+                  <p className="mt-2 text-muted">
+                    Keep natural follows the texture already in the selfie. Image 2 still supplies the cut, length and silhouette. Straight, Wavy or Curly asks for that texture and is sent only when you change this.
+                  </p>
+                )}
+                {referenceMode && (referenceChoice || styleId) && (
+                  <ReferenceTextureWarning
+                    styleId={referenceChoice?.id || styleId}
+                    styleName={referenceChoice?.name || config.styles.find((item) => item.id === styleId)?.name || styleId}
+                    referenceTexture={config.styles.find((item) => item.id === (referenceChoice?.id || styleId))?.referenceTexture}
+                    asked={hairTexture}
+                  />
                 )}
                 {referenceMode && referenceQuote && referenceChoice && (
                   <div className="mt-3 border-t border-line pt-3">

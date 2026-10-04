@@ -83,6 +83,7 @@ async function main() {
     rawFaceDrift: result.rawDrift,
     compositeFaceDrift: result.compositeDrift,
     compositeLandmarksDetected: result.compositeLandmarksDetected,
+    wallBandDelta: result.wallBandDelta,
     contact: sheetPath,
     note: "Offline replay. No provider call. The composite is not the raw provider output.",
   };

@@ -3,10 +3,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  backgroundEdgeDelta,
   buildProtectedZone,
   compositeHair,
   DRIFT_LIMITS,
   faceDrift,
+  HAIR_FEATHER_PX,
+  HALO_MAX_DELTA,
+  unchangedWallDelta,
 } from "@/lib/face/hair-composite";
 import {
   CHIN,
@@ -202,6 +206,113 @@ describe("hair-only composite", () => {
     expect(drift.browDelta).toBeGreaterThan(DRIFT_LIMITS.brow);
     expect(drift.ssim).toBeLessThan(DRIFT_LIMITS.ssim);
     expect(drift.flagged).toBe(true);
+  });
+
+  it("keeps a white generated fringe off the original wall", () => {
+    const size = 64;
+    const wall: [number, number, number] = [210, 200, 190];
+    const dark: [number, number, number] = [30, 22, 16];
+    const white: [number, number, number] = [250, 250, 248];
+    const original = Buffer.alloc(size * size * 3);
+    const aligned = Buffer.alloc(size * size * 3);
+    const trueHair = new Uint8Array(size * size);
+    const newHair = new Uint8Array(size * size);
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const o = (y * size + x) * 3;
+        const core = x >= 16 && x < 40 && y >= 8 && y < 32;
+        const claimed = x >= 12 && x < 44 && y >= 4 && y < 36;
+        const rgb = core ? dark : wall;
+        original[o] = rgb[0];
+        original[o + 1] = rgb[1];
+        original[o + 2] = rgb[2];
+        const generated = core ? dark : white;
+        aligned[o] = generated[0];
+        aligned[o + 1] = generated[1];
+        aligned[o + 2] = generated[2];
+        if (core) trueHair[y * size + x] = 255;
+        if (claimed) newHair[y * size + x] = 255;
+      }
+    }
+    const empty = new Uint8Array(size * size);
+    const source = { data: original, width: size, height: size };
+    const result = compositeHair({
+      original: source,
+      aligned: { data: aligned, width: size, height: size },
+      oldHair: trueHair,
+      newHair,
+      garments: empty,
+      skin: empty,
+      protectedZone: empty,
+    });
+    expect(result.featherPx).toBe(HAIR_FEATHER_PX);
+    const delta = backgroundEdgeDelta(source, result.image, trueHair);
+    expect(delta).toBeLessThan(HALO_MAX_DELTA);
+    expect(unchangedWallDelta(source, result.image, trueHair, newHair)).toBeLessThan(HALO_MAX_DELTA);
+    const naive = Buffer.from(original);
+    for (let i = 0; i < newHair.length; i += 1) {
+      if (newHair[i] < 128) continue;
+      naive[i * 3] = aligned[i * 3];
+      naive[i * 3 + 1] = aligned[i * 3 + 1];
+      naive[i * 3 + 2] = aligned[i * 3 + 2];
+    }
+    expect(backgroundEdgeDelta(source, { data: naive, width: size, height: size }, trueHair)).toBeGreaterThan(HALO_MAX_DELTA);
+    const center = (20 * size + 28) * 3;
+    expect([result.image.data[center], result.image.data[center + 1], result.image.data[center + 2]]).toEqual(dark);
+    const fringe = (20 * size + 13) * 3;
+    const fringeRgb = [result.image.data[fringe], result.image.data[fringe + 1], result.image.data[fringe + 2]];
+    expect(Math.abs(fringeRgb[0] - wall[0]) + Math.abs(fringeRgb[1] - wall[1]) + Math.abs(fringeRgb[2] - wall[2])).toBeLessThan(HALO_MAX_DELTA * 3);
+  });
+
+  it("fills removed hair from the neighbouring wall, not the pale model background", () => {
+    const size = 64;
+    const wall: [number, number, number] = [210, 200, 190];
+    const dark: [number, number, number] = [24, 18, 14];
+    const white: [number, number, number] = [250, 250, 248];
+    const original = Buffer.alloc(size * size * 3);
+    const aligned = Buffer.alloc(size * size * 3);
+    const oldHair = new Uint8Array(size * size);
+    const newHair = new Uint8Array(size * size);
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const o = (y * size + x) * 3;
+        const oldOn = x >= 8 && x < 40 && y >= 16 && y < 40;
+        const newOn = x >= 22 && x < 40 && y >= 16 && y < 40;
+        const fringe = x >= 6 && x < 8 && y >= 16 && y < 40;
+        const rgb = oldOn || fringe ? dark : wall;
+        original[o] = rgb[0];
+        original[o + 1] = rgb[1];
+        original[o + 2] = rgb[2];
+        const generated = newOn ? dark : white;
+        aligned[o] = generated[0];
+        aligned[o + 1] = generated[1];
+        aligned[o + 2] = generated[2];
+        if (oldOn) oldHair[y * size + x] = 255;
+        if (newOn) newHair[y * size + x] = 255;
+      }
+    }
+    const empty = new Uint8Array(size * size);
+    const source = { data: original, width: size, height: size };
+    const result = compositeHair({
+      original: source,
+      aligned: { data: aligned, width: size, height: size },
+      oldHair,
+      newHair,
+      garments: empty,
+      skin: empty,
+      protectedZone: empty,
+    });
+    const removed = (28 * size + 12) * 3;
+    const filled = [result.image.data[removed], result.image.data[removed + 1], result.image.data[removed + 2]];
+    expect(Math.abs(filled[0] - wall[0]) + Math.abs(filled[1] - wall[1]) + Math.abs(filled[2] - wall[2])).toBeLessThan(HALO_MAX_DELTA * 3);
+    expect(filled[0]).toBeLessThan(230);
+    const outside = (28 * size + 2) * 3;
+    expect([result.image.data[outside], result.image.data[outside + 1], result.image.data[outside + 2]]).toEqual(wall);
+    const fringePx = (28 * size + 7) * 3;
+    const fringeRgb = [result.image.data[fringePx], result.image.data[fringePx + 1], result.image.data[fringePx + 2]];
+    expect(Math.abs(fringeRgb[0] - wall[0]) + Math.abs(fringeRgb[1] - wall[1]) + Math.abs(fringeRgb[2] - wall[2])).toBeLessThan(HALO_MAX_DELTA * 3);
+    const center = (28 * size + 30) * 3;
+    expect([result.image.data[center], result.image.data[center + 1], result.image.data[center + 2]]).toEqual(dark);
   });
 
   it("refuses a missing vision model", () => {

@@ -2,6 +2,7 @@ import type { BeardDef } from "@/data/beards";
 import type { BrowDef } from "@/data/brows";
 import type { NailDef } from "@/data/nails";
 import { lengthCategoryFor, type StyleDef } from "@/data/styles";
+import type { AskedTexture } from "@/lib/ai/reference-texture";
 
 export function buildStylePrompt(style: StyleDef, colourName?: string) {
   return [
@@ -32,8 +33,14 @@ function lengthInstruction(style: StyleDef) {
   return "The selected cut is long. If the person in Image 1 currently has shorter hair, this is a short-to-long change: extend the hair without enlarging the head or changing the framing.";
 }
 
+function textureInstruction(texture?: AskedTexture) {
+  const keep = "Keep the person's natural hair texture from Image 1, whether it is curly, wavy, straight, or coily. Adapt the new cut to that texture. Image 2 supplies silhouette, length, layering, fringe and parting only. Do not replace curly or coily hair with straight or spiky hair unless a texture change was requested.";
+  if (!texture || texture === "natural") return keep;
+  return `${keep} A texture change was requested: the hair texture should be ${texture}, adapted to the head in Image 1. Image 2 does not supply that texture.`;
+}
+
 /** Reference-mode prompt. No mask sentences. Image 1 is the person. Image 2 is the haircut only. */
-export function buildReferencePrompt(style: StyleDef, colourName?: string) {
+export function buildReferencePrompt(style: StyleDef, colourName?: string, texture?: AskedTexture) {
   const colour = colourName
     ? `A colour change was requested: shift the hair colour toward ${colourName}.`
     : "Keep the original hair colour unless a colour change was requested.";
@@ -41,6 +48,7 @@ export function buildReferencePrompt(style: StyleDef, colourName?: string) {
     "Image 1 is the person to edit. Image 2 is a hairstyle reference only.",
     `Produce one photorealistic edited photograph of the person in Image 1 wearing ${style.name}. ${style.prompt}`,
     "Transfer the haircut's silhouette, length, layering, fringe and parting from Image 2, adapted naturally to the person's head and existing hair texture.",
+    textureInstruction(texture),
     "Preserve the identity, facial features, expression, pose, head size, camera position, clothing, jewellery, background and lighting from Image 1.",
     "Keep the clothing, neckline shape, collar, sleeves, garment colour and straps exactly as in Image 1. If Image 1 shows a crew-neck t-shirt, the t-shirt keeps its exact crew neckline. Only the hair region, and skin or background that the old hair was covering, may change.",
     colour,

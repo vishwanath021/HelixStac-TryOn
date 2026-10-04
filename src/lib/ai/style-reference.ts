@@ -32,23 +32,44 @@ export function styleReferenceFor(input: { kind?: string; styleId: string }, pro
   return readStyleThumbnail(input.styleId, thumbnailFolder(input.kind));
 }
 
+const FILE_NAME = /^[a-z0-9@-]{1,90}\.jpg$/;
+
 /**
  * Benchmark mode always sends the catalogue JPEG. It does not upscale a 512px file.
- * A larger sibling (`{id}@2x.jpg` or `{id}-large.jpg`) is preferred when one exists.
+ * A texture sibling (`{id}-curly.jpg`) is tried first when one was selected.
+ * Otherwise a larger sibling (`{id}@2x.jpg` or `{id}-large.jpg`) is preferred.
  */
-export function hairstyleReferenceFile(styleId: string, folder: ThumbFolder = "styles") {
+export function hairstyleReferenceFile(styleId: string, folder: ThumbFolder = "styles", preferredName?: string) {
   if (!STYLE_ID.test(styleId)) return null;
   const dir = path.join(process.cwd(), "public", folder);
-  const candidates = [`${styleId}@2x.jpg`, `${styleId}-large.jpg`, `${styleId}.jpg`];
+  const preferred = preferredName && FILE_NAME.test(preferredName) ? preferredName : "";
+  const candidates = [preferred, `${styleId}@2x.jpg`, `${styleId}-large.jpg`, `${styleId}.jpg`].filter(Boolean);
+  const seen = new Set<string>();
   for (const name of candidates) {
+    if (seen.has(name)) continue;
+    seen.add(name);
     const file = path.join(dir, name);
     if (existsSync(file)) return file;
   }
   return null;
 }
 
-export function readHairstyleReference(styleId: string, folder: ThumbFolder = "styles") {
-  const file = hairstyleReferenceFile(styleId, folder);
+export function existingHairstyleFiles(styleId: string, folder: ThumbFolder = "styles") {
+  if (!STYLE_ID.test(styleId)) return [];
+  const dir = path.join(process.cwd(), "public", folder);
+  const names = [
+    `${styleId}.jpg`,
+    `${styleId}@2x.jpg`,
+    `${styleId}-large.jpg`,
+    `${styleId}-straight.jpg`,
+    `${styleId}-wavy.jpg`,
+    `${styleId}-curly.jpg`,
+  ];
+  return names.filter((name) => existsSync(path.join(dir, name)));
+}
+
+export function readHairstyleReference(styleId: string, folder: ThumbFolder = "styles", preferredName?: string) {
+  const file = hairstyleReferenceFile(styleId, folder, preferredName);
   if (!file) return null;
   return readFileSync(file);
 }
