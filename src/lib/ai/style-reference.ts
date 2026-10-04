@@ -31,3 +31,24 @@ export function styleReferenceFor(input: { kind?: string; styleId: string }, pro
   if (!sendStyleReference(provider)) return null;
   return readStyleThumbnail(input.styleId, thumbnailFolder(input.kind));
 }
+
+/**
+ * Benchmark mode always sends the catalogue JPEG. It does not upscale a 512px file.
+ * A larger sibling (`{id}@2x.jpg` or `{id}-large.jpg`) is preferred when one exists.
+ */
+export function hairstyleReferenceFile(styleId: string, folder: ThumbFolder = "styles") {
+  if (!STYLE_ID.test(styleId)) return null;
+  const dir = path.join(process.cwd(), "public", folder);
+  const candidates = [`${styleId}@2x.jpg`, `${styleId}-large.jpg`, `${styleId}.jpg`];
+  for (const name of candidates) {
+    const file = path.join(dir, name);
+    if (existsSync(file)) return file;
+  }
+  return null;
+}
+
+export function readHairstyleReference(styleId: string, folder: ThumbFolder = "styles") {
+  const file = hairstyleReferenceFile(styleId, folder);
+  if (!file) return null;
+  return readFileSync(file);
+}

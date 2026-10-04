@@ -1,4 +1,4 @@
-import { BilledProviderError, SpendCapError, UnknownModelError } from "@/lib/ai/errors";
+import { BilledProviderError, SpendCapError, UnbilledProviderError, UncertainBillingError } from "@/lib/ai/errors";
 import { GeminiProvider } from "@/lib/ai/gemini";
 import { MockProvider } from "@/lib/ai/mock";
 import { OpenAIProvider } from "@/lib/ai/openai";
@@ -44,16 +44,17 @@ async function settleFailure(id: string, error: unknown, model: string, estimate
     await finalizePaidCall(id, {
       model,
       billed: true,
-      charged: false,
+      charged: true,
       costUsd: error.costUsd,
       estimateInr,
       usage: error.usage,
       imageSize,
     });
-  } else {
-    await finalizePaidCall(id, { model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize });
+    await releasePaidCall(id, "BILLED_FAILED");
+    return;
   }
-  await releasePaidCall(id);
+  await finalizePaidCall(id, { model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize });
+  await releasePaidCall(id, "REFUNDED");
 }
 
 export async function generateWithFailover(input: GenerateInput, choice?: ProviderChoice): Promise<GenerateOutput> {
@@ -109,20 +110,31 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
         });
         return { ...output, callId: gate.id, estimateInr: gate.estimateInr };
       } catch (error) {
+        if (error instanceof UncertainBillingError) {
+          await finalizePaidCall(gate.id, {
+            model,
+            billed: true,
+            charged: true,
+            costUsd: estimateUsd || 0,
+            estimateInr: gate.estimateInr,
+            imageSize,
+          });
+          await releasePaidCall(gate.id, "UNCERTAIN");
+          throw error;
+        }
         await settleFailure(gate.id, error, model, gate.estimateInr, imageSize);
-        if (error instanceof UnknownModelError || error instanceof SpendCapError) throw error;
         throw error;
       }
     },
   });
   if (!locked.ok) {
-    if (locked.callId) {
-      const keepBill = locked.reason === "postcheck" || locked.reason === "face-guard";
-      await releasePaidCall(locked.callId, keepBill ? "BILLED_FAILED" : "REFUNDED");
+    if (locked.callId && (locked.reason === "postcheck" || locked.reason === "face-guard")) {
+      await releasePaidCall(locked.callId, "BILLED_FAILED");
     }
     if (locked.reason === "spend-cap") return demoFallback(input, "mock:spend-cap", "spend-cap");
+    if (locked.reason === "uncertain") throw new UncertainBillingError(locked.message);
     if (locked.reason === "provider" || locked.reason === "unknown-model") {
-      return demoFallback(input, `mock:failover-from-${primary.name}`, "failover");
+      throw new UnbilledProviderError(locked.message);
     }
     return demoFallback(input, "mock:placement", "placement");
   }

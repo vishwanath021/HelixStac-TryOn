@@ -1,4 +1,5 @@
-import { BilledProviderError, isUnknownModelResponse, UnknownModelError } from "@/lib/ai/errors";
+import { editFormFields, imageEditModel, planImageEdit } from "@/lib/ai/edit-request";
+import { BilledProviderError, isUnknownModelResponse, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
 import { styleReferenceFor } from "@/lib/ai/style-reference";
 import { padImageAndMask, restoreSquareContent } from "@/lib/ai/square";
 import { prepareTierInput, tierRequest, type UsageNumbers } from "@/lib/ai/tiers";
@@ -16,16 +17,41 @@ export function openAIQuality(preview: PreviewQuality): OpenAIImageQuality {
   return preview === "hd" ? "high" : "medium";
 }
 
-/**
- * OpenAI image-edit docs: input_fidelity is supported on gpt-image-1 and on
- * gpt-image-1.5 and later models. It is not supported on gpt-image-1-mini.
- * Where it is supported, ask for high so the face and the framing stay put.
- */
+/** High when that exact model lists input_fidelity. Empty when the model must not be sent the parameter. */
 export function inputFidelityForModel(model: string): "high" | "" {
-  const id = model.toLowerCase();
-  if (id.includes("mini") || id.includes("dall-e")) return "";
-  if (id.includes("gpt-image-") || id.includes("chatgpt-image")) return "high";
-  return "";
+  const caps = imageEditModel(model);
+  if (!caps?.inputFidelity?.includes("high")) return "";
+  return "high";
+}
+
+export async function postImageEdit(apiKey: string, form: FormData) {
+  let response: Response;
+  try {
+    response = await fetch("https://api.openai.com/v1/images/edits", {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}` },
+      body: form,
+      signal: AbortSignal.timeout(55_000),
+    });
+  } catch (error) {
+    const name = error instanceof Error ? error.name : "";
+    throw new UncertainBillingError(
+      name === "TimeoutError" || name === "AbortError"
+        ? "The image edit timed out. The provider may have billed it. No second generation was started."
+        : "The image edit did not finish. The provider may have billed it. No second generation was started.",
+    );
+  }
+  if (!response.ok) {
+    const body = await response.text();
+    if (isUnknownModelResponse(response.status, body)) {
+      throw new UnknownModelError(`${response.status}: the image model is not available on this key. No fallback model was called. ${scrub(body)}`);
+    }
+    if (response.status >= 500 || response.status === 429) {
+      throw new UncertainBillingError(`OpenAI returned ${response.status}. The bill is unknown. No second generation was started.`);
+    }
+    throw new UnbilledProviderError(`OpenAI image edit failed (${response.status}) ${scrub(body)}`);
+  }
+  return response;
 }
 
 function scrub(body: string) {
@@ -71,34 +97,30 @@ export class OpenAIProvider implements ImageStyleProvider {
     const prepared = await prepareTierInput(input.image, input.maskPng, spec);
     const padded = await padImageAndMask(prepared.image, prepared.mask);
     const started = Date.now();
-    const form = new FormData();
-    form.set("model", spec.model);
-    form.set("prompt", input.prompt.slice(0, 32000));
-    form.set("quality", spec.openaiQuality);
-    form.set("size", spec.size);
-    form.set("output_format", "jpeg");
-    form.set("n", "1");
     const fidelity = inputFidelityForModel(spec.model);
-    if (fidelity) form.set("input_fidelity", fidelity);
-    form.append("image[]", new Blob([new Uint8Array(padded.image)], { type: "image/jpeg" }), "selfie.jpg");
     const reference = styleReferenceFor(input, "openai");
+    const planned = planImageEdit({
+      model: spec.model,
+      prompt: input.prompt,
+      quality: spec.openaiQuality,
+      size: spec.size,
+      outputFormat: "jpeg",
+      inputFidelity: fidelity || null,
+      imageOrder: reference ? ["selfie.jpg", "style-reference.jpg"] : ["selfie.jpg"],
+      mask: Boolean(padded.mask),
+    });
+    if (!planned.ok) throw new UnknownModelError(planned.message);
+    const fields = editFormFields(planned.plan);
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) form.set(key, value);
+    form.append("image[]", new Blob([new Uint8Array(padded.image)], { type: "image/jpeg" }), "selfie.jpg");
     if (reference) {
       form.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
     }
     if (padded.mask) {
       form.append("mask", new Blob([new Uint8Array(padded.mask)], { type: "image/png" }), "mask.png");
     }
-    const response = await fetch("https://api.openai.com/v1/images/edits", {
-      method: "POST",
-      headers: { authorization: `Bearer ${apiKey}` },
-      body: form,
-      signal: AbortSignal.timeout(55_000),
-    });
-    if (!response.ok) {
-      const body = await response.text();
-      if (isUnknownModelResponse(response.status, body)) throw new UnknownModelError();
-      throw new Error(`OpenAI image edit failed (${response.status}) ${scrub(body)}`);
-    }
+    const response = await postImageEdit(apiKey, form);
     const payload = (await response.json()) as {
       data?: { b64_json?: string }[];
       usage?: {

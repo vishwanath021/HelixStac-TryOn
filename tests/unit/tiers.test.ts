@@ -142,9 +142,10 @@ describe("provider requests", () => {
     await prisma.aiCall.deleteMany();
     hits = 0;
     const portrait = (await calibrationFixtures())[0].image;
-    await generateWithFailover({ ...input(portrait, "high"), tenantId: "unknown-model-guest" }, { name: "openai", apiKey: "openai-test-key" });
+    await expect(generateWithFailover({ ...input(portrait, "high"), tenantId: "unknown-model-guest" }, { name: "openai", apiKey: "openai-test-key" })).rejects.toThrow(/not available|model/i);
     expect(hits).toBe(1);
     expect(await prisma.aiCall.count({ where: { status: "CHARGED" } })).toBe(0);
+    expect(await prisma.aiCall.count({ where: { status: "REFUNDED" } })).toBe(1);
     const face = (await calibrationFixtures())[0].image;
     let edits = 0;
     const locked = await runLockedEdit({

@@ -5,7 +5,8 @@ import sharp from "sharp";
 import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
 import { shadeById } from "@/data/shades";
 import { resolveProviderChoice } from "@/lib/ai/credentials";
-import { guestPreviewHeaders } from "@/lib/ai/guest-response";
+import { claimGenerationJob, completeGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
+import { salonOutcome, guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { generateWithFailover, selectProvider } from "@/lib/ai/router";
 import { readTierFlags } from "@/lib/ai/settings-store";
 import { resolveGuestTier } from "@/lib/ai/tiers";
@@ -128,13 +129,36 @@ export async function POST(req: Request) {
     }
   }
 
+  const requestId = String(form.get("requestId") || "");
+  let jobId = "";
+  if (requestId) {
+    const claim = await claimGenerationJob({
+      tenantId: tenant.id,
+      requestId,
+      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: shadeId || "", mode: "production" }),
+    });
+    if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
+    if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
+    if (claim.kind === "repeat") return NextResponse.json({ error: "REPEAT", message: claim.message }, { status: claim.status });
+    if (claim.kind === "replay") {
+      return new NextResponse(new Uint8Array(claim.image), {
+        status: 200,
+        headers: guestPreviewHeaders({ tryOnId: "replay", creditsLeft: tenant.creditBalance, demoReason: claim.demoReason }),
+      });
+    }
+    jobId = claim.id;
+  }
+
   const shade = tool === "style" ? shadeById(shadeId) : null;
   const region: RegionTool = tool === "nails" ? "nails" : tool === "brows" ? "brows" : tool === "beard" ? "beard" : shade ? "colour" : "style";
   const lookStyle = tool === "style" ? styleById(styleId) : null;
   const choice = await resolveProviderChoice(tenant.id);
   if (selectProvider(choice.name, choice.apiKey).name !== "mock") {
     const placement = await preflightPhoto(jpeg, region, { hairExtent: hairExtentForStyle(lookStyle, region) });
-    if (!placement.ok) return NextResponse.json({ error: "PLACEMENT", message: TRY_ANOTHER_PHOTO }, { status: 422 });
+    if (!placement.ok) {
+      await failGenerationJob(jobId, { outcome: "placement", message: TRY_ANOTHER_PHOTO });
+      return NextResponse.json({ error: "PLACEMENT", message: TRY_ANOTHER_PHOTO }, { status: 422 });
+    }
   }
 
   const flags = await readTierFlags(tenant.id);
@@ -147,11 +171,13 @@ export async function POST(req: Request) {
     await reserveCredits(tenant.id, credits, refId);
   } catch (error) {
     if (error instanceof CreditError && error.code === "INSUFFICIENT") {
+      await failGenerationJob(jobId, { outcome: "credits", message: "This salon has used its preview credits. Live colour is still free. Message them on WhatsApp to book." });
       return NextResponse.json(
         { error: "CREDITS", message: "This salon has used its preview credits. Live colour is still free. Message them on WhatsApp to book." },
         { status: 402 },
       );
     }
+    await failGenerationJob(jobId, { outcome: "suspended", message: "This salon's try-on is paused." });
     return NextResponse.json({ error: "SUSPENDED", message: "This salon's try-on is paused." }, { status: 403 });
   }
 
@@ -191,17 +217,19 @@ export async function POST(req: Request) {
       styleName: look.name,
     };
     const result = await generateWithFailover(input, choice);
-    if (result.demoReason === "placement") {
+    const outcome = salonOutcome(result.demoReason);
+    if (outcome.placement) {
       await settleCredits(tenant.id, refId, "REFUND");
       await prisma.tryOn.update({ where: { id: tryOn.id }, data: { status: "FAILED" } });
+      await failGenerationJob(jobId, { outcome: "placement", message: TRY_ANOTHER_PHOTO, callId: result.callId });
       return NextResponse.json({ error: "PLACEMENT", message: TRY_ANOTHER_PHOTO }, { status: 422 });
     }
-    await settleCredits(tenant.id, refId, "COMMIT");
+    await settleCredits(tenant.id, refId, outcome.commit ? "COMMIT" : "REFUND");
     const balance = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { creditBalance: true } });
     await prisma.tryOn.update({
       where: { id: tryOn.id },
       data: {
-        status: "SUCCEEDED",
+        status: outcome.status,
         latencyMs: result.latencyMs,
       },
     });
@@ -209,10 +237,19 @@ export async function POST(req: Request) {
       data: {
         tenantId: tenant.id,
         sessionId,
-        name: "generate_succeeded",
+        name: outcome.commit ? "generate_succeeded" : "generate_demo",
         props: JSON.stringify({ styleId, demo: Boolean(result.demoReason) }),
       },
     });
+    if (requestId) {
+      await completeGenerationJob(jobId, {
+        tenantId: tenant.id,
+        requestId,
+        image: result.image,
+        demoReason: result.demoReason,
+        callId: result.callId,
+      });
+    }
     return new NextResponse(new Uint8Array(result.image), {
       status: 200,
       headers: guestPreviewHeaders({
@@ -224,7 +261,12 @@ export async function POST(req: Request) {
   } catch (error) {
     await settleCredits(tenant.id, refId, "REFUND");
     await prisma.tryOn.update({ where: { id: tryOn.id }, data: { status: "FAILED" } });
+    const uncertain = error instanceof Error && error.name === "UncertainBillingError";
+    const message = uncertain
+      ? "The provider may have billed this attempt. It was not started again. The salon credit was returned."
+      : "The preview did not finish. The salon credit was returned. No automatic retry was made.";
+    await failGenerationJob(jobId, { outcome: uncertain ? "uncertain" : "provider", message });
     logError("generate failed", { tryOnId: tryOn.id, tenantId: tenant.id, message: error instanceof Error ? error.message : "error" });
-    return NextResponse.json({ error: "PROVIDER", message: "The preview did not finish. The credit was returned. Please try again." }, { status: 502 });
+    return NextResponse.json({ error: uncertain ? "UNCERTAIN" : "PROVIDER", message }, { status: uncertain ? 504 : 502 });
   }
 }

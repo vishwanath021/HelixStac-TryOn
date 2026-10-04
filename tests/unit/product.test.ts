@@ -63,7 +63,7 @@ describe("prompts", () => {
     expect(inputFidelityForModel("gpt-image-1-mini")).toBe("");
     expect(inputFidelityForModel("gpt-image-1")).toBe("high");
     expect(inputFidelityForModel("gpt-image-1.5")).toBe("high");
-    expect(inputFidelityForModel("gpt-image-2")).toBe("high");
+    expect(inputFidelityForModel("gpt-image-2")).toBe("");
     expect(inputFidelityForModel("dall-e-2")).toBe("");
   });
 });

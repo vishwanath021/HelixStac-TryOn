@@ -54,7 +54,7 @@ Reserved slugs (`admin`, `api`, `embed`, …) are not treated as salons.
 | `OpenAIProvider` | `AI_PROVIDER=openai` and `OPENAI_API_KEY`, or a key saved on AI settings. Image edit on the gpt-image family. The guest photo and the style prompt are the input. The style thumbnail is not sent unless `OPENAI_SEND_STYLE_REFERENCE=true`. |
 | `ReplicateStubProvider` | `replicate` or `fal` plus a token. Posts to that vendor's HTTP API. Inactive without a key. |
 
-If a paid call throws, the router falls back to the labelled sample and marks the provider `mock:failover-from-…`. A global estimate cap (`AI_SPEND_CAP_INR`, default ₹500) refuses further paid calls the same way. Each attempt is a row in `AiCall`. The photo is not in that row.
+If a paid call throws, the router does not start another generation and does not return the labelled sample as a success. A timeout stays on the ledger as an uncertain bill. A global estimate cap (`AI_SPEND_CAP_INR`, default ₹500) refuses further paid calls and can return a labelled sample. Each attempt is a row in `AiCall`. The photo is not in that row. Billed failures and uncertain rows stay inside the cap.
 
 `BillingProvider` is `mock` (grants the plan or pack immediately and writes an invoice) or `razorpay` (subscriptions, orders, webhook HMAC). Prices are stored ex-GST. Invoices add 18%.
 

@@ -1,6 +1,7 @@
 export type Gender = "women" | "men" | "kids";
 export type FaceShape = "oval" | "round" | "square" | "heart" | "oblong" | "diamond";
 export type HairType = "straight" | "wavy" | "curly" | "thick" | "thin";
+export type LengthCategory = "short" | "medium" | "long";
 
 export type StyleDef = {
   id: string;
@@ -9,6 +10,8 @@ export type StyleDef = {
   category: string;
   description: string;
   prompt: string;
+  /** How long the selected cut is. Used by the reference-mode prompt, not by the production mask. */
+  lengthCategory: LengthCategory;
   tags: string[];
   faceShapes: FaceShape[];
   hairTypes: HairType[];
@@ -16,15 +19,31 @@ export type StyleDef = {
 };
 
 type Draft = Pick<StyleDef, "id" | "name" | "gender" | "category" | "description" | "prompt"> &
-  Partial<Pick<StyleDef, "tags" | "faceShapes" | "hairTypes" | "serviceKeys">>;
+  Partial<Pick<StyleDef, "lengthCategory" | "tags" | "faceShapes" | "hairTypes" | "serviceKeys">>;
+
+export function lengthCategoryFor(style: { id?: string; category?: string; lengthCategory?: LengthCategory }): LengthCategory {
+  if (style.lengthCategory) return style.lengthCategory;
+  const category = style.category || "";
+  const id = style.id || "";
+  if (id === "hime-cut") return "long";
+  if (category === "bangs" || category === "medium") return "medium";
+  if (category === "short" || category === "crop" || category === "fade" || category === "taper" || /pixie|buzz|crew|bowl|crop|fade/.test(id)) return "short";
+  if (category === "bob" || id.includes("bob") || id === "lob" || id.endsWith("-lob")) return "medium";
+  if (category === "classic") {
+    if (id === "side-part" || id === "slick-back" || id === "old-money" || id === "comb-over" || id === "scissor-cut") return "medium";
+    return "short";
+  }
+  return "long";
+}
 
 function s(draft: Draft): StyleDef {
   return {
+    ...draft,
+    lengthCategory: draft.lengthCategory ?? lengthCategoryFor(draft),
     tags: draft.tags ?? [draft.category],
     faceShapes: draft.faceShapes ?? ["oval"],
     hairTypes: draft.hairTypes ?? ["straight", "wavy", "thick"],
     serviceKeys: draft.serviceKeys ?? ["haircut", "styling"],
-    ...draft,
   };
 }
 

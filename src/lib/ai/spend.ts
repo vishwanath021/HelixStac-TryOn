@@ -39,9 +39,17 @@ export function costPerCallInr(provider: string, quality: string) {
   return DEFAULTS[`${provider.toUpperCase()}_${quality.toUpperCase()}`] ?? numberEnv("AI_COST_INR_STANDARD", 3.5);
 }
 
-export async function releasePaidCall(id: string, status: "REFUNDED" | "BILLED_FAILED" = "REFUNDED") {
+/** Rows that still represent provider spend or a reservation. Customer credit refunds do not clear these. */
+export const SPEND_CAP_STATUSES = ["CHARGED", "BILLED_FAILED", "UNCERTAIN"] as const;
+
+export function countsTowardSpendCap(status: string) {
+  return (SPEND_CAP_STATUSES as readonly string[]).includes(status);
+}
+
+export async function releasePaidCall(id: string, status: "REFUNDED" | "BILLED_FAILED" | "UNCERTAIN" = "REFUNDED") {
   if (!id) return;
-  await prisma.aiCall.updateMany({ where: { id, status: "CHARGED" }, data: { status, charged: false } });
+  const counts = status !== "REFUNDED";
+  await prisma.aiCall.updateMany({ where: { id, status: "CHARGED" }, data: { status, charged: counts } });
 }
 
 export async function finalizePaidCall(
@@ -80,16 +88,31 @@ export async function finalizePaidCall(
   });
 }
 
+export function spendCapWhere() {
+  return { status: { in: [...SPEND_CAP_STATUSES] } };
+}
+
 export async function spendSummary() {
-  const agg = await prisma.aiCall.aggregate({
-    where: { status: "CHARGED" },
-    _sum: { estimatePaise: true },
-    _count: true,
-  });
+  const [reserved, actual] = await Promise.all([
+    prisma.aiCall.aggregate({
+      where: spendCapWhere(),
+      _sum: { estimatePaise: true },
+      _count: true,
+    }),
+    prisma.aiCall.aggregate({
+      where: { ...spendCapWhere(), costSource: "usage" },
+      _sum: { costInrPaise: true },
+      _count: true,
+    }),
+  ]);
   return {
-    spentInr: (agg._sum.estimatePaise || 0) / 100,
+    /** Cap basis. Reserved estimates, including billed failures and uncertain timeouts. */
+    spentInr: (reserved._sum.estimatePaise || 0) / 100,
+    /** Provider-reported usage converted at FX, with no 1.08 buffer. Unknown until a usage payload exists. */
+    actualInr: (actual._sum.costInrPaise || 0) / 100,
+    actualCalls: actual._count,
     capInr: spendCapInr(),
-    calls: agg._count,
+    calls: reserved._count,
   };
 }
 
@@ -109,7 +132,7 @@ export async function beginPaidCall(args: {
   const capPaise = Math.round(spendCapInr() * 100);
   return exclusive(() =>
     prisma.$transaction(async (tx) => {
-      const agg = await tx.aiCall.aggregate({ where: { status: "CHARGED" }, _sum: { estimatePaise: true } });
+      const agg = await tx.aiCall.aggregate({ where: spendCapWhere(), _sum: { estimatePaise: true } });
       const spent = agg._sum.estimatePaise || 0;
       if (spent + estimatePaise > capPaise) {
         await tx.aiCall.create({

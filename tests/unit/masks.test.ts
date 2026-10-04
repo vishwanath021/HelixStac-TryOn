@@ -386,7 +386,7 @@ describe("region masks", () => {
     if (!result.ok) expect(result.reason).toBe("postcheck");
   });
 
-  it("retries a throwing provider once and does not call it when placement already failed", async () => {
+  it("does not retry a throwing provider, and does not call it when placement already failed", async () => {
     const scene = drawFrontal(360, 480);
     const jpeg = await sharp(scene.data, { raw: { width: 360, height: 480, channels: 3 } }).jpeg().toBuffer();
     let calls = 0;
@@ -399,7 +399,7 @@ describe("region masks", () => {
       },
     });
     expect(thrown.ok).toBe(false);
-    expect(calls).toBe(2);
+    expect(calls).toBe(1);
     calls = 0;
     const blocked = await runLockedEdit({
       image: await sharp({ create: { width: 200, height: 200, channels: 3, background: "#2244aa" } }).jpeg().toBuffer(),
@@ -509,8 +509,8 @@ describe("calibration budget", () => {
     delete process.env.AI_COST_PER_CALL_INR_OPENAI_MEDIUM;
   });
 
-  it("keeps a billed face-guard failure off the spend cap", async () => {
-    process.env.AI_SPEND_CAP_INR = "2";
+  it("keeps a billed face-guard failure inside the spend cap", async () => {
+    process.env.AI_SPEND_CAP_INR = "0.6";
     await prisma.aiCall.deleteMany();
     const first = await beginPaidCall({ provider: "openai", quality: "test", model: "gpt-image-1-mini", tenantId: "face-guard", estimateInr: 0.6 });
     expect(first.ok).toBe(true);
@@ -519,11 +519,10 @@ describe("calibration budget", () => {
     await releasePaidCall(first.id, "BILLED_FAILED");
     const row = await prisma.aiCall.findFirst({ where: { id: first.id } });
     expect(row?.status).toBe("BILLED_FAILED");
-    expect(row?.charged).toBe(false);
+    expect(row?.charged).toBe(true);
     expect(row?.billed).toBe(true);
     const second = await beginPaidCall({ provider: "openai", quality: "test", model: "gpt-image-1-mini", tenantId: "face-guard", estimateInr: 0.6 });
-    expect(second.ok).toBe(true);
-    expect(await prisma.aiCall.count({ where: { status: "CHARGED" } })).toBe(1);
+    expect(second.ok).toBe(false);
     delete process.env.AI_SPEND_CAP_INR;
   });
 });

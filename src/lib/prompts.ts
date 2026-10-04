@@ -1,7 +1,7 @@
 import type { BeardDef } from "@/data/beards";
 import type { BrowDef } from "@/data/brows";
 import type { NailDef } from "@/data/nails";
-import type { StyleDef } from "@/data/styles";
+import { lengthCategoryFor, type StyleDef } from "@/data/styles";
 
 export function buildStylePrompt(style: StyleDef, colourName?: string) {
   return [
@@ -18,6 +18,36 @@ export function buildStylePrompt(style: StyleDef, colourName?: string) {
     "Keep the same person: identity, skin tone, expression, age, gender presentation, clothing, jewellery, background, lighting, camera angle, and pose must stay unchanged.",
     "Do not add or remove people. Do not add text, logos, or watermarks. Photorealistic. Respect the Indian hair texture already visible: straight, wavy, curly, thick, or thin.",
     "The result is a salon consultation preview, not a guarantee of the finished cut.",
+  ].join(" ");
+}
+
+function lengthInstruction(style: StyleDef) {
+  const length = lengthCategoryFor(style);
+  if (length === "short") {
+    return "The selected cut is short. If the person in Image 1 currently has longer hair, this is a long-to-short change: remove the extra hair and plausibly reconstruct exposed neck, ears, and background.";
+  }
+  if (length === "medium") {
+    return "The selected cut is medium length. If Image 1 has longer hair, remove the extra length and reconstruct what it covered. If Image 1 has shorter hair, extend the hair without enlarging the head.";
+  }
+  return "The selected cut is long. If the person in Image 1 currently has shorter hair, this is a short-to-long change: extend the hair without enlarging the head or changing the framing.";
+}
+
+/** Reference-mode prompt. No mask sentences. Image 1 is the person. Image 2 is the haircut only. */
+export function buildReferencePrompt(style: StyleDef, colourName?: string) {
+  const colour = colourName
+    ? `A colour change was requested: shift the hair colour toward ${colourName}.`
+    : "Keep the original hair colour unless a colour change was requested.";
+  return [
+    "Image 1 is the person to edit. Image 2 is a hairstyle reference only.",
+    `Produce one photorealistic edited photograph of the person in Image 1 wearing ${style.name}. ${style.prompt}`,
+    "Transfer the haircut's silhouette, length, layering, fringe and parting from Image 2, adapted naturally to the person's head and existing hair texture.",
+    "Preserve the identity, facial features, expression, pose, head size, camera position, clothing, jewellery, background and lighting from Image 1.",
+    colour,
+    "Do not transfer the reference person's face, skin, clothing, pose or background.",
+    lengthInstruction(style),
+    "Remove original hair that conflicts with the new cut and plausibly reconstruct exposed background, neck or clothing.",
+    "Keep natural strands, hairline, shadows and occlusion.",
+    "Return the complete edited photograph without text or a collage.",
   ].join(" ");
 }
 

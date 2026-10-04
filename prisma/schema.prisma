@@ -340,6 +340,40 @@ model AiCall {
   @@index([createdAt])
 }
 
+/// One guest or benchmark submission. The same request id must not start a second provider call.
+model GenerationJob {
+  id          String   @id @default(cuid())
+  tenantId    String
+  requestId   String
+  fingerprint String
+  status      String
+  demoReason  String   @default("")
+  outcome     String   @default("")
+  imagePath   String   @default("")
+  message     String   @default("")
+  callId      String   @default("")
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  @@unique([tenantId, requestId])
+  @@index([expiresAt])
+}
+
+/// Super-admin reference-mode run. Photos live under var/benchmarks and are not public.
+model BenchmarkRun {
+  id          String   @id @default(cuid())
+  styleId     String
+  model       String
+  quality     String
+  size        String
+  status      String
+  estimateInr Float    @default(0)
+  callId      String   @default("")
+  dir         String
+  message     String   @default("")
+  createdAt   DateTime @default(now())
+}
+
 model Customer {
   id           String        @id @default(cuid())
   tenantId     String

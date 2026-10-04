@@ -129,7 +129,8 @@ export function resolveGuestTier(args: {
 type TokenRates = { textIn: number; imageIn: number; imageOut: number; textOut: number };
 
 function tokenRates(model: string): TokenRates | null {
-  if (model.includes("gpt-image-1-mini")) return { textIn: 2, imageIn: 2.5, imageOut: 8, textOut: 8 };
+  if (model === "gpt-image-1-mini") return { textIn: 2, imageIn: 2.5, imageOut: 8, textOut: 8 };
+  if (model === "gpt-image-1.5") return { textIn: 5, imageIn: 8, imageOut: 32, textOut: 32 };
   if (model === "gpt-image-1") return { textIn: 5, imageIn: 10, imageOut: 40, textOut: 40 };
   if (model.includes("flash-lite-image")) return { textIn: 0.25, imageIn: 0.25, imageOut: 30, textOut: 1.5 };
   if (model.includes("flash-image")) return { textIn: 0.5, imageIn: 0.5, imageOut: 60, textOut: 3 };

@@ -5,6 +5,7 @@ import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { ColourStage } from "@/components/tryon/ColourStage";
 import { StyleCard } from "@/components/tryon/StyleCard";
 import { t } from "@/data/i18n";
+import { captureShouldMirror } from "@/lib/capture";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 import type { SalonConfig } from "@/lib/salon";
 import { normalizeWhatsAppPhone } from "@/lib/whatsapp";
@@ -81,6 +82,7 @@ export function TryOnApp({
   const [styleId, setStyleId] = useState("");
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
   const [busy, setBusy] = useState(false);
+  const previewLock = useRef(false);
   const [progress, setProgress] = useState(0);
   const [pendingName, setPendingName] = useState("");
   const [error, setError] = useState("");
@@ -310,7 +312,7 @@ export function TryOnApp({
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    if (facing === "user") {
+    if (captureShouldMirror(facing)) {
       ctx.translate(width, 0);
       ctx.scale(-1, 1);
     }
@@ -335,49 +337,55 @@ export function TryOnApp({
       return;
     }
     consentRef.current = consent;
+    if (previewLock.current || busy) return;
+    previewLock.current = true;
     setError("");
     setPendingName(chosen.name);
     setBusy(true);
-    track("generate_requested", { styleId: chosen.id, tool: chosen.tool });
-    const body = new FormData();
-    body.set("photo", shot.blob, "selfie.jpg");
-    body.set("slug", config.slug);
-    body.set("styleId", chosen.id);
-    body.set("tool", chosen.tool);
-    body.set("quality", "standard");
-    body.set("consentId", consent);
-    body.set("sessionId", sid || sessionId());
-    if (chosen.tool === "style" && shadeId) body.set("shadeId", shadeId);
-    if (salonToken) body.set("salonToken", salonToken);
-    const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({ message: t(lang, "creditsEmpty") }));
+    try {
+      track("generate_requested", { styleId: chosen.id, tool: chosen.tool });
+      const body = new FormData();
+      body.set("photo", shot.blob, "selfie.jpg");
+      body.set("slug", config.slug);
+      body.set("styleId", chosen.id);
+      body.set("tool", chosen.tool);
+      body.set("quality", "standard");
+      body.set("consentId", consent);
+      body.set("sessionId", sid || sessionId());
+      body.set("requestId", crypto.randomUUID());
+      if (chosen.tool === "style" && shadeId) body.set("shadeId", shadeId);
+      if (salonToken) body.set("salonToken", salonToken);
+      const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ message: t(lang, "creditsEmpty") }));
+        setProgress(0);
+        setError(data.message || t(lang, "creditsEmpty"));
+        track("generate_failed", { styleId: chosen.id });
+        return;
+      }
+      const out = await res.blob();
+      const reason = res.headers.get("x-demo-reason") || "";
+      const sample = reason === "no-key" || reason === "spend-cap" || reason === "failover" || reason === "placement";
+      setNotice(reason === "spend-cap" ? t(lang, "spendCapNote") : "");
+      setActive({
+        id: res.headers.get("x-tryon-id") || crypto.randomUUID(),
+        styleId: chosen.id,
+        styleName: chosen.name,
+        shadeName: chosen.tool === "style" ? shade?.name ?? null : null,
+        before: URL.createObjectURL(shot.blob),
+        after: URL.createObjectURL(out),
+        serviceKeys: chosen.serviceKeys,
+        tool: chosen.tool,
+        demo: sample,
+      });
+      setProgress(100);
+      setStylePhase("result");
+      frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      track("generate_succeeded", { styleId: chosen.id });
+    } finally {
+      previewLock.current = false;
       setBusy(false);
-      setProgress(0);
-      setError(data.message || t(lang, "creditsEmpty"));
-      track("generate_failed", { styleId: chosen.id });
-      return;
     }
-    const out = await res.blob();
-    const reason = res.headers.get("x-demo-reason") || "";
-    const sample = reason === "no-key" || reason === "spend-cap" || reason === "failover" || reason === "placement";
-    setNotice(reason === "spend-cap" ? t(lang, "spendCapNote") : "");
-    setActive({
-      id: res.headers.get("x-tryon-id") || crypto.randomUUID(),
-      styleId: chosen.id,
-      styleName: chosen.name,
-      shadeName: chosen.tool === "style" ? shade?.name ?? null : null,
-      before: URL.createObjectURL(shot.blob),
-      after: URL.createObjectURL(out),
-      serviceKeys: chosen.serviceKeys,
-      tool: chosen.tool,
-      demo: sample,
-    });
-    setBusy(false);
-    setProgress(100);
-    setStylePhase("result");
-    frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    track("generate_succeeded", { styleId: chosen.id });
   }
 
   function pickShade(id: string) {
@@ -593,7 +601,7 @@ export function TryOnApp({
                   type="button"
                   aria-pressed={style.id === styleId}
                   className={`overflow-hidden rounded-2xl border bg-white text-left ${style.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
-                  onClick={() => void preview({ id: style.id, name: style.name, serviceKeys: style.serviceKeys, tool: "style" })}
+                  disabled={busy} onClick={() => void preview({ id: style.id, name: style.name, serviceKeys: style.serviceKeys, tool: "style" })}
                 >
                   <StyleCard id={style.id} name={style.name} />
                   <span className="block px-2 py-2 text-center text-sm font-medium">{style.name}</span>
@@ -623,7 +631,7 @@ export function TryOnApp({
         {tool === "brows" && (
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
             {config.brows.map((brow) => (
-              <button key={brow.id} type="button" aria-pressed={brow.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${brow.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => void preview({ id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" })}>
+              <button key={brow.id} type="button" aria-pressed={brow.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${brow.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} disabled={busy} onClick={() => void preview({ id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" })}>
                 <StyleCard id={brow.id} name={brow.name} folder="brows" />
                 <span className="block px-2 py-2 text-center text-sm font-medium">{brow.name}</span>
               </button>
@@ -634,7 +642,7 @@ export function TryOnApp({
         {tool === "beard" && (
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
             {config.beards.map((beard) => (
-              <button key={beard.id} type="button" aria-pressed={beard.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${beard.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => void preview({ id: beard.id, name: beard.name, serviceKeys: beard.serviceKeys, tool: "beard" })}>
+              <button key={beard.id} type="button" aria-pressed={beard.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${beard.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} disabled={busy} onClick={() => void preview({ id: beard.id, name: beard.name, serviceKeys: beard.serviceKeys, tool: "beard" })}>
                 <StyleCard id={beard.id} name={beard.name} folder="beards" />
                 <span className="block px-2 py-2 text-center text-sm font-medium">{beard.name}</span>
               </button>
@@ -645,7 +653,7 @@ export function TryOnApp({
         {tool === "nails" && (
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
             {config.nails.map((nail) => (
-              <button key={nail.id} type="button" aria-pressed={nail.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${nail.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => void preview({ id: nail.id, name: nail.name, serviceKeys: nail.serviceKeys, tool: "nails" })}>
+              <button key={nail.id} type="button" aria-pressed={nail.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${nail.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} disabled={busy} onClick={() => void preview({ id: nail.id, name: nail.name, serviceKeys: nail.serviceKeys, tool: "nails" })}>
                 <StyleCard id={nail.id} name={nail.name} folder="nails" />
                 <span className="block px-2 py-2 text-center text-sm font-medium">{nail.name}</span>
               </button>

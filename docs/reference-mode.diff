@@ -1,0 +1,2736 @@
+diff --git a/.env.example b/.env.example
+index 6ec3dab..c578181 100644
+--- a/.env.example
++++ b/.env.example
+@@ -67,7 +67,17 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
+ # Hard testing guard for paid image calls, in INR estimates (not a provider invoice).
+ # Default ₹500. At the cap the app returns a labelled sample instead of calling the provider.
+ AI_SPEND_CAP_INR="500"
+-# When true or 1, write the raw provider JPEG (before the face composite) under var/ai-debug/.
++# Reference benchmark. Super-admin only, off for guests. One OpenAI edit, no retry.
++# List-price output estimate for gpt-image-1.5 quality medium is about ₹3.60 at 1024 square
++# and about ₹5.20 at 1536×1024 or 1024×1536, before input tokens. Not an invoice.
++BENCHMARK_MODEL="gpt-image-1.5"
++BENCHMARK_QUALITY="medium"
++BENCHMARK_RUN_CAP_INR="30"
++# Hours to keep benchmark selfies under var/benchmarks. Super-admin only. Not public.
++BENCHMARK_RETENTION_HOURS="72"
++# How long a repeated guest request id can replay its stored JPEG. Photos stay under var/.
++GENERATION_JOB_TTL_HOURS="24"
++# When true or 1, write the provider JPEG (after square restore, before the face composite) under var/ai-debug/.
+ # Local diagnosis only. That folder is not served to guests or salon staff.
+ DEBUG_SAVE_RAW="false"
+ # Optional overrides. Leave unset to use the model-id estimates (OpenAI test ₹0.6, medium ₹1.2, high ₹17.4; Gemini test ₹3.5, medium ₹7, high ₹7).
+diff --git a/README.md b/README.md
+index 7c86367..921a4ec 100644
+--- a/README.md
++++ b/README.md
+@@ -139,7 +139,7 @@ Needs a key (OpenAI or Gemini):
+ 
+ Add a key in `.env` (`OPENAI_API_KEY` or `GEMINI_API_KEY` plus `AI_PROVIDER`) or paste it on `/super/ai` (platform) or `/admin/ai` (salon owner, when bring-your-own is allowed). The pasted key is encrypted on the server. The page shows a mask, not the key. The style thumbnail is not sent to the provider unless `OPENAI_SEND_STYLE_REFERENCE` or `GEMINI_SEND_STYLE_REFERENCE` is `true`.
+ 
+-If a paid call fails, or the testing spend cap is already used, the app returns the same demo composite so the salon page does not die. A failed call releases its estimate, and a failed placement check is not retried and is not charged. With no key, the try-on also shows: “Demo mode – connect an AI key for real hairstyle previews”.
++With no key, or when the testing spend cap is already used, the guest sees a labelled sample and “Demo mode – connect an AI key for real hairstyle previews”. That sample is not stored as a successful paid preview, and the salon credit is refunded. A provider error, an unknown model, or a timeout is not replaced with that sample and is not sent again. A failed placement check before any provider call is not charged. A provider call our validator later rejects stays on the provider ledger.
+ 
+ ### Quality tiers
+ 
+@@ -171,7 +171,7 @@ Salon owner pages and the guest try-on do not receive model ids, provider cost,
+ 
+ ### Spend cap
+ 
+-`AI_SPEND_CAP_INR` defaults to 500. Each paid attempt adds the tier estimate (`AI_COST_PER_CALL_INR_{PROVIDER}_{TIER}` when set, otherwise the table above) to `AiCall`. A failed placement check is ₹0. A provider call that was billed is still recorded, including when the charge is released. The next paid call after the cap returns the labelled sample. `npm run ai:smoke` uses the same guard. Cost figures are shown only on `/super/ai`.
++`AI_SPEND_CAP_INR` defaults to 500. Each paid attempt adds the tier estimate (`AI_COST_PER_CALL_INR_{PROVIDER}_{TIER}` when set, otherwise the table above) to `AiCall`. A failed placement check before any provider call is ₹0. A provider call that was billed, including one our validator later rejected, stays inside the cap. A timeout or any other unknown bill is recorded as `UNCERTAIN` and also stays inside the cap. A customer credit refund does not remove that provider row. When the response includes token usage, the ledger stores that USD cost at `FX_INR_PER_USD` with no 1.08 buffer (`costSource=usage`). The cap itself still uses the reserved estimate. The next paid call after the cap returns a labelled sample for guests, and that sample is stored as `DEMO`, not as a successful paid preview. `npm run ai:smoke` uses the same guard. Cost figures are shown only on `/super/ai`.
+ 
+ ### What the offline tests prove
+ 
+@@ -182,13 +182,41 @@ Before a paid edit, the server finds the face from the skin region and places th
+ - Beard: the jaw and chin below the nose, with the mouth left out
+ - Nails: fingertip regions on a hand photo. A picture that looks like a face is refused
+ 
+-OpenAI receives that mask on the image edit. Transparent mask pixels are the editable area. Opaque pixels must stay. `input_fidelity=high` is sent for `gpt-image-1` and later image models. `gpt-image-1-mini` does not accept that parameter, so it is omitted. Gemini does not take a mask; the same server-side composite still runs. The hair prompt tells the model to keep the head, face, and framing the same size and position, not to zoom or re-frame, to change only hair inside the mask, and to remove original hair inside the mask that falls outside the new style (long hair becoming a bob).
++OpenAI receives that mask on the image edit. Transparent mask pixels are the editable area. Opaque pixels must stay. `input_fidelity=high` is sent only for models that list it (`gpt-image-1` and `gpt-image-1.5`). `gpt-image-1-mini` and `gpt-image-2` do not receive that parameter. An unknown model id is refused before the request. A paid edit is not retried. Gemini does not take a mask; the same server-side composite still runs. The hair prompt tells the model to keep the head, face, and framing the same size and position, not to zoom or re-frame, to change only hair inside the mask, and to remove original hair inside the mask that falls outside the new style (long hair becoming a bob).
+ 
+ Photos are not stretched to the square the image model returns. The photo and the mask are padded onto a centered square with a neutral edge fill (mask bars are opaque, so they are not editable). The result is cropped back to the original aspect before it is composited. The same pad and crop is used for every tool.
+ 
+-Before that composite, a hair or colour result is compared with the original face. The face scale must stay within 5 percent and the face must not have moved, or, if the scale is between 0.8 and 1.25, the frame is warped back into place. The brows, eyes, and nose are compared on that provider frame. If they differ, or the re-frame is larger than that, the edit is rejected. The guest sees “Try another photo.” The provider cost stays on the ledger as billed but failed, it does not count toward the spend cap, and the provider is not called again. The composite is not returned.
++Before that composite, a hair or colour result is compared with the original face. The face scale must stay within 5 percent and the face must not have moved, or, if the scale is between 0.8 and 1.25, the frame is warped back into place. The brows, eyes, and nose are compared on that provider frame. If they differ, or the re-frame is larger than that, the edit is rejected. The guest sees “Try another photo.” The provider cost stays on the ledger as billed but failed, it still counts toward the spend cap, and the provider is not called again. The composite is not returned.
+ 
+-Set `DEBUG_SAVE_RAW=true` to write the raw provider JPEG, before that composite, under `var/ai-debug/`. That folder is gitignored and is not served. It is for local diagnosis of a failed paid edit.
++Set `DEBUG_SAVE_RAW=true` to write the provider JPEG, after square restore and before the face composite, under `var/ai-debug/`. That folder is gitignored and is not served. It is for local diagnosis of a failed paid edit. That file is not the untouched provider body. The benchmark page stores the decoded provider body separately.
++
++## Reference benchmark (super-admin, not for guests)
++
++This path is separate from guest production. It sends the sanitized selfie first and `public/styles/{styleId}.jpg` second. It does not send a mask, does not paste the original face back, and does not fall back to Gemini, a mock, or another model. Guests stay on the production tiers.
++
++Default request. Prices are the published per-image output table checked 4 Oct 2026 at [GPT Image 1.5](https://developers.openai.com/api/docs/models/gpt-image-1.5) and the [image generation guide](https://developers.openai.com/api/docs/guides/image-generation). Input tokens are extra. These are not invoices.
++
++- `POST https://api.openai.com/v1/images/edits`
++- model `gpt-image-1.5` (`BENCHMARK_MODEL`)
++- quality `medium` (`BENCHMARK_QUALITY`)
++- `input_fidelity=high` (the image guide says to omit this only for `gpt-image-2`; `gpt-image-1.5` is sent `high`, and a rejection fails the run with no fallback)
++- `output_format=png`
++- `n=1`
++- size `1024x1024`, `1536x1024`, or `1024x1536`, chosen from the selfie aspect
++- one call, no retry
++- hard run cap `BENCHMARK_RUN_CAP_INR` (default 30) on the output estimate
++
++The 59 catalogue references are 512×512 synthetic portraits. No larger file is in the repo, so the 512px JPEG is what gets sent. Do not commit customer selfies. Put the three review photos only on the machine that runs the test.
++
++Quote without a provider call:
++
++```bash
++npm run benchmark:quote
++```
++
++Paid run: sign in as the super-admin, open `/super/ai`, choose one style and one local selfie, read the estimate, tick the confirmation, and press **Run benchmark**. Open `/super/ai/benchmark/{id}`. The page is labelled unvalidated model output. `provider-response.png` is the decoded provider body before any crop. `restored-output.png` is the crop from the recorded transform. Stages older than `BENCHMARK_RETENTION_HOURS` (default 72) are deleted on the next benchmark request. They are never served to guests.
++
++Score six runs (three selfies, two styles, including at least one long-to-short) in `docs/benchmark-score-sheet.csv`. Columns: likeness, style match, framing, edges, reconstruction, latency, token usage, output estimate, usage INR if the ledger has it, and whether you accept the frame. Do not treat a passing alignment, or this offline test suite, as a haircut score.
+ 
+ The unit suite proves this without a provider key:
+ 
+@@ -202,7 +230,7 @@ The unit suite proves this without a provider key:
+ - A hair edit that changes the eyes, or that zooms the face past the alignment window, is rejected once and is not retried
+ - A modest zoom is warped back onto the original face and can then be composited
+ - `npm run replay:raw -- raw.jpg original.jpg long-layers` runs that check on a saved provider JPEG with no network call
+-- A provider error is tried once more. An unknown model id is not tried again. A placement failure is not tried again and does not keep the rupee charge. A billed post-check or face-guard failure stays billed and is not charged against the cap
++- A provider error is not tried again. An unknown model id is not tried again. A placement failure is not tried again and does not keep the rupee charge when the provider was never called. A billed post-check or face-guard failure stays billed and still counts against the cap. A timeout stays as an uncertain bill and is not regenerated
+ - Calibration stops at 5 images or about ₹30, whichever comes first
+ 
+ `npm run calibrate` writes before / mask / after files under `docs/mask-overlays/` using the flat-colour edit. The same action is the **Calibration run** button on `/super/ai`. With no key it spends ₹0. With a key it uses the real model inside that cap.
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index c5ef9e0..6faa9da 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -54,7 +54,7 @@ Reserved slugs (`admin`, `api`, `embed`, …) are not treated as salons.
+ | `OpenAIProvider` | `AI_PROVIDER=openai` and `OPENAI_API_KEY`, or a key saved on AI settings. Image edit on the gpt-image family. The guest photo and the style prompt are the input. The style thumbnail is not sent unless `OPENAI_SEND_STYLE_REFERENCE=true`. |
+ | `ReplicateStubProvider` | `replicate` or `fal` plus a token. Posts to that vendor's HTTP API. Inactive without a key. |
+ 
+-If a paid call throws, the router falls back to the labelled sample and marks the provider `mock:failover-from-…`. A global estimate cap (`AI_SPEND_CAP_INR`, default ₹500) refuses further paid calls the same way. Each attempt is a row in `AiCall`. The photo is not in that row.
++If a paid call throws, the router does not start another generation and does not return the labelled sample as a success. A timeout stays on the ledger as an uncertain bill. A global estimate cap (`AI_SPEND_CAP_INR`, default ₹500) refuses further paid calls and can return a labelled sample. Each attempt is a row in `AiCall`. The photo is not in that row. Billed failures and uncertain rows stay inside the cap.
+ 
+ `BillingProvider` is `mock` (grants the plan or pack immediately and writes an invoice) or `razorpay` (subscriptions, orders, webhook HMAC). Prices are stored ex-GST. Invoices add 18%.
+ 
+diff --git a/docs/REFERENCE-MODE-REVIEW.md b/docs/REFERENCE-MODE-REVIEW.md
+new file mode 100644
+index 0000000..53cc1ac
+--- /dev/null
++++ b/docs/REFERENCE-MODE-REVIEW.md
+@@ -0,0 +1,220 @@
++# Reference-mode review
++
++Date: 4 Oct 2026. Baseline before this work: `8a3a244` (`docs: record which image-edit parameters the hair path never sends`) on `cursor/feat-initial-build-5096`. The shareable diff against that commit is `docs/reference-mode.diff`.
++
++`HAIR-TRYON-ARCHITECTURE-AUDIT.md` describes the code at that baseline. It is historical. This file describes the code after the reference-mode change. In particular, the audit's notes that a paid edit is attempted twice, and that a billed validation failure drops out of the spend cap, are no longer true.
++
++This repository does not reproduce Jawed Habib's or tjhbagalur.com's private hairstyle backend. That model's identity is unknown. The public page was not copied.
++
++## What this change is
++
++Guest production is unchanged in shape: sanitize the selfie, place a heuristic hair mask, send one OpenAI image edit (or Gemini with no mask), then the existing face registration and composite. Guests still use the Test / Medium / High prices already on `/super/ai`. Those tier prices were not edited.
++
++A separate super-admin path now sends a full-frame edit: the sanitized selfie first, the selected catalogue reference second, and a prompt that names those roles. It does not send a mask, does not paste the original face back, and does not call Gemini or a mock if OpenAI fails.
++
++No paid generation was run for this change. Offline tests do not establish likeness, haircut match, or reconstruction quality.
++
++## Exact request
++
++`POST https://api.openai.com/v1/images/edits`
++
++| Field | Benchmark default | Where it is set |
++|---|---|---|
++| model | `gpt-image-1.5` | `BENCHMARK_MODEL`. Unknown ids are refused. Nothing is substituted. |
++| quality | `medium` | `BENCHMARK_QUALITY`. Must be `low`, `medium`, or `high`. |
++| n | `1` | Fixed. |
++| input_fidelity | `high` | Sent only when the capability table lists it for that exact model id. |
++| output_format | `png` | Lossless inspection file. |
++| size | `1024x1024`, `1536x1024`, or `1024x1536` | Chosen from the selfie aspect. Ratio above 1.15 is landscape. Ratio below 1/1.15 is portrait. Otherwise square. |
++| image[0] | `selfie.png` | Sanitized selfie, uniform-scaled into the chosen size. Bars use the border mean. No stretch. |
++| image[1] | `style-reference.jpg` | `public/styles/{id}@2x.jpg`, else `{id}-large.jpg`, else `{id}.jpg`. |
++| mask | omitted | The prompt has no mask sentence on this path. |
++| seed, strength, guidance, guidance_scale | omitted | `FORBIDDEN_EDIT_FIELDS`. |
++
++Authorization is the platform OpenAI key from `/super/ai` when `platform_ai_provider` is `openai`, otherwise `OPENAI_API_KEY`. The key is not written to the repo, logs, or this review. A missing key returns `NO_OPENAI_KEY` and makes no call.
++
++If the API rejects `gpt-image-1.5` or `input_fidelity`, the run returns that error (`UNKNOWN_MODEL` or `BENCHMARK`, HTTP 422) and stops. There is no second model.
++
++One `fetch`, `AbortSignal.timeout(55_000)`, no OpenAI SDK. `@google/genai` 1.21.0 retries chunked file uploads only (`MAX_RETRY_COUNT = 3` inside `uploadBlob`). `generateContent` is a single request. The hair pipeline's `MAX_PROVIDER_ATTEMPTS` is 1. HTTP 429 and 5xx are recorded as an unknown bill and are not sent again, including where the image guide suggests retrying rate limits. A timeout, a dropped connection, a rejected output, and a lost client connection follow the same rule.
++
++`quoteBenchmark` refuses the run before any HTTP call when the model is unknown, when that model cannot take `input_fidelity=high`, when the price cell is missing, or when the buffered output estimate exceeds `BENCHMARK_RUN_CAP_INR` (default 30). The global `AI_SPEND_CAP_INR` still applies inside `beginPaidCall`.
++
++## Documentation checked
++
++Fetched 4 Oct 2026:
++
++- Model page: https://developers.openai.com/api/docs/models/gpt-image-1.5
++- Image guide: https://developers.openai.com/api/docs/guides/image-generation
++
++The model page lists snapshots `gpt-image-1.5` and `gpt-image-1.5-2025-12-16`, image input and output, and this per-image output table:
++
++| Quality | 1024×1024 | 1024×1536 | 1536×1024 |
++|---|---|---|---|
++| Low | $0.009 | $0.013 | $0.013 |
++| Medium | $0.034 | $0.05 | $0.05 |
++| High | $0.133 | $0.20 | $0.20 |
++
++Token rates on that page: text input $5 / 1M, text output $10 / 1M, image input $8 / 1M, image output $32 / 1M. The page does not mention `input_fidelity`.
++
++The image guide says output format defaults to png and also accepts jpeg and webp. Recommended sizes include `1024x1024`, `1536x1024`, and `1024x1536`. Quality values include `low`, `medium`, and `high`. The same guide's legacy table matches the model page for GPT Image 1.5, GPT Image 1, GPT Image 1 Mini, and GPT Image 2. It says to still add text and image input tokens on top of that legacy output price.
++
++On fidelity, the guide says: “The `input_fidelity` parameter controls how strongly a model preserves details from input images during edits and reference-image workflows. For `gpt-image-2`, omit this parameter; the API doesn’t allow changing it because the model processes every image input at high fidelity automatically.”
++
++`gpt-image-1.5` is treated as a model prior to `gpt-image-2`, so the benchmark sends `input_fidelity=high`. That support was not confirmed with a live call. A rejection fails the run. `gpt-image-1-mini` and `gpt-image-2` have `inputFidelity: null` in `src/lib/ai/edit-request.ts` and the parameter is not posted. Capability checks use the exact model id. A substring of the id is not enough.
++
++The Images API reference page timed out on fetch. Parameter names used here (`model`, `prompt`, `image[]`, `mask`, `quality`, `size`, `output_format`, `n`, `input_fidelity`) are the ones in the image guide's edit examples and the existing production client.
++
++## Cost
++
++These are published list prices, not invoices. `bufferedInr` is USD × `FX_INR_PER_USD` (default 96) × 1.08, rounded up to ₹0.1. `npm run benchmark:quote` printed, with no network call:
++
++| Selfie | Size sent | Output list price | Buffered estimate | Run cap |
++|---|---|---|---|---|
++| 1024×1024 | 1024×1024 | $0.034 | ₹3.6 | ₹30 |
++| 1280×720 | 1536×1024 | $0.05 | ₹5.2 | ₹30 |
++| 720×1280 | 1024×1536 | $0.05 | ₹5.2 | ₹30 |
++
++Input tokens are extra. Two images plus the prompt will add image-input and text-input charges that this estimate does not include. The ledger stores `costSource=usage` from `costUsdFromUsage` when the response includes token counts, at FX with no 1.08 buffer. Image-edit output tokens are priced at the image-output rate ($32 / 1M for `gpt-image-1.5`). The Images response does not split text output from image output, so that usage figure can sit above the legacy per-image table. The cap itself still reserves the buffered output estimate.
++
++The benchmark tier is visible on `/super/ai` next to the cost ledger. It is not a guest tier. Guest Test stays `gpt-image-1-mini` low at about ₹0.60. Turning this mode on for guests would replace that with roughly ₹3.60–₹5.20 of output price per image before input tokens, plus the fidelity and reference-image input. It is not enabled for guests.
++
++## Spend and duplicate requests
++
++Provider spend and salon credits are separate.
++
++- `AiCall` statuses `CHARGED`, `BILLED_FAILED`, and `UNCERTAIN` count toward `AI_SPEND_CAP_INR`, using the reserved `estimatePaise`.
++- A validator rejection after a billed call (`BILLED_FAILED`) stays in the cap. Salon credits for that preview are refunded.
++- `REFUNDED` is a known unbilled outcome. It leaves the cap. A customer credit refund does not clear a billed or uncertain provider row.
++- Timeout, abort, network failure, HTTP 429, and HTTP 5xx become `UNCERTAIN` and stay in the cap at the reserved estimate. The job is not regenerated.
++- HTTP 4xx other than an unknown-model body becomes `REFUNDED` (unbilled).
++- `beginPaidCall` holds an in-process queue and then a Prisma transaction that sums the cap rows before inserting the reservation. Two overlapping ₹0.80 reservations against a ₹1 cap: one proceeds, one is refused. The queue does not cross processes. Two instances share the reservation only when they share `DATABASE_URL`. This deployment is one SQLite file, which serializes writers of that file. A second process with a different database file would not see these rows.
++
++Guest request dedupe is `GenerationJob`, unique on `(tenantId, requestId)`. The fingerprint is SHA-256 of the sanitized photo bytes plus mode, tool, style id, and shade id.
++
++- Same id and same fingerprint while `PENDING` and younger than 90 seconds: HTTP 409, no new provider call.
++- Same id and a different fingerprint: HTTP 409 conflict.
++- `READY` with the file still on disk: the stored JPEG is returned and no provider call is made.
++- `PENDING` at or past 90 seconds: the row becomes `UNCERTAIN`, any linked call is released as `UNCERTAIN`, HTTP 504, and the provider is not called again.
++- A finished failure is replayed with its original outcome (placement 422, credits 402, suspended 403, uncertain 504, otherwise 502).
++- Photos live under `var/generation-jobs` (gitignored) and expire after `GENERATION_JOB_TTL_HOURS` (default 24).
++
++The try-on button disables while a preview is in flight, and a ref ignores a second click before React re-renders. `finally` clears the busy flag. Each click sends a new `crypto.randomUUID()`. The same click's id is deduped. A later click is a new job and can spend again. That is the remaining double-charge window if the first response was lost and the guest taps the style again.
++
++Mock, no-key, and spend-cap images are `TryOn` status `DEMO`. Salon credits are refunded. The daily success cap counts `SUCCEEDED` only. Provider failures are HTTP 502 or 504 with no image. They are not reported as a successful hairstyle.
++
++## Reference images and prompt
++
++All 59 files in `public/styles/*.jpg` were measured at 512×512. No `{id}@2x.jpg` or `{id}-large.jpg` exists, so the benchmark sends the 512×512 JPEG unchanged. It is not upscaled and not cropped again in code. The files are synthetic portraits of non-real people generated for this catalogue, so there is no customer-photo permission issue. They are square and, on the files opened below, include the whole head. A larger approved file would be preferred automatically if one is added beside the 512 JPEG.
++
++`lengthCategory` is stored on every style and added to the reference prompt:
++
++- short: “If the person in Image 1 currently has longer hair, this is a long-to-short change: remove the extra hair and plausibly reconstruct exposed neck, ears, and background.”
++- long: “If the person in Image 1 currently has shorter hair, this is a short-to-long change: extend the hair without enlarging the head or changing the framing.”
++- medium: covers both directions without those two phrases.
++
++Classic men's cuts no longer fall through to long. `side-part`, `slick-back`, `old-money`, `comb-over`, and `scissor-cut` are medium. `pompadour`, `quiff`, `ivy-league`, and `short-back-sides` are short. `bro-flow` is medium. `hime-cut` is long. `modern-mullet` stays long. Production mask extents still use the old hair-extent helper, not this field.
++
++The reference prompt is the requested paragraph plus `style.prompt`, the length sentence, and a colour sentence only when a colour name is passed. It contains no mask wording. `buildStylePrompt` (guest production) still tells the model about the mask.
++
++A missing style or a missing file returns an error and does not fall back to a text-only edit. Text-only remains the guest production prompt, which runs only on the guest route.
++
++### Reference needs regeneration
++
++Opened and judged from the portrait, not from the filename alone:
++
++- `kids-pixie` — reads as a young boy with a short textured cut, not a pixie.
++- `high-fade` — short textured top, high skin fade, light stubble. Easy to confuse with the other short fades.
++- `low-fade` — short textured top, lower fade, light stubble. Similar silhouette to `high-fade`.
++- `caesar` — short forward fringe and light stubble, close to the same short men's crop.
++
++Also opened: `pixie` reads as a textured pixie; `long-layers` shows length past the shoulders with the head inside the frame; `kids-bowl` reads as a bowl cut. `buzz-cut` was described on inspection as a short crew with stubble rather than an even clipper buzz, so treat `buzz-cut` as weak too.
++
++Stubble is visible on the men's short portraits that were opened (`buzz-cut`, `crew-cut`, `french-crop`, `mid-fade`, `taper-fade`, `burst-fade`, `drop-fade`, plus the four named above). Stubble can transfer if the model copies the reference person. The prompt forbids transferring the reference face, and that has not been checked on a real output.
++
++The other catalogue files were measured for size only. They were not each opened.
++
++## Debug stages
++
++Written under `var/benchmarks/{id}` when a super-admin run starts. Gitignored. Served only by `requireSuper` from `/api/v1/super/ai/benchmark/{id}/file`, with the stage name restricted to the list below. The review page `/super/ai/benchmark/{id}` is `pageSuper` and is titled “Unvalidated model output”.
++
++| File | What it is |
++|---|---|
++| `original-input.jpg` | Upload bytes. |
++| `sanitized-input.jpg` | After `sanitizeSelfie`. |
++| `provider-input.png` | Exact PNG appended as the first image. |
++| `provider-reference.jpg` | Exact reference appended as the second image. |
++| `provider-response.png` | Base64 payload decoded, before any crop. This is the raw provider body. |
++| `restored-output.png` | Crop of that body with the recorded transform. This is not the raw provider output. |
++| `transform.json` | Source size, target size, content window, offset, uniform scale. |
++| `validation.json` | `label: unvalidated model output`, `compositeApplied: false`, `maskSent: false`, `faceBlobUsedAsGate: false`, `accepted: false`. |
++
++`restoreFrame` is a crop of the recorded content window. It is not `restoreSquareContent`. The production `DEBUG_SAVE_RAW` file is still the square-restored JPEG before the face composite, and the README says so.
++
++Rows older than `BENCHMARK_RETENTION_HOURS` (default 72) are deleted, directory included, on the next benchmark POST. The purge removes 20 rows per request. Logs do not include API keys or photo bytes. The JSON response is an id and a message, not the image.
++
++The skin-colour blob remains the guest placement gate. It is not used to accept a benchmark. The benchmark does not run landmark detection. Alignment on the guest path is still not a haircut score, and a failed generated head is not repaired by pasting the original face over it. A new segmentation or compositing stack waits on this raw benchmark.
++
++## Tests run
++
++No OpenAI or Gemini request was made.
++
++`npx tsc --noEmit` — exit 0, run again as part of `npm run build`.
++
++`npx vitest run tests/unit/reference-mode.test.ts tests/unit/tiers.test.ts tests/unit/masks.test.ts tests/unit/product.test.ts tests/unit/credits.test.ts` — 5 files, 63 tests passed. This run includes the length-category assertions and the dedupe status map.
++
++`npm run benchmark:quote` — the three rows in the cost table. “No provider call was made.”
++
++`npm run scan:secrets` — no committed API-key patterns.
++
++`npx next lint` — no ESLint warnings or errors.
++
++`npm run build` (`prisma generate` and `next build`) — exit 0. Next.js 15.5.27 compiled, typecheck passed inside the build, and the routes `/super/ai`, `/super/ai/benchmark/[id]`, `/api/v1/super/ai/benchmark`, and `/api/v1/super/ai/benchmark/[id]/file` are in the route table.
++
++What the unit tests cover:
++
++- `gpt-image-1.5`, quality medium, `n=1`, `input_fidelity=high`, png, landscape size, selfie before reference, no seed/strength/guidance, no mask wording, and the production prompt still mentions a mask.
++- `gpt-image-2` with fidelity high is refused. An unknown model id is refused. No model is swapped.
++- The selected `pixie` JPEG loads. An unknown style does not fall back to text.
++- A short style's prompt includes long-to-short. A long style's prompt includes short-to-long. A medium style includes neither phrase.
++- `side-part` is medium, `short-back-sides` is short, `bro-flow` is medium, `hime-cut` and `long-layers` are long.
++- A 400×200 image fitted into 1536×1024 keeps aspect about 2. The restored crop matches the content window. The scale is uniform.
++- `captureShouldMirror("user")` is true and `"environment"` is false.
++- A billed rejection and an uncertain release both stay inside a ₹1 cap and block the next ₹0.60 reservation. A `REFUNDED` release does not.
++- Two concurrent ₹0.80 reservations against ₹1: one ok, one refused.
++- The same request id does not start a second job. A different photo on that id conflicts.
++- `runLockedEdit` with a throwing provider calls it once and returns `uncertain` for `UncertainBillingError`.
++- `salonOutcome` maps no-key and spend-cap to `DEMO` with a credit refund, and a real edit to `SUCCEEDED` with a commit.
++- The saved `tests/fixtures/replay/long-layers-raw.jpg` is still rejected by the production face guard (`calls === 1`).
++
++`npm run test` is the broader suite. Playwright e2e was not re-run.
++
++Browser check against the production build on `127.0.0.1:3000`, with no provider call: an anonymous `GET /super/ai` returned 307, and an anonymous benchmark quote returned 403 `FORBIDDEN`. Signed in as the super-admin, the Reference benchmark section showed the style list, a disabled **Run benchmark** button, and after a synthetic 720×1280 JPEG the quote `gpt-image-1.5, quality medium, size 1024x1536, input_fidelity high, output png, n=1`, about ₹5.20. The confirmation checkbox enabled the button. The button was not clicked. `/super/ai/benchmark/does-not-exist` rendered the not-found page. Guest style-button disabling was not exercised in the browser; the lock and `disabled={busy}` are in `TryOnApp`.
++
++## Implemented, and still visually unverified
++
++Implemented and checked offline: the request builder, reference lookup, prompt roles, length sentences, spend statuses, dedupe, single attempt, demo accounting, super-admin quote and confirm UI, private stage files, and the production face-guard still rejecting the saved bad frame.
++
++Not established: that `gpt-image-1.5` accepts `input_fidelity=high` on this key; that the output preserves identity, pose, framing, clothing, and lighting; that a long-to-short cut reconstructs neck, ears, or background; that the reference cut is actually transferred; that edges look natural; latency; token usage; or the rupee cost of an accepted result. The six-row sheet `docs/benchmark-score-sheet.csv` is empty on purpose.
++
++## How to run one controlled paid test
++
++1. Leave the key out of git. Sign in as the super-admin and set the platform provider to OpenAI on `/super/ai`, or export `OPENAI_API_KEY` only in the process environment.
++2. `npm run benchmark:quote` prints the estimate and does not call the API.
++3. On `/super/ai`, under Reference benchmark, choose one style and one local selfie. The page quotes model, quality, size, fidelity, png, and the rupee estimate. Tick “I understand this makes one paid OpenAI call and does not retry.” Press **Run benchmark**. The button stays disabled until a file, a quote, and the tick are present. The server also requires `confirm=yes`, the ₹30 run cap, and the global spend cap. It makes one call.
++4. Open the link to `/super/ai/benchmark/{id}`. Read `provider-response.png` as the decoded provider body. Read `restored-output.png` only as the crop. `validation.json` stays `accepted: false`.
++5. Score that single run in the CSV. Do not treat it as the six-run matrix. The matrix is three selfies you keep off git, two styles each, including at least one long-to-short (`pixie` or another short id) and one short-to-long (`long-layers`). Commands and the column list are in the README section “Reference benchmark”.
++
++Suggested first pair, one call only: a portrait selfie and `pixie` (short, long-to-short sentence). Expect about ₹5.2 of output list price for a portrait, plus input tokens, under the ₹30 cap.
++
++## Remaining limitations
++
++- Visual quality is unverified. Mocks and unit tests do not measure a haircut.
++- `input_fidelity=high` on `gpt-image-1.5` is inferred from the guide's `gpt-image-2` exception. A live rejection is fatal and has not been observed.
++- Input-token cost is unknown until a usage payload exists. The confirmation number is the output estimate only.
++- References are 512×512. Several men's cuts look alike, and several show stubble. Listed above as needing regeneration.
++- A new guest click uses a new request id and can bill again after a lost response.
++- Spend reservations and dedupe share state only through the database. The in-process queue is single-process.
++- Guest production still uses the square pad, the heuristic mask, and the face composite. This benchmark does not replace that path.
++- The camera path mirrors a `user` facing track in the shutter. Whether the browser buffer is already mirrored was not re-checked in a browser for this change.
++- Benchmark retention deletes 20 expired rows per POST. A large backlog needs more than one request to clear.
++- `HAIR-TRYON-ARCHITECTURE-AUDIT.md` was left as the record of the previous code.
+diff --git a/docs/benchmark-score-sheet.csv b/docs/benchmark-score-sheet.csv
+new file mode 100644
+index 0000000..597defe
+--- /dev/null
++++ b/docs/benchmark-score-sheet.csv
+@@ -0,0 +1,7 @@
++run,selfie,style_id,length_change,likeness_1_to_5,style_match_1_to_5,framing_1_to_5,edges_1_to_5,reconstruction_1_to_5,latency_s,usage_input_tokens,usage_output_tokens,output_estimate_inr,usage_inr,accepted,notes
++1,selfie-a,pixie,long-to-short,,,,,,,
++2,selfie-a,long-layers,short-to-long,,,,,,,
++3,selfie-b,blunt-bob,long-to-short,,,,,,,
++4,selfie-b,beach-waves,short-to-long,,,,,,,
++5,selfie-c,soft-bob,long-to-short,,,,,,,
++6,selfie-c,curtain-bangs,fringe,,,,,,,
+diff --git a/package.json b/package.json
+index ab17942..2afbeda 100644
+--- a/package.json
++++ b/package.json
+@@ -19,6 +19,7 @@
+     "ai:smoke": "node --env-file=.env --import tsx scripts/ai-smoke.ts",
+     "calibrate": "tsx scripts/calibrate.ts",
+     "replay:raw": "tsx scripts/replay-raw.ts",
++    "benchmark:quote": "tsx scripts/benchmark-quote.ts",
+     "scan:secrets": "tsx scripts/scan-secrets.ts",
+     "prepare": "git config core.hooksPath .githooks || true"
+   },
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 8f77e40..d892197 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -340,6 +340,40 @@ model AiCall {
+   @@index([createdAt])
+ }
+ 
++/// One guest or benchmark submission. The same request id must not start a second provider call.
++model GenerationJob {
++  id          String   @id @default(cuid())
++  tenantId    String
++  requestId   String
++  fingerprint String
++  status      String
++  demoReason  String   @default("")
++  outcome     String   @default("")
++  imagePath   String   @default("")
++  message     String   @default("")
++  callId      String   @default("")
++  createdAt   DateTime @default(now())
++  expiresAt   DateTime
++
++  @@unique([tenantId, requestId])
++  @@index([expiresAt])
++}
++
++/// Super-admin reference-mode run. Photos live under var/benchmarks and are not public.
++model BenchmarkRun {
++  id          String   @id @default(cuid())
++  styleId     String
++  model       String
++  quality     String
++  size        String
++  status      String
++  estimateInr Float    @default(0)
++  callId      String   @default("")
++  dir         String
++  message     String   @default("")
++  createdAt   DateTime @default(now())
++}
++
+ model Customer {
+   id           String        @id @default(cuid())
+   tenantId     String
+diff --git a/scripts/benchmark-quote.ts b/scripts/benchmark-quote.ts
+new file mode 100644
+index 0000000..7aa9794
+--- /dev/null
++++ b/scripts/benchmark-quote.ts
+@@ -0,0 +1,20 @@
++import { quoteBenchmark } from "../src/lib/ai/benchmark";
++
++const samples = [
++  { label: "square", width: 1024, height: 1024 },
++  { label: "landscape", width: 1280, height: 720 },
++  { label: "portrait", width: 720, height: 1280 },
++];
++
++for (const sample of samples) {
++  const quote = quoteBenchmark(sample.width, sample.height);
++  if (!quote.ok) {
++    console.log(sample.label, quote.message);
++    process.exitCode = 1;
++    continue;
++  }
++  console.log(
++    `${sample.label} ${sample.width}x${sample.height} -> ${quote.model} ${quote.quality} ${quote.size} fidelity=${quote.inputFidelity} format=${quote.outputFormat} n=${quote.n} output≈$${quote.estimateUsd} ≈₹${quote.estimateInr} cap=₹${quote.capInr}`,
++  );
++}
++console.log("No provider call was made. A paid run is the super-admin button on /super/ai.");
+diff --git a/src/app/api/v1/super/ai/benchmark/[id]/file/route.ts b/src/app/api/v1/super/ai/benchmark/[id]/file/route.ts
+new file mode 100644
+index 0000000..59cfb95
+--- /dev/null
++++ b/src/app/api/v1/super/ai/benchmark/[id]/file/route.ts
+@@ -0,0 +1,41 @@
++import { readFile } from "node:fs/promises";
++import path from "node:path";
++import { NextResponse } from "next/server";
++import { BENCHMARK_STAGES, benchmarkDir } from "@/lib/ai/benchmark";
++import { requireSuper } from "@/lib/session";
++
++export const runtime = "nodejs";
++export const dynamic = "force-dynamic";
++
++const MIME: Record<string, string> = {
++  ".jpg": "image/jpeg",
++  ".png": "image/png",
++  ".json": "application/json",
++};
++
++export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
++  const access = await requireSuper();
++  if ("error" in access && access.error) return access.error;
++  const { id } = await context.params;
++  const url = new URL(_req.url);
++  const stage = path.basename(url.searchParams.get("stage") || "");
++  if (!BENCHMARK_STAGES.includes(stage as (typeof BENCHMARK_STAGES)[number])) {
++    return NextResponse.json({ error: "STAGE", message: "That debug stage is not available." }, { status: 404 });
++  }
++  if (!/^[a-zA-Z0-9-]{8,80}$/.test(id)) {
++    return NextResponse.json({ error: "ID", message: "Unknown benchmark." }, { status: 404 });
++  }
++  const file = path.join(benchmarkDir(id), stage);
++  try {
++    const bytes = await readFile(file);
++    return new NextResponse(new Uint8Array(bytes), {
++      headers: {
++        "content-type": MIME[path.extname(stage)] || "application/octet-stream",
++        "cache-control": "no-store",
++        "x-benchmark-label": "unvalidated-model-output",
++      },
++    });
++  } catch {
++    return NextResponse.json({ error: "MISSING", message: "That stage was not saved." }, { status: 404 });
++  }
++}
+diff --git a/src/app/api/v1/super/ai/benchmark/route.ts b/src/app/api/v1/super/ai/benchmark/route.ts
+new file mode 100644
+index 0000000..368834f
+--- /dev/null
++++ b/src/app/api/v1/super/ai/benchmark/route.ts
+@@ -0,0 +1,236 @@
++import { randomUUID } from "node:crypto";
++import { rm } from "node:fs/promises";
++import { NextResponse } from "next/server";
++import { benchmarkDir, prepareBenchmark, quoteBenchmark, restoredFromProvider, writeBenchmarkStages } from "@/lib/ai/benchmark";
++import { resolveOpenAIKey } from "@/lib/ai/credentials";
++import { editFormFields } from "@/lib/ai/edit-request";
++import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
++import { postImageEdit } from "@/lib/ai/openai";
++import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
++import { costUsdFromUsage, type UsageNumbers } from "@/lib/ai/tiers";
++import { sanitizeSelfie, ImageError } from "@/lib/images";
++import { numberEnv } from "@/lib/env";
++import { prisma } from "@/lib/prisma";
++import { requireSuper } from "@/lib/session";
++
++export const runtime = "nodejs";
++export const dynamic = "force-dynamic";
++export const maxDuration = 60;
++
++function usageFrom(payload: {
++  usage?: {
++    input_tokens?: number;
++    output_tokens?: number;
++    total_tokens?: number;
++    input_tokens_details?: { text_tokens?: number; image_tokens?: number };
++  };
++}): UsageNumbers | undefined {
++  const usage = payload.usage;
++  if (!usage) return undefined;
++  return {
++    inputTokens: usage.input_tokens,
++    outputTokens: usage.output_tokens,
++    totalTokens: usage.total_tokens,
++    textTokens: usage.input_tokens_details?.text_tokens,
++    imageTokens: usage.input_tokens_details?.image_tokens,
++  };
++}
++
++async function purgeOldBenchmarks() {
++  const hours = Math.max(1, numberEnv("BENCHMARK_RETENTION_HOURS", 72));
++  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
++  const stale = await prisma.benchmarkRun.findMany({ where: { createdAt: { lt: cutoff } }, take: 20 });
++  for (const row of stale) {
++    await rm(row.dir, { recursive: true, force: true }).catch(() => undefined);
++    await prisma.benchmarkRun.delete({ where: { id: row.id } }).catch(() => undefined);
++  }
++}
++
++export async function GET(req: Request) {
++  const access = await requireSuper();
++  if ("error" in access && access.error) return access.error;
++  const url = new URL(req.url);
++  const width = Number(url.searchParams.get("width") || 0);
++  const height = Number(url.searchParams.get("height") || 0);
++  if (width < 64 || height < 64) {
++    return NextResponse.json({ error: "SIZE", message: "Width and height are required to quote a benchmark." }, { status: 400 });
++  }
++  const quote = quoteBenchmark(width, height);
++  if (!quote.ok) return NextResponse.json({ error: "QUOTE", message: quote.message }, { status: 400 });
++  return NextResponse.json(quote);
++}
++
++export async function POST(req: Request) {
++  const access = await requireSuper();
++  if ("error" in access && access.error) return access.error;
++  const form = await req.formData().catch(() => null);
++  if (!form) return NextResponse.json({ error: "INVALID", message: "Send one selfie and one style." }, { status: 400 });
++  await purgeOldBenchmarks().catch(() => undefined);
++  if (String(form.get("confirm") || "") !== "yes") {
++    return NextResponse.json({ error: "CONFIRM", message: "Confirm the estimated cost before the paid call." }, { status: 400 });
++  }
++  const styleId = String(form.get("styleId") || "");
++  const photo = form.get("photo");
++  const original = photo instanceof File ? Buffer.from(await photo.arrayBuffer()) : null;
++  if (!original) return NextResponse.json({ error: "PHOTO", message: "Choose one selfie for this run." }, { status: 400 });
++  let jpeg: Buffer;
++  try {
++    jpeg = await sanitizeSelfie(original);
++  } catch (error) {
++    const code = error instanceof ImageError ? error.code : "DECODE";
++    return NextResponse.json({ error: code, message: "Use a JPEG, PNG, or WebP selfie under 2 MB." }, { status: 400 });
++  }
++  const prepared = await prepareBenchmark({ jpeg, styleId });
++  if (!prepared.ok) return NextResponse.json({ error: "BENCHMARK", message: prepared.message }, { status: 400 });
++  const apiKey = await resolveOpenAIKey();
++  if (!apiKey) {
++    return NextResponse.json({
++      error: "NO_OPENAI_KEY",
++      message: "Add an OpenAI key on AI settings. Benchmark mode does not call Gemini, a mock, or another model.",
++    }, { status: 400 });
++  }
++
++  const { quote, planned, fitted, reference, style } = prepared;
++  const gate = await beginPaidCall({
++    provider: "openai",
++    quality: quote.quality,
++    model: quote.model,
++    tenantId: "benchmark",
++    tool: "benchmark",
++    tier: "benchmark",
++    imageSize: quote.size,
++    estimateInr: quote.estimateInr,
++    estimateUsd: quote.estimateUsd,
++  });
++  if (!gate.ok) {
++    return NextResponse.json({ error: "SPEND_CAP", message: "The testing spend cap would be exceeded. No benchmark call was made." }, { status: 402 });
++  }
++
++  const id = randomUUID();
++  const dir = benchmarkDir(id);
++  const validation = {
++    label: "unvalidated model output",
++    compositeApplied: false,
++    maskSent: false,
++    faceBlobUsedAsGate: false,
++    accepted: false,
++    model: quote.model,
++    quality: quote.quality,
++    size: quote.size,
++    inputFidelity: "high",
++    outputFormat: "png",
++    referencePixels: { width: prepared.referenceWidth, height: prepared.referenceHeight },
++    note: "The skin-colour face blob was not used. Alignment is not a haircut score. No original face was pasted back.",
++  };
++  await writeBenchmarkStages(dir, {
++    original,
++    sanitized: jpeg,
++    providerInput: fitted.png,
++    reference,
++    validation,
++    transform: fitted.transform,
++  });
++  await prisma.benchmarkRun.create({
++    data: {
++      id,
++      styleId: style.id,
++      model: quote.model,
++      quality: quote.quality,
++      size: quote.size,
++      status: "PENDING",
++      estimateInr: quote.estimateInr,
++      callId: gate.id,
++      dir,
++    },
++  });
++
++  const fields = editFormFields(planned);
++  const body = new FormData();
++  for (const [key, value] of Object.entries(fields)) body.set(key, value);
++  body.append("image[]", new Blob([new Uint8Array(fitted.png)], { type: "image/png" }), "selfie.png");
++  body.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
++
++  try {
++    const response = await postImageEdit(apiKey, body);
++    const payload = (await response.json()) as {
++      data?: { b64_json?: string }[];
++      usage?: {
++        input_tokens?: number;
++        output_tokens?: number;
++        total_tokens?: number;
++        input_tokens_details?: { text_tokens?: number; image_tokens?: number };
++      };
++    };
++    const usage = usageFrom(payload);
++    const b64 = payload.data?.[0]?.b64_json;
++    if (!b64) throw new BilledProviderError(quote.estimateUsd, usage);
++    const providerResponse = Buffer.from(b64, "base64");
++    const restored = await restoredFromProvider(providerResponse, fitted.transform);
++    await writeBenchmarkStages(dir, {
++      original,
++      sanitized: jpeg,
++      providerInput: fitted.png,
++      reference,
++      providerResponse,
++      restored,
++      validation: { ...validation, providerResponseBytes: providerResponse.length, restoredBytes: restored.length },
++      transform: fitted.transform,
++    });
++    const usd = costUsdFromUsage(quote.model, usage) ?? quote.estimateUsd;
++    await finalizePaidCall(gate.id, {
++      model: quote.model,
++      billed: true,
++      charged: true,
++      costUsd: usd,
++      estimateInr: gate.estimateInr,
++      usage,
++      imageSize: quote.size,
++    });
++    await prisma.benchmarkRun.update({ where: { id }, data: { status: "UNVALIDATED", message: "Unvalidated model output." } });
++    return NextResponse.json({
++      id,
++      status: "UNVALIDATED",
++      model: quote.model,
++      quality: quote.quality,
++      size: quote.size,
++      estimateInr: quote.estimateInr,
++      message: "Unvalidated model output. One provider call. No mask, no face paste, no retry.",
++    });
++  } catch (error) {
++    const uncertain = error instanceof UncertainBillingError;
++    const unknown = error instanceof UnknownModelError;
++    if (uncertain) {
++      await finalizePaidCall(gate.id, {
++        model: quote.model,
++        billed: true,
++        charged: true,
++        costUsd: quote.estimateUsd,
++        estimateInr: gate.estimateInr,
++        imageSize: quote.size,
++      });
++      await releasePaidCall(gate.id, "UNCERTAIN");
++    } else if (error instanceof BilledProviderError) {
++      await finalizePaidCall(gate.id, {
++        model: quote.model,
++        billed: true,
++        charged: true,
++        costUsd: error.costUsd,
++        estimateInr: gate.estimateInr,
++        usage: error.usage,
++        imageSize: quote.size,
++      });
++      await releasePaidCall(gate.id, "BILLED_FAILED");
++    } else {
++      await finalizePaidCall(gate.id, { model: quote.model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize: quote.size });
++      await releasePaidCall(gate.id, "REFUNDED");
++    }
++    const message = error instanceof Error ? error.message : "The benchmark did not finish.";
++    await prisma.benchmarkRun.update({ where: { id }, data: { status: uncertain ? "UNCERTAIN" : "FAILED", message } });
++    const status = uncertain ? 504 : unknown || error instanceof UnbilledProviderError ? 422 : 502;
++    return NextResponse.json({
++      error: uncertain ? "UNCERTAIN" : unknown ? "UNKNOWN_MODEL" : "BENCHMARK",
++      message,
++      id,
++    }, { status });
++  }
++}
+diff --git a/src/app/api/v1/tryon/generate/route.ts b/src/app/api/v1/tryon/generate/route.ts
+index 85e0ff6..5b878b0 100644
+--- a/src/app/api/v1/tryon/generate/route.ts
++++ b/src/app/api/v1/tryon/generate/route.ts
+@@ -5,7 +5,8 @@ import sharp from "sharp";
+ import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
+ import { shadeById } from "@/data/shades";
+ import { resolveProviderChoice } from "@/lib/ai/credentials";
+-import { guestPreviewHeaders } from "@/lib/ai/guest-response";
++import { claimGenerationJob, completeGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
++import { salonOutcome, guestPreviewHeaders } from "@/lib/ai/guest-response";
+ import { generateWithFailover, selectProvider } from "@/lib/ai/router";
+ import { readTierFlags } from "@/lib/ai/settings-store";
+ import { resolveGuestTier } from "@/lib/ai/tiers";
+@@ -128,13 +129,36 @@ export async function POST(req: Request) {
+     }
+   }
+ 
++  const requestId = String(form.get("requestId") || "");
++  let jobId = "";
++  if (requestId) {
++    const claim = await claimGenerationJob({
++      tenantId: tenant.id,
++      requestId,
++      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: shadeId || "", mode: "production" }),
++    });
++    if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
++    if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
++    if (claim.kind === "repeat") return NextResponse.json({ error: "REPEAT", message: claim.message }, { status: claim.status });
++    if (claim.kind === "replay") {
++      return new NextResponse(new Uint8Array(claim.image), {
++        status: 200,
++        headers: guestPreviewHeaders({ tryOnId: "replay", creditsLeft: tenant.creditBalance, demoReason: claim.demoReason }),
++      });
++    }
++    jobId = claim.id;
++  }
++
+   const shade = tool === "style" ? shadeById(shadeId) : null;
+   const region: RegionTool = tool === "nails" ? "nails" : tool === "brows" ? "brows" : tool === "beard" ? "beard" : shade ? "colour" : "style";
+   const lookStyle = tool === "style" ? styleById(styleId) : null;
+   const choice = await resolveProviderChoice(tenant.id);
+   if (selectProvider(choice.name, choice.apiKey).name !== "mock") {
+     const placement = await preflightPhoto(jpeg, region, { hairExtent: hairExtentForStyle(lookStyle, region) });
+-    if (!placement.ok) return NextResponse.json({ error: "PLACEMENT", message: TRY_ANOTHER_PHOTO }, { status: 422 });
++    if (!placement.ok) {
++      await failGenerationJob(jobId, { outcome: "placement", message: TRY_ANOTHER_PHOTO });
++      return NextResponse.json({ error: "PLACEMENT", message: TRY_ANOTHER_PHOTO }, { status: 422 });
++    }
+   }
+ 
+   const flags = await readTierFlags(tenant.id);
+@@ -147,11 +171,13 @@ export async function POST(req: Request) {
+     await reserveCredits(tenant.id, credits, refId);
+   } catch (error) {
+     if (error instanceof CreditError && error.code === "INSUFFICIENT") {
++      await failGenerationJob(jobId, { outcome: "credits", message: "This salon has used its preview credits. Live colour is still free. Message them on WhatsApp to book." });
+       return NextResponse.json(
+         { error: "CREDITS", message: "This salon has used its preview credits. Live colour is still free. Message them on WhatsApp to book." },
+         { status: 402 },
+       );
+     }
++    await failGenerationJob(jobId, { outcome: "suspended", message: "This salon's try-on is paused." });
+     return NextResponse.json({ error: "SUSPENDED", message: "This salon's try-on is paused." }, { status: 403 });
+   }
+ 
+@@ -191,17 +217,19 @@ export async function POST(req: Request) {
+       styleName: look.name,
+     };
+     const result = await generateWithFailover(input, choice);
+-    if (result.demoReason === "placement") {
++    const outcome = salonOutcome(result.demoReason);
++    if (outcome.placement) {
+       await settleCredits(tenant.id, refId, "REFUND");
+       await prisma.tryOn.update({ where: { id: tryOn.id }, data: { status: "FAILED" } });
++      await failGenerationJob(jobId, { outcome: "placement", message: TRY_ANOTHER_PHOTO, callId: result.callId });
+       return NextResponse.json({ error: "PLACEMENT", message: TRY_ANOTHER_PHOTO }, { status: 422 });
+     }
+-    await settleCredits(tenant.id, refId, "COMMIT");
++    await settleCredits(tenant.id, refId, outcome.commit ? "COMMIT" : "REFUND");
+     const balance = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { creditBalance: true } });
+     await prisma.tryOn.update({
+       where: { id: tryOn.id },
+       data: {
+-        status: "SUCCEEDED",
++        status: outcome.status,
+         latencyMs: result.latencyMs,
+       },
+     });
+@@ -209,10 +237,19 @@ export async function POST(req: Request) {
+       data: {
+         tenantId: tenant.id,
+         sessionId,
+-        name: "generate_succeeded",
++        name: outcome.commit ? "generate_succeeded" : "generate_demo",
+         props: JSON.stringify({ styleId, demo: Boolean(result.demoReason) }),
+       },
+     });
++    if (requestId) {
++      await completeGenerationJob(jobId, {
++        tenantId: tenant.id,
++        requestId,
++        image: result.image,
++        demoReason: result.demoReason,
++        callId: result.callId,
++      });
++    }
+     return new NextResponse(new Uint8Array(result.image), {
+       status: 200,
+       headers: guestPreviewHeaders({
+@@ -224,7 +261,12 @@ export async function POST(req: Request) {
+   } catch (error) {
+     await settleCredits(tenant.id, refId, "REFUND");
+     await prisma.tryOn.update({ where: { id: tryOn.id }, data: { status: "FAILED" } });
++    const uncertain = error instanceof Error && error.name === "UncertainBillingError";
++    const message = uncertain
++      ? "The provider may have billed this attempt. It was not started again. The salon credit was returned."
++      : "The preview did not finish. The salon credit was returned. No automatic retry was made.";
++    await failGenerationJob(jobId, { outcome: uncertain ? "uncertain" : "provider", message });
+     logError("generate failed", { tryOnId: tryOn.id, tenantId: tenant.id, message: error instanceof Error ? error.message : "error" });
+-    return NextResponse.json({ error: "PROVIDER", message: "The preview did not finish. The credit was returned. Please try again." }, { status: 502 });
++    return NextResponse.json({ error: uncertain ? "UNCERTAIN" : "PROVIDER", message }, { status: uncertain ? 504 : 502 });
+   }
+ }
+diff --git a/src/app/super/ai/benchmark/[id]/page.tsx b/src/app/super/ai/benchmark/[id]/page.tsx
+new file mode 100644
+index 0000000..a778fad
+--- /dev/null
++++ b/src/app/super/ai/benchmark/[id]/page.tsx
+@@ -0,0 +1,43 @@
++import Link from "next/link";
++import { notFound } from "next/navigation";
++import { BENCHMARK_STAGES } from "@/lib/ai/benchmark";
++import { prisma } from "@/lib/prisma";
++import { pageSuper } from "@/lib/session";
++
++export const dynamic = "force-dynamic";
++
++const PICTURES = ["provider-response.png", "restored-output.png", "provider-input.png", "provider-reference.jpg", "sanitized-input.jpg", "original-input.jpg"];
++
++export default async function BenchmarkReviewPage({ params }: { params: Promise<{ id: string }> }) {
++  await pageSuper();
++  const { id } = await params;
++  const run = await prisma.benchmarkRun.findUnique({ where: { id } });
++  if (!run) notFound();
++  return (
++    <main className="mx-auto max-w-3xl px-4 py-8">
++      <p className="text-xs uppercase tracking-[0.16em] text-muted">Super admin</p>
++      <h1 className="font-serif text-4xl">Unvalidated model output</h1>
++      <p className="mt-2 text-sm leading-6">
++        This is the benchmark for {run.styleId}. Model {run.model}, quality {run.quality}, size {run.size}.
++        Status {run.status}. Estimated output cost ₹{run.estimateInr.toFixed(2)} before input tokens.
++        The provider response file is the decoded bytes before any crop. The restored file is a separate crop.
++        Nothing here was accepted as a finished haircut.
++      </p>
++      <p className="mt-3 text-sm"><Link className="underline" href="/super/ai">Back to AI settings</Link></p>
++      {run.message && <p className="mt-3 text-sm">{run.message}</p>}
++      <div className="mt-6 grid gap-4">
++        {PICTURES.map((stage) => (
++          <figure key={stage} className="rounded-2xl border border-line bg-white p-3">
++            <figcaption className="mb-2 text-sm font-medium">{stage}</figcaption>
++            <img alt="" src={`/api/v1/super/ai/benchmark/${run.id}/file?stage=${stage}`} className="max-h-[32rem] w-full object-contain" />
++          </figure>
++        ))}
++      </div>
++      <ul className="mt-4 text-sm leading-6">
++        {BENCHMARK_STAGES.filter((stage) => stage.endsWith(".json")).map((stage) => (
++          <li key={stage}><a className="underline" href={`/api/v1/super/ai/benchmark/${run.id}/file?stage=${stage}`}>{stage}</a></li>
++        ))}
++      </ul>
++    </main>
++  );
++}
+diff --git a/src/app/super/ai/page.tsx b/src/app/super/ai/page.tsx
+index 6b191bf..a6fe6ec 100644
+--- a/src/app/super/ai/page.tsx
++++ b/src/app/super/ai/page.tsx
+@@ -1,9 +1,12 @@
+ import Link from "next/link";
++import { BenchmarkPanel } from "@/components/admin/BenchmarkPanel";
+ import { SuperAiForm } from "@/components/admin/SuperAiForm";
+ import { SuperCostPanel } from "@/components/admin/SuperCostPanel";
+ import { SignOutButton } from "@/components/admin/SignOutButton";
+ import { costReport } from "@/lib/ai/cost-report";
+ import { platformAiView } from "@/lib/ai/settings-store";
++import { STYLES } from "@/data/styles";
++import { quoteBenchmark } from "@/lib/ai/benchmark";
+ import { pageSuper } from "@/lib/session";
+ 
+ export const dynamic = "force-dynamic";
+@@ -12,6 +15,8 @@ export default async function SuperAiPage() {
+   await pageSuper();
+   const initial = await platformAiView();
+   const costs = await costReport({ provider: initial.provider, tier: initial.tier, imagesPerMonth: 100 });
++  const squareQuote = quoteBenchmark(1024, 1024);
++  const styles = STYLES.map((style) => ({ id: style.id, name: style.name, lengthCategory: style.lengthCategory }));
+   return (
+     <main className="mx-auto max-w-3xl px-4 py-8">
+       <div className="mb-4 flex items-center justify-between gap-3">
+@@ -28,6 +33,12 @@ export default async function SuperAiPage() {
+         Test is the default for a new key and for every calibration run. Medium turns on only after you approve it. High stays off until you enable it. Guests use Test until a salon or this page selects a higher tier that is allowed.
+       </p>
+       <SuperAiForm initial={initial} />
++      {squareQuote.ok && (
++        <p className="mt-4 text-sm leading-6">
++          Reference benchmark, off for guests: {squareQuote.model} quality {squareQuote.quality} at 1024×1024 is about ₹{squareQuote.estimateInr.toFixed(2)} (${squareQuote.estimateUsd}) of published output price, before input tokens. Landscape and portrait sizes are higher. The spend cap includes this call, billed failures, and uncertain timeouts.
++        </p>
++      )}
++      <BenchmarkPanel styles={styles} />
+       <SuperCostPanel initial={costs} />
+     </main>
+   );
+diff --git a/src/components/admin/BenchmarkPanel.tsx b/src/components/admin/BenchmarkPanel.tsx
+new file mode 100644
+index 0000000..7efa784
+--- /dev/null
++++ b/src/components/admin/BenchmarkPanel.tsx
+@@ -0,0 +1,130 @@
++"use client";
++
++import { useRef, useState } from "react";
++import type { LengthCategory } from "@/data/styles";
++
++type StyleOption = { id: string; name: string; lengthCategory: LengthCategory };
++
++type Quote = {
++  model: string;
++  quality: string;
++  size: string;
++  estimateInr: number;
++  estimateUsd: number;
++  capInr: number;
++  note: string;
++};
++
++export function BenchmarkPanel({ styles }: { styles: StyleOption[] }) {
++  const [styleId, setStyleId] = useState(styles[0]?.id || "");
++  const [file, setFile] = useState<File | null>(null);
++  const [quote, setQuote] = useState<Quote | null>(null);
++  const [confirm, setConfirm] = useState(false);
++  const [busy, setBusy] = useState(false);
++  const runLock = useRef(false);
++  const [message, setMessage] = useState("");
++  const [runId, setRunId] = useState("");
++
++  async function quoteFile(next: File, nextStyle = styleId) {
++    const bitmap = await createImageBitmap(next);
++    const width = bitmap.width;
++    const height = bitmap.height;
++    bitmap.close();
++    const res = await fetch(`/api/v1/super/ai/benchmark?width=${width}&height=${height}&styleId=${encodeURIComponent(nextStyle)}`);
++    const data = await res.json().catch(() => ({}));
++    if (!res.ok) {
++      setQuote(null);
++      setMessage(data.message || "Could not quote that photo.");
++      return;
++    }
++    setQuote(data);
++    setConfirm(false);
++    setMessage("");
++  }
++
++  async function run() {
++    if (!file || !quote || !confirm || runLock.current) return;
++    runLock.current = true;
++    setBusy(true);
++    setMessage("");
++    try {
++      const body = new FormData();
++      body.set("photo", file);
++      body.set("styleId", styleId);
++      body.set("confirm", "yes");
++      const res = await fetch("/api/v1/super/ai/benchmark", { method: "POST", body });
++      const data = await res.json().catch(() => ({}));
++      if (!res.ok) {
++        setMessage(data.message || "The benchmark did not run.");
++        if (data.id) setRunId(data.id);
++        return;
++      }
++      setRunId(data.id);
++      setMessage(data.message || "Unvalidated model output.");
++    } finally {
++      runLock.current = false;
++      setBusy(false);
++    }
++  }
++
++  return (
++    <section className="mt-8 rounded-2xl border border-line bg-white p-4">
++      <h2 className="font-serif text-2xl">Reference benchmark</h2>
++      <p className="mt-2 text-sm leading-6">
++        One OpenAI edit of the uploaded selfie plus the selected hairstyle reference. Guests never use this path.
++        The result is labelled unvalidated model output. There is no mask, no pasted face, and no automatic retry.
++        The run cap is ₹{quote?.capInr ?? 30} for the output estimate. Input tokens can add more.
++      </p>
++      <label className="mt-3 block text-sm">
++        Style
++        <select
++          className="field mt-1"
++          value={styleId}
++          onChange={(event) => {
++            setStyleId(event.target.value);
++            setConfirm(false);
++            if (file) void quoteFile(file, event.target.value);
++          }}
++        >
++          {styles.map((style) => (
++            <option key={style.id} value={style.id}>{style.name} ({style.lengthCategory})</option>
++          ))}
++        </select>
++      </label>
++      <label className="mt-3 block text-sm">
++        Selfie, one file, not stored in git
++        <input
++          className="mt-1 block text-sm"
++          type="file"
++          accept="image/jpeg,image/png,image/webp"
++          onChange={(event) => {
++            const next = event.target.files?.[0] || null;
++            setFile(next);
++            setRunId("");
++            setConfirm(false);
++            if (next) void quoteFile(next);
++          }}
++        />
++      </label>
++      {quote && (
++        <p className="mt-3 text-sm leading-6">
++          {quote.model}, quality {quote.quality}, size {quote.size}, input_fidelity high, output png, n=1.
++          Estimated output cost about ₹{quote.estimateInr.toFixed(2)} (${quote.estimateUsd}). {quote.note}
++        </p>
++      )}
++      <label className="mt-3 flex items-start gap-2 text-sm">
++        <input type="checkbox" className="mt-1" checked={confirm} onChange={(event) => setConfirm(event.target.checked)} disabled={!quote} />
++        <span>I understand this makes one paid OpenAI call and does not retry.</span>
++      </label>
++      <button className="btn mt-3" type="button" disabled={busy || !file || !quote || !confirm} onClick={() => void run()}>
++        {busy ? "Running one call..." : "Run benchmark"}
++      </button>
++      {message && <p className="mt-3 text-sm leading-6">{message}</p>}
++      {runId && (
++        <p className="mt-2 text-sm">
++          <a className="underline" href={`/super/ai/benchmark/${runId}`}>Open unvalidated stages</a>
++        </p>
++      )}
++    </section>
++  );
++}
+diff --git a/src/components/tryon/TryOnApp.tsx b/src/components/tryon/TryOnApp.tsx
+index b7bfc58..f494eb8 100644
+--- a/src/components/tryon/TryOnApp.tsx
++++ b/src/components/tryon/TryOnApp.tsx
+@@ -5,6 +5,7 @@ import { BeforeAfter } from "@/components/tryon/BeforeAfter";
+ import { ColourStage } from "@/components/tryon/ColourStage";
+ import { StyleCard } from "@/components/tryon/StyleCard";
+ import { t } from "@/data/i18n";
++import { captureShouldMirror } from "@/lib/capture";
+ import { classifySkinPhoto } from "@/lib/hand-photo";
+ import type { SalonConfig } from "@/lib/salon";
+ import { normalizeWhatsAppPhone } from "@/lib/whatsapp";
+@@ -81,6 +82,7 @@ export function TryOnApp({
+   const [styleId, setStyleId] = useState("");
+   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
+   const [busy, setBusy] = useState(false);
++  const previewLock = useRef(false);
+   const [progress, setProgress] = useState(0);
+   const [pendingName, setPendingName] = useState("");
+   const [error, setError] = useState("");
+@@ -310,7 +312,7 @@ export function TryOnApp({
+     canvas.height = height;
+     const ctx = canvas.getContext("2d");
+     if (!ctx) return;
+-    if (facing === "user") {
++    if (captureShouldMirror(facing)) {
+       ctx.translate(width, 0);
+       ctx.scale(-1, 1);
+     }
+@@ -335,49 +337,55 @@ export function TryOnApp({
+       return;
+     }
+     consentRef.current = consent;
++    if (previewLock.current || busy) return;
++    previewLock.current = true;
+     setError("");
+     setPendingName(chosen.name);
+     setBusy(true);
+-    track("generate_requested", { styleId: chosen.id, tool: chosen.tool });
+-    const body = new FormData();
+-    body.set("photo", shot.blob, "selfie.jpg");
+-    body.set("slug", config.slug);
+-    body.set("styleId", chosen.id);
+-    body.set("tool", chosen.tool);
+-    body.set("quality", "standard");
+-    body.set("consentId", consent);
+-    body.set("sessionId", sid || sessionId());
+-    if (chosen.tool === "style" && shadeId) body.set("shadeId", shadeId);
+-    if (salonToken) body.set("salonToken", salonToken);
+-    const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
+-    if (!res.ok) {
+-      const data = await res.json().catch(() => ({ message: t(lang, "creditsEmpty") }));
++    try {
++      track("generate_requested", { styleId: chosen.id, tool: chosen.tool });
++      const body = new FormData();
++      body.set("photo", shot.blob, "selfie.jpg");
++      body.set("slug", config.slug);
++      body.set("styleId", chosen.id);
++      body.set("tool", chosen.tool);
++      body.set("quality", "standard");
++      body.set("consentId", consent);
++      body.set("sessionId", sid || sessionId());
++      body.set("requestId", crypto.randomUUID());
++      if (chosen.tool === "style" && shadeId) body.set("shadeId", shadeId);
++      if (salonToken) body.set("salonToken", salonToken);
++      const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
++      if (!res.ok) {
++        const data = await res.json().catch(() => ({ message: t(lang, "creditsEmpty") }));
++        setProgress(0);
++        setError(data.message || t(lang, "creditsEmpty"));
++        track("generate_failed", { styleId: chosen.id });
++        return;
++      }
++      const out = await res.blob();
++      const reason = res.headers.get("x-demo-reason") || "";
++      const sample = reason === "no-key" || reason === "spend-cap" || reason === "failover" || reason === "placement";
++      setNotice(reason === "spend-cap" ? t(lang, "spendCapNote") : "");
++      setActive({
++        id: res.headers.get("x-tryon-id") || crypto.randomUUID(),
++        styleId: chosen.id,
++        styleName: chosen.name,
++        shadeName: chosen.tool === "style" ? shade?.name ?? null : null,
++        before: URL.createObjectURL(shot.blob),
++        after: URL.createObjectURL(out),
++        serviceKeys: chosen.serviceKeys,
++        tool: chosen.tool,
++        demo: sample,
++      });
++      setProgress(100);
++      setStylePhase("result");
++      frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
++      track("generate_succeeded", { styleId: chosen.id });
++    } finally {
++      previewLock.current = false;
+       setBusy(false);
+-      setProgress(0);
+-      setError(data.message || t(lang, "creditsEmpty"));
+-      track("generate_failed", { styleId: chosen.id });
+-      return;
+     }
+-    const out = await res.blob();
+-    const reason = res.headers.get("x-demo-reason") || "";
+-    const sample = reason === "no-key" || reason === "spend-cap" || reason === "failover" || reason === "placement";
+-    setNotice(reason === "spend-cap" ? t(lang, "spendCapNote") : "");
+-    setActive({
+-      id: res.headers.get("x-tryon-id") || crypto.randomUUID(),
+-      styleId: chosen.id,
+-      styleName: chosen.name,
+-      shadeName: chosen.tool === "style" ? shade?.name ?? null : null,
+-      before: URL.createObjectURL(shot.blob),
+-      after: URL.createObjectURL(out),
+-      serviceKeys: chosen.serviceKeys,
+-      tool: chosen.tool,
+-      demo: sample,
+-    });
+-    setBusy(false);
+-    setProgress(100);
+-    setStylePhase("result");
+-    frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+-    track("generate_succeeded", { styleId: chosen.id });
+   }
+ 
+   function pickShade(id: string) {
+@@ -593,7 +601,7 @@ export function TryOnApp({
+                   type="button"
+                   aria-pressed={style.id === styleId}
+                   className={`overflow-hidden rounded-2xl border bg-white text-left ${style.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
+-                  onClick={() => void preview({ id: style.id, name: style.name, serviceKeys: style.serviceKeys, tool: "style" })}
++                  disabled={busy} onClick={() => void preview({ id: style.id, name: style.name, serviceKeys: style.serviceKeys, tool: "style" })}
+                 >
+                   <StyleCard id={style.id} name={style.name} />
+                   <span className="block px-2 py-2 text-center text-sm font-medium">{style.name}</span>
+@@ -623,7 +631,7 @@ export function TryOnApp({
+         {tool === "brows" && (
+           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
+             {config.brows.map((brow) => (
+-              <button key={brow.id} type="button" aria-pressed={brow.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${brow.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => void preview({ id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" })}>
++              <button key={brow.id} type="button" aria-pressed={brow.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${brow.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} disabled={busy} onClick={() => void preview({ id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" })}>
+                 <StyleCard id={brow.id} name={brow.name} folder="brows" />
+                 <span className="block px-2 py-2 text-center text-sm font-medium">{brow.name}</span>
+               </button>
+@@ -634,7 +642,7 @@ export function TryOnApp({
+         {tool === "beard" && (
+           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
+             {config.beards.map((beard) => (
+-              <button key={beard.id} type="button" aria-pressed={beard.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${beard.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => void preview({ id: beard.id, name: beard.name, serviceKeys: beard.serviceKeys, tool: "beard" })}>
++              <button key={beard.id} type="button" aria-pressed={beard.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${beard.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} disabled={busy} onClick={() => void preview({ id: beard.id, name: beard.name, serviceKeys: beard.serviceKeys, tool: "beard" })}>
+                 <StyleCard id={beard.id} name={beard.name} folder="beards" />
+                 <span className="block px-2 py-2 text-center text-sm font-medium">{beard.name}</span>
+               </button>
+@@ -645,7 +653,7 @@ export function TryOnApp({
+         {tool === "nails" && (
+           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
+             {config.nails.map((nail) => (
+-              <button key={nail.id} type="button" aria-pressed={nail.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${nail.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => void preview({ id: nail.id, name: nail.name, serviceKeys: nail.serviceKeys, tool: "nails" })}>
++              <button key={nail.id} type="button" aria-pressed={nail.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${nail.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} disabled={busy} onClick={() => void preview({ id: nail.id, name: nail.name, serviceKeys: nail.serviceKeys, tool: "nails" })}>
+                 <StyleCard id={nail.id} name={nail.name} folder="nails" />
+                 <span className="block px-2 py-2 text-center text-sm font-medium">{nail.name}</span>
+               </button>
+diff --git a/src/data/styles.ts b/src/data/styles.ts
+index fb6f536..1c9f825 100644
+--- a/src/data/styles.ts
++++ b/src/data/styles.ts
+@@ -1,6 +1,7 @@
+ export type Gender = "women" | "men" | "kids";
+ export type FaceShape = "oval" | "round" | "square" | "heart" | "oblong" | "diamond";
+ export type HairType = "straight" | "wavy" | "curly" | "thick" | "thin";
++export type LengthCategory = "short" | "medium" | "long";
+ 
+ export type StyleDef = {
+   id: string;
+@@ -9,6 +10,8 @@ export type StyleDef = {
+   category: string;
+   description: string;
+   prompt: string;
++  /** How long the selected cut is. Used by the reference-mode prompt, not by the production mask. */
++  lengthCategory: LengthCategory;
+   tags: string[];
+   faceShapes: FaceShape[];
+   hairTypes: HairType[];
+@@ -16,15 +19,31 @@ export type StyleDef = {
+ };
+ 
+ type Draft = Pick<StyleDef, "id" | "name" | "gender" | "category" | "description" | "prompt"> &
+-  Partial<Pick<StyleDef, "tags" | "faceShapes" | "hairTypes" | "serviceKeys">>;
++  Partial<Pick<StyleDef, "lengthCategory" | "tags" | "faceShapes" | "hairTypes" | "serviceKeys">>;
++
++export function lengthCategoryFor(style: { id?: string; category?: string; lengthCategory?: LengthCategory }): LengthCategory {
++  if (style.lengthCategory) return style.lengthCategory;
++  const category = style.category || "";
++  const id = style.id || "";
++  if (id === "hime-cut") return "long";
++  if (category === "bangs" || category === "medium") return "medium";
++  if (category === "short" || category === "crop" || category === "fade" || category === "taper" || /pixie|buzz|crew|bowl|crop|fade/.test(id)) return "short";
++  if (category === "bob" || id.includes("bob") || id === "lob" || id.endsWith("-lob")) return "medium";
++  if (category === "classic") {
++    if (id === "side-part" || id === "slick-back" || id === "old-money" || id === "comb-over" || id === "scissor-cut") return "medium";
++    return "short";
++  }
++  return "long";
++}
+ 
+ function s(draft: Draft): StyleDef {
+   return {
++    ...draft,
++    lengthCategory: draft.lengthCategory ?? lengthCategoryFor(draft),
+     tags: draft.tags ?? [draft.category],
+     faceShapes: draft.faceShapes ?? ["oval"],
+     hairTypes: draft.hairTypes ?? ["straight", "wavy", "thick"],
+     serviceKeys: draft.serviceKeys ?? ["haircut", "styling"],
+-    ...draft,
+   };
+ }
+ 
+diff --git a/src/lib/ai/benchmark.ts b/src/lib/ai/benchmark.ts
+new file mode 100644
+index 0000000..da48b30
+--- /dev/null
++++ b/src/lib/ai/benchmark.ts
+@@ -0,0 +1,154 @@
++import { mkdir, writeFile } from "node:fs/promises";
++import path from "node:path";
++import sharp from "sharp";
++import { styleById } from "@/data/styles";
++import { readHairstyleReference } from "@/lib/ai/style-reference";
++import {
++  BENCHMARK_MODEL,
++  BENCHMARK_QUALITY,
++  editSizeForAspect,
++  imageEditModel,
++  outputListUsd,
++  planImageEdit,
++  type EditQuality,
++  type EditSize,
++} from "@/lib/ai/edit-request";
++import { fitInsideCanvas, restoreFrame, type FrameTransform } from "@/lib/ai/frame";
++import { buildReferencePrompt } from "@/lib/prompts";
++import { bufferedInr } from "@/lib/ai/tiers";
++import { numberEnv } from "@/lib/env";
++
++export function benchmarkRunCapInr() {
++  return Math.max(0, numberEnv("BENCHMARK_RUN_CAP_INR", 30));
++}
++
++export function benchmarkModelId() {
++  return process.env.BENCHMARK_MODEL?.trim() || BENCHMARK_MODEL;
++}
++
++export function benchmarkQuality(): EditQuality {
++  const raw = process.env.BENCHMARK_QUALITY?.trim() || BENCHMARK_QUALITY;
++  if (raw === "low" || raw === "medium" || raw === "high") return raw;
++  return BENCHMARK_QUALITY;
++}
++
++export function quoteBenchmark(width: number, height: number) {
++  const model = benchmarkModelId();
++  const quality = benchmarkQuality();
++  const caps = imageEditModel(model);
++  if (!caps) {
++    return { ok: false as const, message: `${model} is not a configured image-edit model. Benchmark mode did not substitute another model.` };
++  }
++  if (!caps.inputFidelity?.includes("high")) {
++    return { ok: false as const, message: `${model} does not accept input_fidelity=high. Benchmark mode did not send the request.` };
++  }
++  const size = editSizeForAspect(width, height, caps.sizes);
++  const usd = outputListUsd(model, quality, size);
++  if (usd == null) {
++    return { ok: false as const, message: `No published output price for ${model} ${quality} ${size}. The request was not sent.` };
++  }
++  const estimateInr = bufferedInr(usd);
++  const capInr = benchmarkRunCapInr();
++  if (estimateInr > capInr) {
++    return {
++      ok: false as const,
++      message: `This benchmark is about ₹${estimateInr.toFixed(2)} before input tokens, above the ₹${capInr.toFixed(0)} run cap. It was not sent.`,
++    };
++  }
++  return {
++    ok: true as const,
++    model,
++    quality,
++    size,
++    outputFormat: "png" as const,
++    inputFidelity: "high" as const,
++    n: 1 as const,
++    estimateUsd: usd,
++    estimateInr,
++    capInr,
++    note: "List-price output estimate from the OpenAI image table. Image and text input tokens are extra and unknown until the response. Not an invoice.",
++  };
++}
++
++export async function prepareBenchmark(args: { jpeg: Buffer; styleId: string; colourName?: string }) {
++  const style = styleById(args.styleId);
++  if (!style) return { ok: false as const, message: "That style is not in the catalogue." };
++  const reference = readHairstyleReference(style.id);
++  if (!reference) {
++    return {
++      ok: false as const,
++      message: `No reference image for ${style.id}. Add public/styles/${style.id}.jpg. Benchmark mode does not fall back to a text-only edit.`,
++    };
++  }
++  const selfieMeta = await sharp(args.jpeg, { failOn: "none" }).metadata();
++  const referenceMeta = await sharp(reference, { failOn: "none" }).metadata();
++  const width = selfieMeta.width || 0;
++  const height = selfieMeta.height || 0;
++  if (!width || !height) return { ok: false as const, message: "The selfie could not be read." };
++  const quote = quoteBenchmark(width, height);
++  if (!quote.ok) return quote;
++  const planned = planImageEdit({
++    model: quote.model,
++    prompt: buildReferencePrompt(style, args.colourName),
++    quality: quote.quality,
++    size: quote.size,
++    outputFormat: "png",
++    inputFidelity: "high",
++    imageOrder: ["selfie.png", "style-reference.jpg"],
++    mask: false,
++  });
++  if (!planned.ok) return planned;
++  const fitted = await fitInsideCanvas(args.jpeg, quote.size);
++  return {
++    ok: true as const,
++    style,
++    quote,
++    planned: planned.plan,
++    reference,
++    referenceWidth: referenceMeta.width || 0,
++    referenceHeight: referenceMeta.height || 0,
++    fitted,
++  };
++}
++
++export async function writeBenchmarkStages(dir: string, stages: {
++  original: Buffer;
++  sanitized: Buffer;
++  providerInput: Buffer;
++  reference: Buffer;
++  providerResponse?: Buffer;
++  restored?: Buffer;
++  validation: unknown;
++  transform: FrameTransform;
++}) {
++  await mkdir(dir, { recursive: true });
++  await writeFile(path.join(dir, "original-input.jpg"), stages.original);
++  await writeFile(path.join(dir, "sanitized-input.jpg"), stages.sanitized);
++  await writeFile(path.join(dir, "provider-input.png"), stages.providerInput);
++  await writeFile(path.join(dir, "provider-reference.jpg"), stages.reference);
++  await writeFile(path.join(dir, "transform.json"), JSON.stringify(stages.transform, null, 2));
++  await writeFile(path.join(dir, "validation.json"), JSON.stringify(stages.validation, null, 2));
++  if (stages.providerResponse) await writeFile(path.join(dir, "provider-response.png"), stages.providerResponse);
++  if (stages.restored) await writeFile(path.join(dir, "restored-output.png"), stages.restored);
++}
++
++export async function restoredFromProvider(providerResponse: Buffer, transform: FrameTransform) {
++  return restoreFrame(providerResponse, transform);
++}
++
++export const BENCHMARK_STAGES = [
++  "original-input.jpg",
++  "sanitized-input.jpg",
++  "provider-input.png",
++  "provider-reference.jpg",
++  "provider-response.png",
++  "restored-output.png",
++  "transform.json",
++  "validation.json",
++] as const;
++
++export function benchmarkDir(id: string) {
++  return path.join(process.cwd(), "var", "benchmarks", id);
++}
++
++export type { EditSize };
+diff --git a/src/lib/ai/cost-report.ts b/src/lib/ai/cost-report.ts
+index d1e70fa..7c8563d 100644
+--- a/src/lib/ai/cost-report.ts
++++ b/src/lib/ai/cost-report.ts
+@@ -1,5 +1,5 @@
+ import { PLANS } from "@/data/plans";
+-import { spendCapInr } from "@/lib/ai/spend";
++import { spendCapInr, spendCapWhere } from "@/lib/ai/spend";
+ import { parseTier, projectSalonMonth, tierRequest, type ImageProviderName } from "@/lib/ai/tiers";
+ import { prisma } from "@/lib/prisma";
+ 
+@@ -40,7 +40,7 @@ function startOfMonth(now: Date) {
+ 
+ async function chargedSince(from: Date) {
+   const agg = await prisma.aiCall.aggregate({
+-    where: { status: "CHARGED", createdAt: { gte: from } },
++    where: { ...spendCapWhere(), createdAt: { gte: from } },
+     _sum: { estimatePaise: true },
+   });
+   return inr(agg._sum.estimatePaise || 0);
+@@ -56,7 +56,7 @@ export async function costReport(args: { since?: Date; imagesPerMonth?: number;
+     chargedSince(since),
+     chargedSince(startOfDay(now)),
+     chargedSince(startOfMonth(now)),
+-    prisma.aiCall.aggregate({ where: { status: "CHARGED" }, _sum: { estimatePaise: true } }),
++    prisma.aiCall.aggregate({ where: spendCapWhere(), _sum: { estimatePaise: true } }),
+   ]);
+   const ids = [...new Set(recent.map((row) => row.tenantId).filter((id) => id.length > 8))];
+   const tenants = ids.length
+diff --git a/src/lib/ai/credentials.ts b/src/lib/ai/credentials.ts
+index e1a5dd8..a2b73a4 100644
+--- a/src/lib/ai/credentials.ts
++++ b/src/lib/ai/credentials.ts
+@@ -39,3 +39,18 @@ export async function resolveProviderChoice(tenantId: string): Promise<ProviderC
+   if (platform) return platform;
+   return { name: aiProviderName() };
+ }
++
++/** OpenAI key only. Benchmark mode does not use a Gemini key or a mock. */
++export async function resolveOpenAIKey() {
++  const provider = await setting("platform_ai_provider");
++  const cipher = await setting("platform_ai_key_cipher");
++  if (provider === "openai" && cipher) {
++    try {
++      const apiKey = decryptSecret(cipher);
++      if (apiKey) return apiKey;
++    } catch {
++      return null;
++    }
++  }
++  return process.env.OPENAI_API_KEY || null;
++}
+diff --git a/src/lib/ai/dedupe.ts b/src/lib/ai/dedupe.ts
+new file mode 100644
+index 0000000..dbc74de
+--- /dev/null
++++ b/src/lib/ai/dedupe.ts
+@@ -0,0 +1,146 @@
++import { createHash } from "node:crypto";
++import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
++import path from "node:path";
++import { numberEnv } from "@/lib/env";
++import { prisma } from "@/lib/prisma";
++import { releasePaidCall } from "@/lib/ai/spend";
++
++const STALE_MS = 90_000;
++
++export function jobFingerprint(parts: { photo: Buffer; styleId: string; tool: string; shadeId: string; mode: string }) {
++  const hash = createHash("sha256");
++  hash.update(parts.photo);
++  hash.update("\0");
++  hash.update([parts.mode, parts.tool, parts.styleId, parts.shadeId].join("\0"));
++  return hash.digest("hex");
++}
++
++function jobDir(tenantId: string, requestId: string) {
++  return path.join(process.cwd(), "var", "generation-jobs", tenantId, requestId);
++}
++
++function ttlDate() {
++  return new Date(Date.now() + numberEnv("GENERATION_JOB_TTL_HOURS", 24) * 60 * 60 * 1000);
++}
++
++async function purgeExpired() {
++  const stale = await prisma.generationJob.findMany({ where: { expiresAt: { lt: new Date() } }, take: 20 });
++  for (const row of stale) {
++    await rm(jobDir(row.tenantId, row.requestId), { recursive: true, force: true }).catch(() => undefined);
++    await prisma.generationJob.delete({ where: { id: row.id } }).catch(() => undefined);
++  }
++}
++
++export type JobClaim =
++  | { kind: "start"; id: string }
++  | { kind: "replay"; image: Buffer; demoReason: string }
++  | { kind: "conflict"; message: string }
++  | { kind: "inflight"; message: string }
++  | { kind: "repeat"; status: number; message: string };
++
++/**
++ * One request id maps to one provider attempt.
++ * SQLite serializes writers of this file. Two app instances only share that lock when they share DATABASE_URL.
++ * The in-process queue in spend.ts does not cross processes.
++ */
++export async function claimGenerationJob(args: { tenantId: string; requestId: string; fingerprint: string }): Promise<JobClaim> {
++  if (!/^[A-Za-z0-9_-]{8,80}$/.test(args.requestId)) {
++    return { kind: "conflict", message: "Send a request id for this preview." };
++  }
++  await purgeExpired().catch(() => undefined);
++  const existingFirst = await prisma.generationJob.findUnique({
++    where: { tenantId_requestId: { tenantId: args.tenantId, requestId: args.requestId } },
++  });
++  if (existingFirst) return resolveExisting(existingFirst, args.fingerprint);
++  try {
++    const row = await prisma.generationJob.create({
++      data: {
++        tenantId: args.tenantId,
++        requestId: args.requestId,
++        fingerprint: args.fingerprint,
++        status: "PENDING",
++        expiresAt: ttlDate(),
++      },
++    });
++    return { kind: "start", id: row.id };
++  } catch {
++    const existing = await prisma.generationJob.findUnique({
++      where: { tenantId_requestId: { tenantId: args.tenantId, requestId: args.requestId } },
++    });
++    if (!existing) return { kind: "inflight", message: "That preview is already running." };
++    return resolveExisting(existing, args.fingerprint);
++  }
++}
++
++function repeatStatus(outcome: string) {
++  if (outcome === "placement") return 422;
++  if (outcome === "credits") return 402;
++  if (outcome === "suspended") return 403;
++  if (outcome === "uncertain") return 504;
++  return 502;
++}
++
++async function resolveExisting(existing: {
++  id: string;
++  fingerprint: string;
++  status: string;
++  createdAt: Date;
++  callId: string;
++  imagePath: string;
++  demoReason: string;
++  outcome: string;
++  message: string;
++}, fingerprint: string): Promise<JobClaim> {
++  if (existing.fingerprint !== fingerprint) {
++    return { kind: "conflict", message: "That request id was already used for a different photo or style." };
++  }
++  if (existing.status === "PENDING") {
++    const age = Date.now() - existing.createdAt.getTime();
++    if (age < STALE_MS) return { kind: "inflight", message: "That preview is already running." };
++    if (existing.callId) await releasePaidCall(existing.callId, "UNCERTAIN");
++    await prisma.generationJob.update({
++      where: { id: existing.id },
++      data: { status: "UNCERTAIN", outcome: "uncertain", message: "The first attempt did not finish. It was not started again." },
++    });
++    return { kind: "repeat", status: 504, message: "The first attempt did not finish. It was not started again." };
++  }
++  if (existing.status === "READY" && existing.imagePath) {
++    try {
++      const image = await readFile(existing.imagePath);
++      return { kind: "replay", image, demoReason: existing.demoReason };
++    } catch {
++      return { kind: "repeat", status: 410, message: "That preview expired and was not generated again." };
++    }
++  }
++  return {
++    kind: "repeat",
++    status: repeatStatus(existing.outcome),
++    message: existing.message || "That preview already finished and was not generated again.",
++  };
++}
++
++export async function completeGenerationJob(id: string, args: { tenantId: string; requestId: string; image: Buffer; demoReason?: string; callId?: string }) {
++  const dir = jobDir(args.tenantId, args.requestId);
++  await mkdir(dir, { recursive: true });
++  const file = path.join(dir, "result.jpg");
++  await writeFile(file, args.image);
++  await prisma.generationJob.update({
++    where: { id },
++    data: {
++      status: "READY",
++      imagePath: file,
++      demoReason: args.demoReason || "",
++      outcome: args.demoReason || "paid",
++      callId: args.callId || "",
++      expiresAt: ttlDate(),
++    },
++  });
++}
++
++export async function failGenerationJob(id: string, args: { outcome: string; message: string; callId?: string }) {
++  if (!id) return;
++  await prisma.generationJob.update({
++    where: { id },
++    data: { status: "FAILED", outcome: args.outcome, message: args.message, callId: args.callId || "" },
++  }).catch(() => undefined);
++}
+diff --git a/src/lib/ai/edit-request.ts b/src/lib/ai/edit-request.ts
+new file mode 100644
+index 0000000..0420e73
+--- /dev/null
++++ b/src/lib/ai/edit-request.ts
+@@ -0,0 +1,171 @@
++/**
++ * Explicit image-edit capabilities. Do not infer support from a substring of the model id.
++ *
++ * Sources checked 4 Oct 2026:
++ * - https://developers.openai.com/api/docs/models/gpt-image-1.5
++ * - https://developers.openai.com/api/docs/guides/image-generation
++ *
++ * The guide says `input_fidelity` controls how strongly an edit keeps the input, and that
++ * `gpt-image-2` must omit it. It does not say `gpt-image-1.5` must omit it. Mini is omitted
++ * because the Images edit reference for that snapshot does not accept the parameter.
++ * Prices below are the published per-image output table. Input tokens are extra and are not
++ * included. They are list prices, not invoices.
++ */
++
++export type EditQuality = "low" | "medium" | "high";
++export type EditSize = "1024x1024" | "1024x1536" | "1536x1024";
++export type EditFormat = "png" | "jpeg" | "webp";
++
++export type ImageEditCaps = {
++  id: string;
++  qualities: readonly EditQuality[];
++  sizes: readonly EditSize[];
++  outputFormats: readonly EditFormat[];
++  /** Null means the parameter must not be sent. */
++  inputFidelity: readonly ("high" | "low")[] | null;
++  /** Published output price in USD for one image. Null when this table has no cell. Input tokens are extra. */
++  outputUsd: Partial<Record<EditQuality, Partial<Record<EditSize, number>>>>;
++};
++
++const SIZES = ["1024x1024", "1024x1536", "1536x1024"] as const;
++const QUALITIES = ["low", "medium", "high"] as const;
++const FORMATS = ["png", "jpeg", "webp"] as const;
++
++function cells(low: number, medium: number, high: number, portrait: { low: number; medium: number; high: number }): ImageEditCaps["outputUsd"] {
++  return {
++    low: { "1024x1024": low, "1024x1536": portrait.low, "1536x1024": portrait.low },
++    medium: { "1024x1024": medium, "1024x1536": portrait.medium, "1536x1024": portrait.medium },
++    high: { "1024x1024": high, "1024x1536": portrait.high, "1536x1024": portrait.high },
++  };
++}
++
++export const IMAGE_EDIT_MODELS: Record<string, ImageEditCaps> = {
++  "gpt-image-1-mini": {
++    id: "gpt-image-1-mini",
++    qualities: QUALITIES,
++    sizes: SIZES,
++    outputFormats: FORMATS,
++    inputFidelity: null,
++    outputUsd: cells(0.005, 0.011, 0.036, { low: 0.006, medium: 0.015, high: 0.052 }),
++  },
++  "gpt-image-1": {
++    id: "gpt-image-1",
++    qualities: QUALITIES,
++    sizes: SIZES,
++    outputFormats: FORMATS,
++    inputFidelity: ["high", "low"],
++    outputUsd: cells(0.011, 0.042, 0.167, { low: 0.016, medium: 0.063, high: 0.25 }),
++  },
++  "gpt-image-1.5": {
++    id: "gpt-image-1.5",
++    qualities: QUALITIES,
++    sizes: SIZES,
++    outputFormats: FORMATS,
++    inputFidelity: ["high", "low"],
++    outputUsd: cells(0.009, 0.034, 0.133, { low: 0.013, medium: 0.05, high: 0.2 }),
++  },
++  "gpt-image-2": {
++    id: "gpt-image-2",
++    qualities: QUALITIES,
++    sizes: SIZES,
++    outputFormats: FORMATS,
++    inputFidelity: null,
++    outputUsd: cells(0.006, 0.053, 0.211, { low: 0.005, medium: 0.041, high: 0.165 }),
++  },
++};
++
++export const BENCHMARK_MODEL = "gpt-image-1.5";
++export const BENCHMARK_QUALITY: EditQuality = "medium";
++export const FORBIDDEN_EDIT_FIELDS = ["seed", "strength", "guidance", "guidance_scale"] as const;
++
++export function imageEditModel(id: string): ImageEditCaps | null {
++  return IMAGE_EDIT_MODELS[id] ?? null;
++}
++
++export type PlannedEdit = {
++  model: string;
++  prompt: string;
++  quality: EditQuality;
++  size: EditSize;
++  outputFormat: EditFormat;
++  n: 1;
++  inputFidelity: "high" | "low" | null;
++  imageOrder: string[];
++  mask: boolean;
++};
++
++export function editSizeForAspect(width: number, height: number, allowed: readonly EditSize[]): EditSize {
++  const ratio = width / Math.max(1, height);
++  if (ratio > 1.15 && allowed.includes("1536x1024")) return "1536x1024";
++  if (ratio < 1 / 1.15 && allowed.includes("1024x1536")) return "1024x1536";
++  if (allowed.includes("1024x1024")) return "1024x1024";
++  return allowed[0];
++}
++
++export function planImageEdit(args: {
++  model: string;
++  prompt: string;
++  quality: EditQuality;
++  size: EditSize;
++  outputFormat: EditFormat;
++  inputFidelity: "high" | "low" | null;
++  imageOrder: string[];
++  mask: boolean;
++}): { ok: true; plan: PlannedEdit } | { ok: false; message: string } {
++  const caps = imageEditModel(args.model);
++  if (!caps) {
++    return { ok: false, message: `${args.model} is not a configured image-edit model. No other model was substituted.` };
++  }
++  if (!caps.qualities.includes(args.quality)) {
++    return { ok: false, message: `${args.model} does not support quality ${args.quality}.` };
++  }
++  if (!caps.sizes.includes(args.size)) {
++    return { ok: false, message: `${args.model} does not support size ${args.size}.` };
++  }
++  if (!caps.outputFormats.includes(args.outputFormat)) {
++    return { ok: false, message: `${args.model} does not support output format ${args.outputFormat}.` };
++  }
++  if (args.inputFidelity && !caps.inputFidelity) {
++    return { ok: false, message: `${args.model} does not accept input_fidelity. The request was not sent.` };
++  }
++  if (args.inputFidelity && caps.inputFidelity && !caps.inputFidelity.includes(args.inputFidelity)) {
++    return { ok: false, message: `${args.model} does not accept input_fidelity=${args.inputFidelity}.` };
++  }
++  if (args.imageOrder.length < 1) return { ok: false, message: "An image edit needs the selfie as the first image." };
++  return {
++    ok: true,
++    plan: {
++      model: caps.id,
++      prompt: args.prompt,
++      quality: args.quality,
++      size: args.size,
++      outputFormat: args.outputFormat,
++      n: 1,
++      inputFidelity: args.inputFidelity,
++      imageOrder: args.imageOrder,
++      mask: args.mask,
++    },
++  };
++}
++
++/** Fields that will be posted. Forbidden parameters are never included. */
++export function editFormFields(plan: PlannedEdit): Record<string, string> {
++  const fields: Record<string, string> = {
++    model: plan.model,
++    prompt: plan.prompt.slice(0, 32000),
++    quality: plan.quality,
++    size: plan.size,
++    output_format: plan.outputFormat,
++    n: "1",
++  };
++  if (plan.inputFidelity) fields.input_fidelity = plan.inputFidelity;
++  for (const name of FORBIDDEN_EDIT_FIELDS) {
++    if (name in fields) delete fields[name];
++  }
++  return fields;
++}
++
++export function outputListUsd(model: string, quality: EditQuality, size: EditSize): number | null {
++  const caps = imageEditModel(model);
++  return caps?.outputUsd[quality]?.[size] ?? null;
++}
+diff --git a/src/lib/ai/errors.ts b/src/lib/ai/errors.ts
+index 3c73025..cd3680d 100644
+--- a/src/lib/ai/errors.ts
++++ b/src/lib/ai/errors.ts
+@@ -4,8 +4,8 @@ import type { UsageNumbers } from "@/lib/ai/tiers";
+ export class UnknownModelError extends Error {
+   readonly code = "UNKNOWN_MODEL" as const;
+ 
+-  constructor() {
+-    super("The image model is not available.");
++  constructor(message = "The image model is not available.") {
++    super(message);
+     this.name = "UnknownModelError";
+   }
+ }
+@@ -20,6 +20,29 @@ export class SpendCapError extends Error {
+   }
+ }
+ 
++/**
++ * The request was sent and the process did not get a definitive unbilled failure.
++ * A timeout, a dropped connection, or a 5xx leaves the bill unknown. Do not call again.
++ */
++export class UncertainBillingError extends Error {
++  readonly code = "UNCERTAIN_BILLING" as const;
++
++  constructor(message = "The provider outcome is unknown. No second generation was started.") {
++    super(message);
++    this.name = "UncertainBillingError";
++  }
++}
++
++/** The provider answered with a refusal before an image existed. The reservation can be released. */
++export class UnbilledProviderError extends Error {
++  readonly code = "UNBILLED_PROVIDER" as const;
++
++  constructor(message: string) {
++    super(message);
++    this.name = "UnbilledProviderError";
++  }
++}
++
+ /** The provider accepted the call (and may have billed it) but returned no usable image. */
+ export class BilledProviderError extends Error {
+   readonly code = "BILLED_PROVIDER" as const;
+diff --git a/src/lib/ai/frame.ts b/src/lib/ai/frame.ts
+new file mode 100644
+index 0000000..f576f12
+--- /dev/null
++++ b/src/lib/ai/frame.ts
+@@ -0,0 +1,107 @@
++import sharp from "sharp";
++import type { EditSize } from "@/lib/ai/edit-request";
++
++export type FrameTransform = {
++  sourceWidth: number;
++  sourceHeight: number;
++  targetWidth: number;
++  targetHeight: number;
++  contentWidth: number;
++  contentHeight: number;
++  offsetX: number;
++  offsetY: number;
++  scale: number;
++};
++
++export function parseEditSize(size: EditSize) {
++  const [width, height] = size.split("x").map((part) => Number(part));
++  return { width, height };
++}
++
++/**
++ * Fit the photo inside a supported edit size. The scale is uniform.
++ * Bars use the border colour. The transform maps the padded canvas back to the source rectangle.
++ */
++export async function fitInsideCanvas(image: Buffer, size: EditSize): Promise<{ png: Buffer; transform: FrameTransform }> {
++  const target = parseEditSize(size);
++  const decoded = await sharp(image, { failOn: "none" }).rotate().removeAlpha().raw().toBuffer({ resolveWithObject: true });
++  const sourceWidth = decoded.info.width;
++  const sourceHeight = decoded.info.height;
++  const scale = Math.min(target.width / sourceWidth, target.height / sourceHeight);
++  const contentWidth = Math.max(1, Math.round(sourceWidth * scale));
++  const contentHeight = Math.max(1, Math.round(sourceHeight * scale));
++  const offsetX = Math.floor((target.width - contentWidth) / 2);
++  const offsetY = Math.floor((target.height - contentHeight) / 2);
++  const resized = await sharp(decoded.data, { raw: { width: sourceWidth, height: sourceHeight, channels: 3 } })
++    .resize(contentWidth, contentHeight, { fit: "fill" })
++    .removeAlpha()
++    .raw()
++    .toBuffer();
++  const border = borderMean(decoded.data, sourceWidth, sourceHeight);
++  const canvas = Buffer.alloc(target.width * target.height * 3);
++  for (let i = 0; i < target.width * target.height; i += 1) {
++    canvas[i * 3] = border.r;
++    canvas[i * 3 + 1] = border.g;
++    canvas[i * 3 + 2] = border.b;
++  }
++  for (let y = 0; y < contentHeight; y += 1) {
++    resized.copy(canvas, ((y + offsetY) * target.width + offsetX) * 3, y * contentWidth * 3, (y + 1) * contentWidth * 3);
++  }
++  const png = await sharp(canvas, { raw: { width: target.width, height: target.height, channels: 3 } }).png().toBuffer();
++  return {
++    png,
++    transform: {
++      sourceWidth,
++      sourceHeight,
++      targetWidth: target.width,
++      targetHeight: target.height,
++      contentWidth,
++      contentHeight,
++      offsetX,
++      offsetY,
++      scale,
++    },
++  };
++}
++
++function borderMean(rgb: Buffer, width: number, height: number) {
++  let r = 0;
++  let g = 0;
++  let b = 0;
++  let n = 0;
++  const add = (x: number, y: number) => {
++    const i = (y * width + x) * 3;
++    r += rgb[i];
++    g += rgb[i + 1];
++    b += rgb[i + 2];
++    n += 1;
++  };
++  for (let x = 0; x < width; x += 1) {
++    add(x, 0);
++    if (height > 1) add(x, height - 1);
++  }
++  for (let y = 1; y < height - 1; y += 1) {
++    add(0, y);
++    if (width > 1) add(width - 1, y);
++  }
++  if (!n) return { r: 0, g: 0, b: 0 };
++  return { r: Math.round(r / n), g: Math.round(g / n), b: Math.round(b / n) };
++}
++
++/** Crop the recorded content window. This is not the provider response. */
++export async function restoreFrame(image: Buffer, transform: FrameTransform) {
++  const meta = await sharp(image, { failOn: "none" }).rotate().metadata();
++  const width = meta.width || transform.targetWidth;
++  const height = meta.height || transform.targetHeight;
++  const scaleX = width / transform.targetWidth;
++  const scaleY = height / transform.targetHeight;
++  const left = Math.max(0, Math.round(transform.offsetX * scaleX));
++  const top = Math.max(0, Math.round(transform.offsetY * scaleY));
++  const boxWidth = Math.max(1, Math.min(width - left, Math.round(transform.contentWidth * scaleX)));
++  const boxHeight = Math.max(1, Math.min(height - top, Math.round(transform.contentHeight * scaleY)));
++  return sharp(image, { failOn: "none" })
++    .rotate()
++    .extract({ left, top, width: boxWidth, height: boxHeight })
++    .png()
++    .toBuffer();
++}
+diff --git a/src/lib/ai/guest-response.ts b/src/lib/ai/guest-response.ts
+index 965209b..454b66f 100644
+--- a/src/lib/ai/guest-response.ts
++++ b/src/lib/ai/guest-response.ts
+@@ -1,3 +1,10 @@
++/** A labelled sample is not a successful paid hairstyle. Placement is a refusal. Only a real edit commits credits. */
++export function salonOutcome(demoReason?: string) {
++  if (demoReason === "placement") return { status: "FAILED" as const, commit: false, placement: true };
++  if (demoReason) return { status: "DEMO" as const, commit: false, placement: false };
++  return { status: "SUCCEEDED" as const, commit: true, placement: false };
++}
++
+ /** Headers a guest is allowed to see. No model, provider, or cost. */
+ export function guestPreviewHeaders(args: { tryOnId: string; creditsLeft: number; demoReason?: string }) {
+   return {
+diff --git a/src/lib/ai/openai.ts b/src/lib/ai/openai.ts
+index 11d68e8..e9e879b 100644
+--- a/src/lib/ai/openai.ts
++++ b/src/lib/ai/openai.ts
+@@ -1,4 +1,5 @@
+-import { BilledProviderError, isUnknownModelResponse, UnknownModelError } from "@/lib/ai/errors";
++import { editFormFields, imageEditModel, planImageEdit } from "@/lib/ai/edit-request";
++import { BilledProviderError, isUnknownModelResponse, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
+ import { styleReferenceFor } from "@/lib/ai/style-reference";
+ import { padImageAndMask, restoreSquareContent } from "@/lib/ai/square";
+ import { prepareTierInput, tierRequest, type UsageNumbers } from "@/lib/ai/tiers";
+@@ -16,16 +17,41 @@ export function openAIQuality(preview: PreviewQuality): OpenAIImageQuality {
+   return preview === "hd" ? "high" : "medium";
+ }
+ 
+-/**
+- * OpenAI image-edit docs: input_fidelity is supported on gpt-image-1 and on
+- * gpt-image-1.5 and later models. It is not supported on gpt-image-1-mini.
+- * Where it is supported, ask for high so the face and the framing stay put.
+- */
++/** High when that exact model lists input_fidelity. Empty when the model must not be sent the parameter. */
+ export function inputFidelityForModel(model: string): "high" | "" {
+-  const id = model.toLowerCase();
+-  if (id.includes("mini") || id.includes("dall-e")) return "";
+-  if (id.includes("gpt-image-") || id.includes("chatgpt-image")) return "high";
+-  return "";
++  const caps = imageEditModel(model);
++  if (!caps?.inputFidelity?.includes("high")) return "";
++  return "high";
++}
++
++export async function postImageEdit(apiKey: string, form: FormData) {
++  let response: Response;
++  try {
++    response = await fetch("https://api.openai.com/v1/images/edits", {
++      method: "POST",
++      headers: { authorization: `Bearer ${apiKey}` },
++      body: form,
++      signal: AbortSignal.timeout(55_000),
++    });
++  } catch (error) {
++    const name = error instanceof Error ? error.name : "";
++    throw new UncertainBillingError(
++      name === "TimeoutError" || name === "AbortError"
++        ? "The image edit timed out. The provider may have billed it. No second generation was started."
++        : "The image edit did not finish. The provider may have billed it. No second generation was started.",
++    );
++  }
++  if (!response.ok) {
++    const body = await response.text();
++    if (isUnknownModelResponse(response.status, body)) {
++      throw new UnknownModelError(`${response.status}: the image model is not available on this key. No fallback model was called. ${scrub(body)}`);
++    }
++    if (response.status >= 500 || response.status === 429) {
++      throw new UncertainBillingError(`OpenAI returned ${response.status}. The bill is unknown. No second generation was started.`);
++    }
++    throw new UnbilledProviderError(`OpenAI image edit failed (${response.status}) ${scrub(body)}`);
++  }
++  return response;
+ }
+ 
+ function scrub(body: string) {
+@@ -71,34 +97,30 @@ export class OpenAIProvider implements ImageStyleProvider {
+     const prepared = await prepareTierInput(input.image, input.maskPng, spec);
+     const padded = await padImageAndMask(prepared.image, prepared.mask);
+     const started = Date.now();
+-    const form = new FormData();
+-    form.set("model", spec.model);
+-    form.set("prompt", input.prompt.slice(0, 32000));
+-    form.set("quality", spec.openaiQuality);
+-    form.set("size", spec.size);
+-    form.set("output_format", "jpeg");
+-    form.set("n", "1");
+     const fidelity = inputFidelityForModel(spec.model);
+-    if (fidelity) form.set("input_fidelity", fidelity);
+-    form.append("image[]", new Blob([new Uint8Array(padded.image)], { type: "image/jpeg" }), "selfie.jpg");
+     const reference = styleReferenceFor(input, "openai");
++    const planned = planImageEdit({
++      model: spec.model,
++      prompt: input.prompt,
++      quality: spec.openaiQuality,
++      size: spec.size,
++      outputFormat: "jpeg",
++      inputFidelity: fidelity || null,
++      imageOrder: reference ? ["selfie.jpg", "style-reference.jpg"] : ["selfie.jpg"],
++      mask: Boolean(padded.mask),
++    });
++    if (!planned.ok) throw new UnknownModelError(planned.message);
++    const fields = editFormFields(planned.plan);
++    const form = new FormData();
++    for (const [key, value] of Object.entries(fields)) form.set(key, value);
++    form.append("image[]", new Blob([new Uint8Array(padded.image)], { type: "image/jpeg" }), "selfie.jpg");
+     if (reference) {
+       form.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
+     }
+     if (padded.mask) {
+       form.append("mask", new Blob([new Uint8Array(padded.mask)], { type: "image/png" }), "mask.png");
+     }
+-    const response = await fetch("https://api.openai.com/v1/images/edits", {
+-      method: "POST",
+-      headers: { authorization: `Bearer ${apiKey}` },
+-      body: form,
+-      signal: AbortSignal.timeout(55_000),
+-    });
+-    if (!response.ok) {
+-      const body = await response.text();
+-      if (isUnknownModelResponse(response.status, body)) throw new UnknownModelError();
+-      throw new Error(`OpenAI image edit failed (${response.status}) ${scrub(body)}`);
+-    }
++    const response = await postImageEdit(apiKey, form);
+     const payload = (await response.json()) as {
+       data?: { b64_json?: string }[];
+       usage?: {
+diff --git a/src/lib/ai/router.ts b/src/lib/ai/router.ts
+index ce5b6c1..bc33dcc 100644
+--- a/src/lib/ai/router.ts
++++ b/src/lib/ai/router.ts
+@@ -1,4 +1,4 @@
+-import { BilledProviderError, SpendCapError, UnknownModelError } from "@/lib/ai/errors";
++import { BilledProviderError, SpendCapError, UnbilledProviderError, UncertainBillingError } from "@/lib/ai/errors";
+ import { GeminiProvider } from "@/lib/ai/gemini";
+ import { MockProvider } from "@/lib/ai/mock";
+ import { OpenAIProvider } from "@/lib/ai/openai";
+@@ -44,16 +44,17 @@ async function settleFailure(id: string, error: unknown, model: string, estimate
+     await finalizePaidCall(id, {
+       model,
+       billed: true,
+-      charged: false,
++      charged: true,
+       costUsd: error.costUsd,
+       estimateInr,
+       usage: error.usage,
+       imageSize,
+     });
+-  } else {
+-    await finalizePaidCall(id, { model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize });
++    await releasePaidCall(id, "BILLED_FAILED");
++    return;
+   }
+-  await releasePaidCall(id);
++  await finalizePaidCall(id, { model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize });
++  await releasePaidCall(id, "REFUNDED");
+ }
+ 
+ export async function generateWithFailover(input: GenerateInput, choice?: ProviderChoice): Promise<GenerateOutput> {
+@@ -109,20 +110,31 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
+         });
+         return { ...output, callId: gate.id, estimateInr: gate.estimateInr };
+       } catch (error) {
++        if (error instanceof UncertainBillingError) {
++          await finalizePaidCall(gate.id, {
++            model,
++            billed: true,
++            charged: true,
++            costUsd: estimateUsd || 0,
++            estimateInr: gate.estimateInr,
++            imageSize,
++          });
++          await releasePaidCall(gate.id, "UNCERTAIN");
++          throw error;
++        }
+         await settleFailure(gate.id, error, model, gate.estimateInr, imageSize);
+-        if (error instanceof UnknownModelError || error instanceof SpendCapError) throw error;
+         throw error;
+       }
+     },
+   });
+   if (!locked.ok) {
+-    if (locked.callId) {
+-      const keepBill = locked.reason === "postcheck" || locked.reason === "face-guard";
+-      await releasePaidCall(locked.callId, keepBill ? "BILLED_FAILED" : "REFUNDED");
++    if (locked.callId && (locked.reason === "postcheck" || locked.reason === "face-guard")) {
++      await releasePaidCall(locked.callId, "BILLED_FAILED");
+     }
+     if (locked.reason === "spend-cap") return demoFallback(input, "mock:spend-cap", "spend-cap");
++    if (locked.reason === "uncertain") throw new UncertainBillingError(locked.message);
+     if (locked.reason === "provider" || locked.reason === "unknown-model") {
+-      return demoFallback(input, `mock:failover-from-${primary.name}`, "failover");
++      throw new UnbilledProviderError(locked.message);
+     }
+     return demoFallback(input, "mock:placement", "placement");
+   }
+diff --git a/src/lib/ai/spend.ts b/src/lib/ai/spend.ts
+index 84ade50..bdd1d93 100644
+--- a/src/lib/ai/spend.ts
++++ b/src/lib/ai/spend.ts
+@@ -39,9 +39,17 @@ export function costPerCallInr(provider: string, quality: string) {
+   return DEFAULTS[`${provider.toUpperCase()}_${quality.toUpperCase()}`] ?? numberEnv("AI_COST_INR_STANDARD", 3.5);
+ }
+ 
+-export async function releasePaidCall(id: string, status: "REFUNDED" | "BILLED_FAILED" = "REFUNDED") {
++/** Rows that still represent provider spend or a reservation. Customer credit refunds do not clear these. */
++export const SPEND_CAP_STATUSES = ["CHARGED", "BILLED_FAILED", "UNCERTAIN"] as const;
++
++export function countsTowardSpendCap(status: string) {
++  return (SPEND_CAP_STATUSES as readonly string[]).includes(status);
++}
++
++export async function releasePaidCall(id: string, status: "REFUNDED" | "BILLED_FAILED" | "UNCERTAIN" = "REFUNDED") {
+   if (!id) return;
+-  await prisma.aiCall.updateMany({ where: { id, status: "CHARGED" }, data: { status, charged: false } });
++  const counts = status !== "REFUNDED";
++  await prisma.aiCall.updateMany({ where: { id, status: "CHARGED" }, data: { status, charged: counts } });
+ }
+ 
+ export async function finalizePaidCall(
+@@ -80,16 +88,31 @@ export async function finalizePaidCall(
+   });
+ }
+ 
++export function spendCapWhere() {
++  return { status: { in: [...SPEND_CAP_STATUSES] } };
++}
++
+ export async function spendSummary() {
+-  const agg = await prisma.aiCall.aggregate({
+-    where: { status: "CHARGED" },
+-    _sum: { estimatePaise: true },
+-    _count: true,
+-  });
++  const [reserved, actual] = await Promise.all([
++    prisma.aiCall.aggregate({
++      where: spendCapWhere(),
++      _sum: { estimatePaise: true },
++      _count: true,
++    }),
++    prisma.aiCall.aggregate({
++      where: { ...spendCapWhere(), costSource: "usage" },
++      _sum: { costInrPaise: true },
++      _count: true,
++    }),
++  ]);
+   return {
+-    spentInr: (agg._sum.estimatePaise || 0) / 100,
++    /** Cap basis. Reserved estimates, including billed failures and uncertain timeouts. */
++    spentInr: (reserved._sum.estimatePaise || 0) / 100,
++    /** Provider-reported usage converted at FX, with no 1.08 buffer. Unknown until a usage payload exists. */
++    actualInr: (actual._sum.costInrPaise || 0) / 100,
++    actualCalls: actual._count,
+     capInr: spendCapInr(),
+-    calls: agg._count,
++    calls: reserved._count,
+   };
+ }
+ 
+@@ -109,7 +132,7 @@ export async function beginPaidCall(args: {
+   const capPaise = Math.round(spendCapInr() * 100);
+   return exclusive(() =>
+     prisma.$transaction(async (tx) => {
+-      const agg = await tx.aiCall.aggregate({ where: { status: "CHARGED" }, _sum: { estimatePaise: true } });
++      const agg = await tx.aiCall.aggregate({ where: spendCapWhere(), _sum: { estimatePaise: true } });
+       const spent = agg._sum.estimatePaise || 0;
+       if (spent + estimatePaise > capPaise) {
+         await tx.aiCall.create({
+diff --git a/src/lib/ai/style-reference.ts b/src/lib/ai/style-reference.ts
+index f225ca0..3170eaa 100644
+--- a/src/lib/ai/style-reference.ts
++++ b/src/lib/ai/style-reference.ts
+@@ -31,3 +31,24 @@ export function styleReferenceFor(input: { kind?: string; styleId: string }, pro
+   if (!sendStyleReference(provider)) return null;
+   return readStyleThumbnail(input.styleId, thumbnailFolder(input.kind));
+ }
++
++/**
++ * Benchmark mode always sends the catalogue JPEG. It does not upscale a 512px file.
++ * A larger sibling (`{id}@2x.jpg` or `{id}-large.jpg`) is preferred when one exists.
++ */
++export function hairstyleReferenceFile(styleId: string, folder: ThumbFolder = "styles") {
++  if (!STYLE_ID.test(styleId)) return null;
++  const dir = path.join(process.cwd(), "public", folder);
++  const candidates = [`${styleId}@2x.jpg`, `${styleId}-large.jpg`, `${styleId}.jpg`];
++  for (const name of candidates) {
++    const file = path.join(dir, name);
++    if (existsSync(file)) return file;
++  }
++  return null;
++}
++
++export function readHairstyleReference(styleId: string, folder: ThumbFolder = "styles") {
++  const file = hairstyleReferenceFile(styleId, folder);
++  if (!file) return null;
++  return readFileSync(file);
++}
+diff --git a/src/lib/ai/tiers.ts b/src/lib/ai/tiers.ts
+index 903e2ae..abf9a4f 100644
+--- a/src/lib/ai/tiers.ts
++++ b/src/lib/ai/tiers.ts
+@@ -129,7 +129,8 @@ export function resolveGuestTier(args: {
+ type TokenRates = { textIn: number; imageIn: number; imageOut: number; textOut: number };
+ 
+ function tokenRates(model: string): TokenRates | null {
+-  if (model.includes("gpt-image-1-mini")) return { textIn: 2, imageIn: 2.5, imageOut: 8, textOut: 8 };
++  if (model === "gpt-image-1-mini") return { textIn: 2, imageIn: 2.5, imageOut: 8, textOut: 8 };
++  if (model === "gpt-image-1.5") return { textIn: 5, imageIn: 8, imageOut: 32, textOut: 32 };
+   if (model === "gpt-image-1") return { textIn: 5, imageIn: 10, imageOut: 40, textOut: 40 };
+   if (model.includes("flash-lite-image")) return { textIn: 0.25, imageIn: 0.25, imageOut: 30, textOut: 1.5 };
+   if (model.includes("flash-image")) return { textIn: 0.5, imageIn: 0.5, imageOut: 60, textOut: 3 };
+diff --git a/src/lib/capture.ts b/src/lib/capture.ts
+new file mode 100644
+index 0000000..0f91059
+--- /dev/null
++++ b/src/lib/capture.ts
+@@ -0,0 +1,10 @@
++export type CameraFacing = "user" | "environment";
++
++/**
++ * The on-screen video is CSS-mirrored for a front camera.
++ * The stored JPEG is flipped again so the file matches the mirrored preview.
++ * An upload is never flipped here.
++ */
++export function captureShouldMirror(facing: CameraFacing) {
++  return facing === "user";
++}
+diff --git a/src/lib/face/pipeline.ts b/src/lib/face/pipeline.ts
+index edfa7f3..5d501d0 100644
+--- a/src/lib/face/pipeline.ts
++++ b/src/lib/face/pipeline.ts
+@@ -12,10 +12,11 @@ import {
+   type HairExtent,
+   type RegionTool,
+ } from "@/lib/face/region";
+-import { SpendCapError, UnknownModelError } from "@/lib/ai/errors";
++import { SpendCapError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
+ import type { GenerateOutput } from "@/lib/ai/types";
+ 
+-export const MAX_PROVIDER_ATTEMPTS = 2;
++/** Paid edits are not retried. A second call can bill again after a timeout or an unknown outcome. */
++export const MAX_PROVIDER_ATTEMPTS = 1;
+ 
+ export type LockedEdit =
+   | {
+@@ -27,7 +28,7 @@ export type LockedEdit =
+   | {
+       ok: false;
+       calls: number;
+-      reason: "placement" | "provider" | "postcheck" | "face-guard" | "unknown-model" | "spend-cap";
++      reason: "placement" | "provider" | "postcheck" | "face-guard" | "unknown-model" | "spend-cap" | "uncertain";
+       message: string;
+       callId?: string;
+       detail?: string;
+@@ -54,7 +55,7 @@ export async function outsideMaskDelta(original: Buffer, next: Buffer, feather:
+ 
+ /**
+  * Placement is checked before `edit` is called. A failed placement check does not call the provider.
+- * The provider may be tried once more if it throws. A failed post-check does not try again.
++ * A thrown provider error is not tried again. A timeout or an unknown bill is not tried again. A failed post-check does not try again.
+  * Hair and colour compare the provider frame with the original face before compositing.
+  * The returned pixels outside the feathered mask match the original photo byte for byte.
+  */
+@@ -72,22 +73,21 @@ export async function runLockedEdit(args: {
+ 
+   let calls = 0;
+   let last: GenerateOutput | null = null;
+-  while (calls < MAX_PROVIDER_ATTEMPTS) {
+-    try {
+-      calls += 1;
+-      last = await args.edit(calls);
+-      break;
+-    } catch (error) {
+-      const callId = last?.callId;
+-      last = null;
+-      if (error instanceof UnknownModelError) {
+-        return { ok: false, calls, reason: "unknown-model", message: "That model is not available. No further call was made.", callId };
+-      }
+-      if (error instanceof SpendCapError) {
+-        return { ok: false, calls, reason: "spend-cap", message: TRY_ANOTHER_PHOTO, callId };
+-      }
+-      if (calls >= MAX_PROVIDER_ATTEMPTS) return { ok: false, calls, reason: "provider", message: TRY_ANOTHER_PHOTO, callId };
++  try {
++    calls += 1;
++    last = await args.edit(calls);
++  } catch (error) {
++    const callId = last?.callId;
++    if (error instanceof UnknownModelError) {
++      return { ok: false, calls, reason: "unknown-model", message: error.message, callId };
+     }
++    if (error instanceof SpendCapError) {
++      return { ok: false, calls, reason: "spend-cap", message: TRY_ANOTHER_PHOTO, callId };
++    }
++    if (error instanceof UncertainBillingError) {
++      return { ok: false, calls, reason: "uncertain", message: error.message, callId };
++    }
++    return { ok: false, calls, reason: "provider", message: error instanceof Error ? error.message : TRY_ANOTHER_PHOTO, callId };
+   }
+   if (!last) return { ok: false, calls, reason: "provider", message: TRY_ANOTHER_PHOTO };
+ 
+diff --git a/src/lib/prompts.ts b/src/lib/prompts.ts
+index 41ef6a6..02b54d6 100644
+--- a/src/lib/prompts.ts
++++ b/src/lib/prompts.ts
+@@ -1,7 +1,7 @@
+ import type { BeardDef } from "@/data/beards";
+ import type { BrowDef } from "@/data/brows";
+ import type { NailDef } from "@/data/nails";
+-import type { StyleDef } from "@/data/styles";
++import { lengthCategoryFor, type StyleDef } from "@/data/styles";
+ 
+ export function buildStylePrompt(style: StyleDef, colourName?: string) {
+   return [
+@@ -21,6 +21,36 @@ export function buildStylePrompt(style: StyleDef, colourName?: string) {
+   ].join(" ");
+ }
+ 
++function lengthInstruction(style: StyleDef) {
++  const length = lengthCategoryFor(style);
++  if (length === "short") {
++    return "The selected cut is short. If the person in Image 1 currently has longer hair, this is a long-to-short change: remove the extra hair and plausibly reconstruct exposed neck, ears, and background.";
++  }
++  if (length === "medium") {
++    return "The selected cut is medium length. If Image 1 has longer hair, remove the extra length and reconstruct what it covered. If Image 1 has shorter hair, extend the hair without enlarging the head.";
++  }
++  return "The selected cut is long. If the person in Image 1 currently has shorter hair, this is a short-to-long change: extend the hair without enlarging the head or changing the framing.";
++}
++
++/** Reference-mode prompt. No mask sentences. Image 1 is the person. Image 2 is the haircut only. */
++export function buildReferencePrompt(style: StyleDef, colourName?: string) {
++  const colour = colourName
++    ? `A colour change was requested: shift the hair colour toward ${colourName}.`
++    : "Keep the original hair colour unless a colour change was requested.";
++  return [
++    "Image 1 is the person to edit. Image 2 is a hairstyle reference only.",
++    `Produce one photorealistic edited photograph of the person in Image 1 wearing ${style.name}. ${style.prompt}`,
++    "Transfer the haircut's silhouette, length, layering, fringe and parting from Image 2, adapted naturally to the person's head and existing hair texture.",
++    "Preserve the identity, facial features, expression, pose, head size, camera position, clothing, jewellery, background and lighting from Image 1.",
++    colour,
++    "Do not transfer the reference person's face, skin, clothing, pose or background.",
++    lengthInstruction(style),
++    "Remove original hair that conflicts with the new cut and plausibly reconstruct exposed background, neck or clothing.",
++    "Keep natural strands, hairline, shadows and occlusion.",
++    "Return the complete edited photograph without text or a collage.",
++  ].join(" ");
++}
++
+ export function buildBrowPrompt(brow: BrowDef) {
+   return [
+     `Edit the eyebrows only. New brow shape: ${brow.name}.`,
+diff --git a/tests/unit/masks.test.ts b/tests/unit/masks.test.ts
+index 37383d5..0c485cb 100644
+--- a/tests/unit/masks.test.ts
++++ b/tests/unit/masks.test.ts
+@@ -386,7 +386,7 @@ describe("region masks", () => {
+     if (!result.ok) expect(result.reason).toBe("postcheck");
+   });
+ 
+-  it("retries a throwing provider once and does not call it when placement already failed", async () => {
++  it("does not retry a throwing provider, and does not call it when placement already failed", async () => {
+     const scene = drawFrontal(360, 480);
+     const jpeg = await sharp(scene.data, { raw: { width: 360, height: 480, channels: 3 } }).jpeg().toBuffer();
+     let calls = 0;
+@@ -399,7 +399,7 @@ describe("region masks", () => {
+       },
+     });
+     expect(thrown.ok).toBe(false);
+-    expect(calls).toBe(2);
++    expect(calls).toBe(1);
+     calls = 0;
+     const blocked = await runLockedEdit({
+       image: await sharp({ create: { width: 200, height: 200, channels: 3, background: "#2244aa" } }).jpeg().toBuffer(),
+@@ -509,8 +509,8 @@ describe("calibration budget", () => {
+     delete process.env.AI_COST_PER_CALL_INR_OPENAI_MEDIUM;
+   });
+ 
+-  it("keeps a billed face-guard failure off the spend cap", async () => {
+-    process.env.AI_SPEND_CAP_INR = "2";
++  it("keeps a billed face-guard failure inside the spend cap", async () => {
++    process.env.AI_SPEND_CAP_INR = "0.6";
+     await prisma.aiCall.deleteMany();
+     const first = await beginPaidCall({ provider: "openai", quality: "test", model: "gpt-image-1-mini", tenantId: "face-guard", estimateInr: 0.6 });
+     expect(first.ok).toBe(true);
+@@ -519,11 +519,10 @@ describe("calibration budget", () => {
+     await releasePaidCall(first.id, "BILLED_FAILED");
+     const row = await prisma.aiCall.findFirst({ where: { id: first.id } });
+     expect(row?.status).toBe("BILLED_FAILED");
+-    expect(row?.charged).toBe(false);
++    expect(row?.charged).toBe(true);
+     expect(row?.billed).toBe(true);
+     const second = await beginPaidCall({ provider: "openai", quality: "test", model: "gpt-image-1-mini", tenantId: "face-guard", estimateInr: 0.6 });
+-    expect(second.ok).toBe(true);
+-    expect(await prisma.aiCall.count({ where: { status: "CHARGED" } })).toBe(1);
++    expect(second.ok).toBe(false);
+     delete process.env.AI_SPEND_CAP_INR;
+   });
+ });
+diff --git a/tests/unit/product.test.ts b/tests/unit/product.test.ts
+index c371951..094bd18 100644
+--- a/tests/unit/product.test.ts
++++ b/tests/unit/product.test.ts
+@@ -63,7 +63,7 @@ describe("prompts", () => {
+     expect(inputFidelityForModel("gpt-image-1-mini")).toBe("");
+     expect(inputFidelityForModel("gpt-image-1")).toBe("high");
+     expect(inputFidelityForModel("gpt-image-1.5")).toBe("high");
+-    expect(inputFidelityForModel("gpt-image-2")).toBe("high");
++    expect(inputFidelityForModel("gpt-image-2")).toBe("");
+     expect(inputFidelityForModel("dall-e-2")).toBe("");
+   });
+ });
+diff --git a/tests/unit/reference-mode.test.ts b/tests/unit/reference-mode.test.ts
+new file mode 100644
+index 0000000..79b93b0
+--- /dev/null
++++ b/tests/unit/reference-mode.test.ts
+@@ -0,0 +1,219 @@
++import { readFileSync } from "node:fs";
++import sharp from "sharp";
++import { describe, expect, it } from "vitest";
++import { STYLES } from "@/data/styles";
++import { prepareBenchmark, quoteBenchmark } from "@/lib/ai/benchmark";
++import { claimGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
++import { editFormFields, FORBIDDEN_EDIT_FIELDS, planImageEdit } from "@/lib/ai/edit-request";
++import { UncertainBillingError } from "@/lib/ai/errors";
++import { fitInsideCanvas, restoreFrame } from "@/lib/ai/frame";
++import { salonOutcome } from "@/lib/ai/guest-response";
++import { beginPaidCall, releasePaidCall } from "@/lib/ai/spend";
++import { readHairstyleReference } from "@/lib/ai/style-reference";
++import { captureShouldMirror } from "@/lib/capture";
++import { drawFrontal } from "@/lib/face/synthetic";
++import { runLockedEdit } from "@/lib/face/pipeline";
++import { prisma } from "@/lib/prisma";
++import { buildReferencePrompt, buildStylePrompt } from "@/lib/prompts";
++
++describe("reference benchmark request", () => {
++  it("plans gpt-image-1.5 with high fidelity, png output, and the selfie before the reference", () => {
++    const style = STYLES.find((item) => item.id === "pixie");
++    expect(style).toBeTruthy();
++    const prompt = buildReferencePrompt(style!, undefined);
++    const planned = planImageEdit({
++      model: "gpt-image-1.5",
++      prompt,
++      quality: "medium",
++      size: "1536x1024",
++      outputFormat: "png",
++      inputFidelity: "high",
++      imageOrder: ["selfie.png", "style-reference.jpg"],
++      mask: false,
++    });
++    expect(planned.ok).toBe(true);
++    if (!planned.ok) return;
++    expect(planned.plan.imageOrder).toEqual(["selfie.png", "style-reference.jpg"]);
++    expect(planned.plan.inputFidelity).toBe("high");
++    expect(planned.plan.mask).toBe(false);
++    const fields = editFormFields(planned.plan);
++    expect(fields.model).toBe("gpt-image-1.5");
++    expect(fields.quality).toBe("medium");
++    expect(fields.n).toBe("1");
++    expect(fields.input_fidelity).toBe("high");
++    expect(fields.output_format).toBe("png");
++    expect(fields.size).toBe("1536x1024");
++    for (const name of FORBIDDEN_EDIT_FIELDS) expect(fields[name]).toBeUndefined();
++    expect(prompt).not.toMatch(/mask/i);
++    expect(prompt).toContain("Image 1 is the person to edit");
++    expect(prompt).toContain("Image 2 is a hairstyle reference only");
++    expect(prompt).toContain("long-to-short");
++    expect(buildStylePrompt(style!).toLowerCase()).toContain("mask");
++    expect(STYLES.find((item) => item.id === "side-part")?.lengthCategory).toBe("medium");
++    expect(STYLES.find((item) => item.id === "short-back-sides")?.lengthCategory).toBe("short");
++    expect(STYLES.find((item) => item.id === "bro-flow")?.lengthCategory).toBe("medium");
++    expect(STYLES.find((item) => item.id === "hime-cut")?.lengthCategory).toBe("long");
++    expect(STYLES.find((item) => item.id === "long-layers")?.lengthCategory).toBe("long");
++  });
++
++  it("refuses fidelity on a model that does not list it, and does not swap models", () => {
++    const planned = planImageEdit({
++      model: "gpt-image-2",
++      prompt: "edit",
++      quality: "medium",
++      size: "1024x1024",
++      outputFormat: "png",
++      inputFidelity: "high",
++      imageOrder: ["selfie.png"],
++      mask: false,
++    });
++    expect(planned.ok).toBe(false);
++    const missing = planImageEdit({
++      model: "not-a-model",
++      prompt: "edit",
++      quality: "medium",
++      size: "1024x1024",
++      outputFormat: "png",
++      inputFidelity: null,
++      imageOrder: ["selfie.png"],
++      mask: false,
++    });
++    expect(missing.ok).toBe(false);
++    if (!missing.ok) expect(missing.message).toMatch(/not a configured/);
++  });
++
++  it("loads the selected reference and refuses a missing style", async () => {
++    const bytes = readHairstyleReference("blunt-bob");
++    expect(bytes && bytes.length > 1000).toBe(true);
++    const meta = await sharp(bytes!).metadata();
++    expect(meta.width).toBe(512);
++    expect(meta.height).toBe(512);
++    expect(readHairstyleReference("missing-style")).toBeNull();
++    const jpeg = await sharp({ create: { width: 320, height: 180, channels: 3, background: "#8899aa" } }).jpeg().toBuffer();
++    const missing = await prepareBenchmark({ jpeg, styleId: "missing-style" });
++    expect(missing.ok).toBe(false);
++    if (!missing.ok) expect(missing.message).toMatch(/catalogue|reference/i);
++    const ready = await prepareBenchmark({ jpeg, styleId: "long-layers" });
++    expect(ready.ok).toBe(true);
++    if (!ready.ok) return;
++    expect(ready.planned.imageOrder[0]).toBe("selfie.png");
++    expect(ready.planned.imageOrder[1]).toBe("style-reference.jpg");
++    expect(ready.planned.mask).toBe(false);
++    expect(ready.quote.size).toBe("1536x1024");
++    expect(buildReferencePrompt(ready.style)).not.toMatch(/mask/i);
++    expect(buildReferencePrompt(ready.style)).toContain("short-to-long");
++  });
++
++  it("keeps a uniform fit invertible and does not stretch the content aspect", async () => {
++    const source = await sharp({ create: { width: 400, height: 200, channels: 3, background: "#336699" } }).png().toBuffer();
++    const fitted = await fitInsideCanvas(source, "1536x1024");
++    expect(fitted.transform.targetWidth).toBe(1536);
++    expect(fitted.transform.targetHeight).toBe(1024);
++    const ratio = fitted.transform.contentWidth / fitted.transform.contentHeight;
++    expect(ratio).toBeGreaterThan(1.95);
++    expect(ratio).toBeLessThan(2.05);
++    const back = await restoreFrame(fitted.png, fitted.transform);
++    const meta = await sharp(back).metadata();
++    expect(meta.width).toBe(fitted.transform.contentWidth);
++    expect(meta.height).toBe(fitted.transform.contentHeight);
++  });
++
++  it("mirrors only a user-facing shutter", () => {
++    expect(captureShouldMirror("user")).toBe(true);
++    expect(captureShouldMirror("environment")).toBe(false);
++  });
++});
++
++describe("spend and duplicate jobs", () => {
++  it("counts a billed rejection and an uncertain timeout toward the cap", async () => {
++    process.env.AI_SPEND_CAP_INR = "1";
++    await prisma.aiCall.deleteMany();
++    const first = await beginPaidCall({ provider: "openai", quality: "benchmark", model: "gpt-image-1.5", tenantId: "bench", estimateInr: 0.6 });
++    expect(first.ok).toBe(true);
++    if (!first.ok) return;
++    await releasePaidCall(first.id, "UNCERTAIN");
++    const second = await beginPaidCall({ provider: "openai", quality: "benchmark", model: "gpt-image-1.5", tenantId: "bench", estimateInr: 0.6 });
++    expect(second.ok).toBe(false);
++    delete process.env.AI_SPEND_CAP_INR;
++  });
++
++  it("lets only one of two concurrent reservations through a tight cap", async () => {
++    process.env.AI_SPEND_CAP_INR = "1";
++    await prisma.aiCall.deleteMany();
++    const [a, b] = await Promise.all([
++      beginPaidCall({ provider: "openai", quality: "benchmark", model: "gpt-image-1.5", tenantId: "race", estimateInr: 0.8 }),
++      beginPaidCall({ provider: "openai", quality: "benchmark", model: "gpt-image-1.5", tenantId: "race", estimateInr: 0.8 }),
++    ]);
++    expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
++    delete process.env.AI_SPEND_CAP_INR;
++  });
++
++  it("replays the same request id and rejects a different payload", async () => {
++    await prisma.generationJob.deleteMany({ where: { tenantId: "dedupe-tenant" } });
++    const photo = Buffer.from("selfie-bytes");
++    const other = Buffer.from("other-selfie");
++    const requestId = "req-repeat-1";
++    const first = await claimGenerationJob({
++      tenantId: "dedupe-tenant",
++      requestId,
++      fingerprint: jobFingerprint({ photo, styleId: "pixie", tool: "style", shadeId: "", mode: "production" }),
++    });
++    expect(first.kind).toBe("start");
++    const again = await claimGenerationJob({
++      tenantId: "dedupe-tenant",
++      requestId,
++      fingerprint: jobFingerprint({ photo, styleId: "pixie", tool: "style", shadeId: "", mode: "production" }),
++    });
++    expect(again.kind).toBe("inflight");
++    const clash = await claimGenerationJob({
++      tenantId: "dedupe-tenant",
++      requestId,
++      fingerprint: jobFingerprint({ photo: other, styleId: "pixie", tool: "style", shadeId: "", mode: "production" }),
++    });
++    expect(clash.kind).toBe("conflict");
++  });
++
++  it("does not regenerate after an uncertain provider error", async () => {
++    const scene = drawFrontal(360, 480);
++    const jpeg = await sharp(scene.data, { raw: { width: 360, height: 480, channels: 3 } }).jpeg().toBuffer();
++    let calls = 0;
++    const result = await runLockedEdit({
++      image: jpeg,
++      tool: "style",
++      edit: async () => {
++        calls += 1;
++        throw new UncertainBillingError("timed out");
++      },
++    });
++    expect(calls).toBe(1);
++    expect(result.ok).toBe(false);
++    if (!result.ok) expect(result.reason).toBe("uncertain");
++  });
++
++  it("does not treat a mock result as a paid success", () => {
++    expect(salonOutcome("no-key")).toEqual({ status: "DEMO", commit: false, placement: false });
++    expect(salonOutcome("spend-cap").commit).toBe(false);
++    expect(salonOutcome("placement").status).toBe("FAILED");
++    expect(salonOutcome(undefined)).toEqual({ status: "SUCCEEDED", commit: true, placement: false });
++  });
++
++  it("quotes the benchmark below the default run cap and still rejects the saved reframed production output", async () => {
++    const quote = quoteBenchmark(1280, 720);
++    expect(quote.ok).toBe(true);
++    if (!quote.ok) return;
++    expect(quote.model).toBe("gpt-image-1.5");
++    expect(quote.size).toBe("1536x1024");
++    expect(quote.estimateInr).toBeLessThanOrEqual(quote.capInr);
++    expect(quote.inputFidelity).toBe("high");
++    const before = readFileSync("tests/fixtures/replay/long-layers-before.jpg");
++    const raw = readFileSync("tests/fixtures/replay/long-layers-raw.jpg");
++    const rejected = await runLockedEdit({
++      image: before,
++      tool: "style",
++      hairExtent: "long",
++      edit: async () => ({ image: raw, mime: "image/jpeg", provider: "replay", providerCostUsd: 0, latencyMs: 0 }),
++    });
++    expect(rejected.ok).toBe(false);
++    if (!rejected.ok) expect(rejected.reason).toBe("face-guard");
++  });
++});
+diff --git a/tests/unit/tiers.test.ts b/tests/unit/tiers.test.ts
+index ce95e02..3587de2 100644
+--- a/tests/unit/tiers.test.ts
++++ b/tests/unit/tiers.test.ts
+@@ -142,9 +142,10 @@ describe("provider requests", () => {
+     await prisma.aiCall.deleteMany();
+     hits = 0;
+     const portrait = (await calibrationFixtures())[0].image;
+-    await generateWithFailover({ ...input(portrait, "high"), tenantId: "unknown-model-guest" }, { name: "openai", apiKey: "openai-test-key" });
++    await expect(generateWithFailover({ ...input(portrait, "high"), tenantId: "unknown-model-guest" }, { name: "openai", apiKey: "openai-test-key" })).rejects.toThrow(/not available|model/i);
+     expect(hits).toBe(1);
+     expect(await prisma.aiCall.count({ where: { status: "CHARGED" } })).toBe(0);
++    expect(await prisma.aiCall.count({ where: { status: "REFUNDED" } })).toBe(1);
+     const face = (await calibrationFixtures())[0].image;
+     let edits = 0;
+     const locked = await runLockedEdit({

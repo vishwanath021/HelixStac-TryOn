@@ -12,10 +12,11 @@ import {
   type HairExtent,
   type RegionTool,
 } from "@/lib/face/region";
-import { SpendCapError, UnknownModelError } from "@/lib/ai/errors";
+import { SpendCapError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
 import type { GenerateOutput } from "@/lib/ai/types";
 
-export const MAX_PROVIDER_ATTEMPTS = 2;
+/** Paid edits are not retried. A second call can bill again after a timeout or an unknown outcome. */
+export const MAX_PROVIDER_ATTEMPTS = 1;
 
 export type LockedEdit =
   | {
@@ -27,7 +28,7 @@ export type LockedEdit =
   | {
       ok: false;
       calls: number;
-      reason: "placement" | "provider" | "postcheck" | "face-guard" | "unknown-model" | "spend-cap";
+      reason: "placement" | "provider" | "postcheck" | "face-guard" | "unknown-model" | "spend-cap" | "uncertain";
       message: string;
       callId?: string;
       detail?: string;
@@ -54,7 +55,7 @@ export async function outsideMaskDelta(original: Buffer, next: Buffer, feather: 
 
 /**
  * Placement is checked before `edit` is called. A failed placement check does not call the provider.
- * The provider may be tried once more if it throws. A failed post-check does not try again.
+ * A thrown provider error is not tried again. A timeout or an unknown bill is not tried again. A failed post-check does not try again.
  * Hair and colour compare the provider frame with the original face before compositing.
  * The returned pixels outside the feathered mask match the original photo byte for byte.
  */
@@ -72,22 +73,21 @@ export async function runLockedEdit(args: {
 
   let calls = 0;
   let last: GenerateOutput | null = null;
-  while (calls < MAX_PROVIDER_ATTEMPTS) {
-    try {
-      calls += 1;
-      last = await args.edit(calls);
-      break;
-    } catch (error) {
-      const callId = last?.callId;
-      last = null;
-      if (error instanceof UnknownModelError) {
-        return { ok: false, calls, reason: "unknown-model", message: "That model is not available. No further call was made.", callId };
-      }
-      if (error instanceof SpendCapError) {
-        return { ok: false, calls, reason: "spend-cap", message: TRY_ANOTHER_PHOTO, callId };
-      }
-      if (calls >= MAX_PROVIDER_ATTEMPTS) return { ok: false, calls, reason: "provider", message: TRY_ANOTHER_PHOTO, callId };
+  try {
+    calls += 1;
+    last = await args.edit(calls);
+  } catch (error) {
+    const callId = last?.callId;
+    if (error instanceof UnknownModelError) {
+      return { ok: false, calls, reason: "unknown-model", message: error.message, callId };
     }
+    if (error instanceof SpendCapError) {
+      return { ok: false, calls, reason: "spend-cap", message: TRY_ANOTHER_PHOTO, callId };
+    }
+    if (error instanceof UncertainBillingError) {
+      return { ok: false, calls, reason: "uncertain", message: error.message, callId };
+    }
+    return { ok: false, calls, reason: "provider", message: error instanceof Error ? error.message : TRY_ANOTHER_PHOTO, callId };
   }
   if (!last) return { ok: false, calls, reason: "provider", message: TRY_ANOTHER_PHOTO };
 

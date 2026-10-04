@@ -1,5 +1,5 @@
 import { PLANS } from "@/data/plans";
-import { spendCapInr } from "@/lib/ai/spend";
+import { spendCapInr, spendCapWhere } from "@/lib/ai/spend";
 import { parseTier, projectSalonMonth, tierRequest, type ImageProviderName } from "@/lib/ai/tiers";
 import { prisma } from "@/lib/prisma";
 
@@ -40,7 +40,7 @@ function startOfMonth(now: Date) {
 
 async function chargedSince(from: Date) {
   const agg = await prisma.aiCall.aggregate({
-    where: { status: "CHARGED", createdAt: { gte: from } },
+    where: { ...spendCapWhere(), createdAt: { gte: from } },
     _sum: { estimatePaise: true },
   });
   return inr(agg._sum.estimatePaise || 0);
@@ -56,7 +56,7 @@ export async function costReport(args: { since?: Date; imagesPerMonth?: number; 
     chargedSince(since),
     chargedSince(startOfDay(now)),
     chargedSince(startOfMonth(now)),
-    prisma.aiCall.aggregate({ where: { status: "CHARGED" }, _sum: { estimatePaise: true } }),
+    prisma.aiCall.aggregate({ where: spendCapWhere(), _sum: { estimatePaise: true } }),
   ]);
   const ids = [...new Set(recent.map((row) => row.tenantId).filter((id) => id.length > 8))];
   const tenants = ids.length

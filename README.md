@@ -139,7 +139,7 @@ Needs a key (OpenAI or Gemini):
 
 Add a key in `.env` (`OPENAI_API_KEY` or `GEMINI_API_KEY` plus `AI_PROVIDER`) or paste it on `/super/ai` (platform) or `/admin/ai` (salon owner, when bring-your-own is allowed). The pasted key is encrypted on the server. The page shows a mask, not the key. The style thumbnail is not sent to the provider unless `OPENAI_SEND_STYLE_REFERENCE` or `GEMINI_SEND_STYLE_REFERENCE` is `true`.
 
-If a paid call fails, or the testing spend cap is already used, the app returns the same demo composite so the salon page does not die. A failed call releases its estimate, and a failed placement check is not retried and is not charged. With no key, the try-on also shows: “Demo mode – connect an AI key for real hairstyle previews”.
+With no key, or when the testing spend cap is already used, the guest sees a labelled sample and “Demo mode – connect an AI key for real hairstyle previews”. That sample is not stored as a successful paid preview, and the salon credit is refunded. A provider error, an unknown model, or a timeout is not replaced with that sample and is not sent again. A failed placement check before any provider call is not charged. A provider call our validator later rejects stays on the provider ledger.
 
 ### Quality tiers
 
@@ -171,7 +171,7 @@ Salon owner pages and the guest try-on do not receive model ids, provider cost, 
 
 ### Spend cap
 
-`AI_SPEND_CAP_INR` defaults to 500. Each paid attempt adds the tier estimate (`AI_COST_PER_CALL_INR_{PROVIDER}_{TIER}` when set, otherwise the table above) to `AiCall`. A failed placement check is ₹0. A provider call that was billed is still recorded, including when the charge is released. The next paid call after the cap returns the labelled sample. `npm run ai:smoke` uses the same guard. Cost figures are shown only on `/super/ai`.
+`AI_SPEND_CAP_INR` defaults to 500. Each paid attempt adds the tier estimate (`AI_COST_PER_CALL_INR_{PROVIDER}_{TIER}` when set, otherwise the table above) to `AiCall`. A failed placement check before any provider call is ₹0. A provider call that was billed, including one our validator later rejected, stays inside the cap. A timeout or any other unknown bill is recorded as `UNCERTAIN` and also stays inside the cap. A customer credit refund does not remove that provider row. When the response includes token usage, the ledger stores that USD cost at `FX_INR_PER_USD` with no 1.08 buffer (`costSource=usage`). The cap itself still uses the reserved estimate. The next paid call after the cap returns a labelled sample for guests, and that sample is stored as `DEMO`, not as a successful paid preview. `npm run ai:smoke` uses the same guard. Cost figures are shown only on `/super/ai`.
 
 ### What the offline tests prove
 
@@ -182,13 +182,41 @@ Before a paid edit, the server finds the face from the skin region and places th
 - Beard: the jaw and chin below the nose, with the mouth left out
 - Nails: fingertip regions on a hand photo. A picture that looks like a face is refused
 
-OpenAI receives that mask on the image edit. Transparent mask pixels are the editable area. Opaque pixels must stay. `input_fidelity=high` is sent for `gpt-image-1` and later image models. `gpt-image-1-mini` does not accept that parameter, so it is omitted. Gemini does not take a mask; the same server-side composite still runs. The hair prompt tells the model to keep the head, face, and framing the same size and position, not to zoom or re-frame, to change only hair inside the mask, and to remove original hair inside the mask that falls outside the new style (long hair becoming a bob).
+OpenAI receives that mask on the image edit. Transparent mask pixels are the editable area. Opaque pixels must stay. `input_fidelity=high` is sent only for models that list it (`gpt-image-1` and `gpt-image-1.5`). `gpt-image-1-mini` and `gpt-image-2` do not receive that parameter. An unknown model id is refused before the request. A paid edit is not retried. Gemini does not take a mask; the same server-side composite still runs. The hair prompt tells the model to keep the head, face, and framing the same size and position, not to zoom or re-frame, to change only hair inside the mask, and to remove original hair inside the mask that falls outside the new style (long hair becoming a bob).
 
 Photos are not stretched to the square the image model returns. The photo and the mask are padded onto a centered square with a neutral edge fill (mask bars are opaque, so they are not editable). The result is cropped back to the original aspect before it is composited. The same pad and crop is used for every tool.
 
-Before that composite, a hair or colour result is compared with the original face. The face scale must stay within 5 percent and the face must not have moved, or, if the scale is between 0.8 and 1.25, the frame is warped back into place. The brows, eyes, and nose are compared on that provider frame. If they differ, or the re-frame is larger than that, the edit is rejected. The guest sees “Try another photo.” The provider cost stays on the ledger as billed but failed, it does not count toward the spend cap, and the provider is not called again. The composite is not returned.
+Before that composite, a hair or colour result is compared with the original face. The face scale must stay within 5 percent and the face must not have moved, or, if the scale is between 0.8 and 1.25, the frame is warped back into place. The brows, eyes, and nose are compared on that provider frame. If they differ, or the re-frame is larger than that, the edit is rejected. The guest sees “Try another photo.” The provider cost stays on the ledger as billed but failed, it still counts toward the spend cap, and the provider is not called again. The composite is not returned.
 
-Set `DEBUG_SAVE_RAW=true` to write the raw provider JPEG, before that composite, under `var/ai-debug/`. That folder is gitignored and is not served. It is for local diagnosis of a failed paid edit.
+Set `DEBUG_SAVE_RAW=true` to write the provider JPEG, after square restore and before the face composite, under `var/ai-debug/`. That folder is gitignored and is not served. It is for local diagnosis of a failed paid edit. That file is not the untouched provider body. The benchmark page stores the decoded provider body separately.
+
+## Reference benchmark (super-admin, not for guests)
+
+This path is separate from guest production. It sends the sanitized selfie first and `public/styles/{styleId}.jpg` second. It does not send a mask, does not paste the original face back, and does not fall back to Gemini, a mock, or another model. Guests stay on the production tiers.
+
+Default request. Prices are the published per-image output table checked 4 Oct 2026 at [GPT Image 1.5](https://developers.openai.com/api/docs/models/gpt-image-1.5) and the [image generation guide](https://developers.openai.com/api/docs/guides/image-generation). Input tokens are extra. These are not invoices.
+
+- `POST https://api.openai.com/v1/images/edits`
+- model `gpt-image-1.5` (`BENCHMARK_MODEL`)
+- quality `medium` (`BENCHMARK_QUALITY`)
+- `input_fidelity=high` (the image guide says to omit this only for `gpt-image-2`; `gpt-image-1.5` is sent `high`, and a rejection fails the run with no fallback)
+- `output_format=png`
+- `n=1`
+- size `1024x1024`, `1536x1024`, or `1024x1536`, chosen from the selfie aspect
+- one call, no retry
+- hard run cap `BENCHMARK_RUN_CAP_INR` (default 30) on the output estimate
+
+The 59 catalogue references are 512×512 synthetic portraits. No larger file is in the repo, so the 512px JPEG is what gets sent. Do not commit customer selfies. Put the three review photos only on the machine that runs the test.
+
+Quote without a provider call:
+
+```bash
+npm run benchmark:quote
+```
+
+Paid run: sign in as the super-admin, open `/super/ai`, choose one style and one local selfie, read the estimate, tick the confirmation, and press **Run benchmark**. Open `/super/ai/benchmark/{id}`. The page is labelled unvalidated model output. `provider-response.png` is the decoded provider body before any crop. `restored-output.png` is the crop from the recorded transform. Stages older than `BENCHMARK_RETENTION_HOURS` (default 72) are deleted on the next benchmark request. They are never served to guests.
+
+Score six runs (three selfies, two styles, including at least one long-to-short) in `docs/benchmark-score-sheet.csv`. Columns: likeness, style match, framing, edges, reconstruction, latency, token usage, output estimate, usage INR if the ledger has it, and whether you accept the frame. Do not treat a passing alignment, or this offline test suite, as a haircut score.
 
 The unit suite proves this without a provider key:
 
@@ -202,7 +230,7 @@ The unit suite proves this without a provider key:
 - A hair edit that changes the eyes, or that zooms the face past the alignment window, is rejected once and is not retried
 - A modest zoom is warped back onto the original face and can then be composited
 - `npm run replay:raw -- raw.jpg original.jpg long-layers` runs that check on a saved provider JPEG with no network call
-- A provider error is tried once more. An unknown model id is not tried again. A placement failure is not tried again and does not keep the rupee charge. A billed post-check or face-guard failure stays billed and is not charged against the cap
+- A provider error is not tried again. An unknown model id is not tried again. A placement failure is not tried again and does not keep the rupee charge when the provider was never called. A billed post-check or face-guard failure stays billed and still counts against the cap. A timeout stays as an uncertain bill and is not regenerated
 - Calibration stops at 5 images or about ₹30, whichever comes first
 
 `npm run calibrate` writes before / mask / after files under `docs/mask-overlays/` using the flat-colour edit. The same action is the **Calibration run** button on `/super/ai`. With no key it spends ₹0. With a key it uses the real model inside that cap.

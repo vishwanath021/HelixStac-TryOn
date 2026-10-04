@@ -4,8 +4,8 @@ import type { UsageNumbers } from "@/lib/ai/tiers";
 export class UnknownModelError extends Error {
   readonly code = "UNKNOWN_MODEL" as const;
 
-  constructor() {
-    super("The image model is not available.");
+  constructor(message = "The image model is not available.") {
+    super(message);
     this.name = "UnknownModelError";
   }
 }
@@ -17,6 +17,29 @@ export class SpendCapError extends Error {
   constructor() {
     super("The testing spend cap is reached.");
     this.name = "SpendCapError";
+  }
+}
+
+/**
+ * The request was sent and the process did not get a definitive unbilled failure.
+ * A timeout, a dropped connection, or a 5xx leaves the bill unknown. Do not call again.
+ */
+export class UncertainBillingError extends Error {
+  readonly code = "UNCERTAIN_BILLING" as const;
+
+  constructor(message = "The provider outcome is unknown. No second generation was started.") {
+    super(message);
+    this.name = "UncertainBillingError";
+  }
+}
+
+/** The provider answered with a refusal before an image existed. The reservation can be released. */
+export class UnbilledProviderError extends Error {
+  readonly code = "UNBILLED_PROVIDER" as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "UnbilledProviderError";
   }
 }
 
