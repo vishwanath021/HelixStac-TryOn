@@ -2,7 +2,7 @@ import sharp from "sharp";
 import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
 import { buildFalEditBody, falModel } from "@/lib/ai/fal-models";
 import type { EditSize } from "@/lib/ai/edit-request";
-import { numberEnv } from "@/lib/env";
+import { falTimeoutMs } from "@/lib/ai/fal-wait";
 
 const QUEUE_ORIGIN = "https://queue.fal.run";
 const REST_ORIGIN = "https://rest.fal.ai";
@@ -37,6 +37,44 @@ async function imageLooksBlocked(bytes: Buffer, nsfw?: boolean[]) {
 }
 
 type FetchImpl = typeof fetch;
+
+const STATUS_SLICE_MS = 60_000;
+const DOWNLOAD_SLICE_MS = 300_000;
+
+function deadlineMessage(requestId: string) {
+  return `The fal edit did not finish before the deadline. The queue request was not submitted again. fal request ${requestId}.`;
+}
+
+/**
+ * One HTTP call to a URL we already have. A short abort retries that same URL.
+ * This never submits a new queue request.
+ */
+async function fetchOk(args: {
+  fetchImpl: FetchImpl;
+  url: string;
+  init: RequestInit;
+  deadline: number;
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+  sliceMs: number;
+}) {
+  while (args.now() < args.deadline) {
+    const remaining = Math.max(1, args.deadline - args.now());
+    try {
+      const response = await args.fetchImpl(args.url, {
+        ...args.init,
+        signal: AbortSignal.timeout(Math.min(remaining, args.sliceMs)),
+      });
+      if (response.ok) return response;
+    } catch {
+      // The same URL is tried again until the deadline. The queue submit is not repeated.
+    }
+    if (args.now() >= args.deadline) break;
+    const pause = Math.min(2_000, Math.max(0, args.deadline - args.now()));
+    if (pause > 0) await args.sleep(pause);
+  }
+  return null;
+}
 
 async function uploadOne(args: {
   fetchImpl: FetchImpl;
@@ -84,8 +122,9 @@ async function uploadOne(args: {
 }
 
 /**
- * One queue submit, then poll. X-Fal-No-Retry is always sent.
- * A timeout after the submit is an unknown bill. The submit is not repeated.
+ * One queue submit, then poll that request id until FAL_TIMEOUT_MS (default 1 hour).
+ * X-Fal-No-Retry is always sent. A timeout after the submit is an unknown bill.
+ * The submit is not repeated. Status, result, and image downloads retry the same URLs.
  * Input CDN files are not deleted: the payloads API leaves input files in place. The upload sets a 1 hour expiry instead.
  */
 export async function postFalReferenceEdit(args: {
@@ -100,19 +139,18 @@ export async function postFalReferenceEdit(args: {
   now?: () => number;
   deadlineMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  onRequestId?: (requestId: string) => Promise<void> | void;
 }) {
   const row = falModel(args.endpointId);
   if (!row) throw new UnknownModelError(`${args.endpointId} is not a configured fal edit. No other model was called.`);
   const fetchImpl = args.fetchImpl ?? fetch;
   const now = args.now ?? Date.now;
-  const deadlineMs = args.deadlineMs ?? numberEnv("FAL_QUEUE_DEADLINE_MS", 180_000);
+  const deadlineMs = args.deadlineMs ?? falTimeoutMs();
   const sleep = args.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const selfieUrl = await uploadOne({ fetchImpl, apiKey: args.apiKey, bytes: args.selfiePng, fileName: "selfie.png", contentType: "image/png" });
   const referenceUrl = await uploadOne({ fetchImpl, apiKey: args.apiKey, bytes: args.referenceJpeg, fileName: "style-reference.jpg", contentType: "image/jpeg" });
   const body = buildFalEditBody(row.id, { prompt: args.prompt, selfieUrl, referenceUrl, size: args.size });
   if (!body) throw new UnknownModelError(`${row.id} is not a configured fal edit. No other model was called.`);
-  const started = now();
-  const deadline = started + deadlineMs;
   let submitted = false;
   let requestId = "";
   let statusUrl = "";
@@ -146,25 +184,32 @@ export async function postFalReferenceEdit(args: {
     if (!sameOrigin(statusUrl, QUEUE_ORIGIN)) statusUrl = expected;
   } catch (error) {
     if (error instanceof UnbilledProviderError || error instanceof UncertainBillingError || error instanceof UnknownModelError) throw error;
-    if (submitted) throw new UncertainBillingError("The fal queue request left this server and the reply was lost. It was not submitted again.");
-    throw new UncertainBillingError("The fal queue request timed out. It was not submitted again.");
+    if (submitted) throw new UncertainBillingError("The fal queue request left this server and the reply was lost. It was not submitted again.", requestId);
+    throw new UncertainBillingError("The fal queue request timed out. It was not submitted again.", requestId);
   }
 
+  await Promise.resolve(args.onRequestId?.(requestId)).catch(() => undefined);
+  const deadline = now() + deadlineMs;
   let completed = false;
   let resultUrl = `${QUEUE_ORIGIN}/${row.id}/requests/${requestId}`;
   while (now() < deadline) {
+    const remaining = Math.max(1, deadline - now());
     let statusResponse: Response;
     try {
       statusResponse = await fetchImpl(statusUrl, {
         headers: { Authorization: `Key ${args.apiKey}` },
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(Math.min(remaining, STATUS_SLICE_MS)),
       });
     } catch {
-      await sleep(2_000);
+      if (now() >= deadline) break;
+      const pause = Math.min(2_000, Math.max(0, deadline - now()));
+      if (pause > 0) await sleep(pause);
       continue;
     }
     if (!statusResponse.ok) {
-      await sleep(2_000);
+      if (now() >= deadline) break;
+      const pause = Math.min(2_000, Math.max(0, deadline - now()));
+      if (pause > 0) await sleep(pause);
       continue;
     }
     const status = (await statusResponse.json()) as { status?: string; response_url?: string; error?: string };
@@ -178,20 +223,25 @@ export async function postFalReferenceEdit(args: {
       }
       break;
     }
-    await sleep(2_000);
+    if (now() >= deadline) break;
+    const pause = Math.min(2_000, Math.max(0, deadline - now()));
+    if (pause > 0) await sleep(pause);
   }
   if (!completed) {
-    throw new UncertainBillingError("The fal edit did not finish before the deadline. The queue request was not submitted again.");
+    throw new UncertainBillingError(deadlineMessage(requestId), requestId);
   }
 
-  const resultResponse = await fetchImpl(resultUrl, {
-    headers: { Authorization: `Key ${args.apiKey}` },
-    signal: AbortSignal.timeout(20_000),
-  }).catch(() => {
-    throw new UncertainBillingError("fal marked the edit complete and the result could not be read. It was not submitted again.");
+  const resultResponse = await fetchOk({
+    fetchImpl,
+    url: resultUrl,
+    init: { headers: { Authorization: `Key ${args.apiKey}` } },
+    deadline,
+    now,
+    sleep,
+    sliceMs: DOWNLOAD_SLICE_MS,
   });
-  if (!resultResponse.ok) {
-    throw new UncertainBillingError("fal marked the edit complete and the result was refused. It was not submitted again.");
+  if (!resultResponse) {
+    throw new UncertainBillingError(`fal marked the edit complete and the result could not be read. It was not submitted again. fal request ${requestId}.`, requestId);
   }
   const result = (await resultResponse.json()) as {
     images?: { url?: string }[];
@@ -201,11 +251,17 @@ export async function postFalReferenceEdit(args: {
   if (!imageUrl.startsWith("https://")) {
     throw new BilledProviderError(args.estimateUsd, undefined, "fal finished without an image URL. The call was not retried.");
   }
-  const imageResponse = await fetchImpl(imageUrl, { signal: AbortSignal.timeout(30_000) }).catch(() => {
-    throw new UncertainBillingError("The fal image URL could not be downloaded. The edit was not submitted again.");
+  const imageResponse = await fetchOk({
+    fetchImpl,
+    url: imageUrl,
+    init: {},
+    deadline,
+    now,
+    sleep,
+    sliceMs: DOWNLOAD_SLICE_MS,
   });
-  if (!imageResponse.ok) {
-    throw new UncertainBillingError("The fal image URL was refused. The edit was not submitted again.");
+  if (!imageResponse) {
+    throw new UncertainBillingError(`The fal image URL could not be downloaded. The edit was not submitted again. fal request ${requestId}.`, requestId);
   }
   const bytes = Buffer.from(await imageResponse.arrayBuffer());
   if (await imageLooksBlocked(bytes, result.has_nsfw_concepts)) {

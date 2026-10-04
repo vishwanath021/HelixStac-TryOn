@@ -24,6 +24,7 @@ export type CostCallRow = {
   billed: boolean;
   status: string;
   costSource: string;
+  providerRequestId: string;
 };
 
 function inr(paise: number) {
@@ -103,6 +104,7 @@ export async function costReport(args: { since?: Date; imagesPerMonth?: number; 
     billed: row.billed,
     status: row.status,
     costSource: row.costSource,
+    providerRequestId: row.providerRequestId,
   }));
   return {
     capInr: spendCapInr(),

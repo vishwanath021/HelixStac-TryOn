@@ -1,10 +1,14 @@
+import { readFileSync } from "node:fs";
+import http from "node:http";
 import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
 import { COMPARISON_MODELS, comparisonModel, quoteComparisonModel } from "@/lib/ai/compare-models";
 import { resolveFalKey, resolveOpenAIKey } from "@/lib/ai/credentials";
 import { BilledProviderError, UncertainBillingError } from "@/lib/ai/errors";
 import { buildFalEditBody, falModel } from "@/lib/ai/fal-models";
+import { falTimeoutMs, falWaitingLabel } from "@/lib/ai/fal-wait";
 import { falSubmitHeaders, postFalReferenceEdit } from "@/lib/ai/fal-reference";
+import { relaxHttpServerTimeouts } from "@/lib/http/server-timeout";
 import { productionModelNotice } from "@/lib/ai/model-notices";
 import { executeReferenceEdit } from "@/lib/ai/reference-run";
 import { saveFalKey, savePlatformAi } from "@/lib/ai/settings-store";
@@ -40,7 +44,19 @@ describe("fal and shutdown catalogue", () => {
     });
     await prisma.aiCall.deleteMany();
     delete process.env.FAL_KEY;
+    delete process.env.FAL_TIMEOUT_MS;
     delete process.env.FAL_QUEUE_DEADLINE_MS;
+  });
+
+  it("waits one hour by default and labels the elapsed wait", () => {
+    expect(falTimeoutMs()).toBe(3_600_000);
+    expect(falWaitingLabel(12, 3600)).toBe("Still waiting. 12s elapsed. This can take up to 3600 seconds.");
+    const generate = readFileSync("src/app/api/v1/tryon/generate/route.ts", "utf8");
+    const benchmark = readFileSync("src/app/api/v1/super/ai/benchmark/route.ts", "utf8");
+    const config = readFileSync("next.config.ts", "utf8");
+    expect(generate).toContain("export const maxDuration = 3780");
+    expect(benchmark).toContain("export const maxDuration = 3780");
+    expect(config).toContain("proxyTimeout: 3_780_000");
   });
 
   it("defaults to sunburst, keeps shutdown warnings, and refuses a prefix", () => {
@@ -144,7 +160,7 @@ describe("fal and shutdown catalogue", () => {
 
   it("submits once with no retry and records an unknown bill on timeout", async () => {
     await saveFalKey({ apiKey: "fal-test-key-123456", enabled: true, remove: false }, "super");
-    process.env.FAL_QUEUE_DEADLINE_MS = "0";
+    process.env.FAL_TIMEOUT_MS = "0";
     const submits: { url: string; retry: string }[] = [];
     globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
       const href = String(url);
@@ -172,10 +188,19 @@ describe("fal and shutdown catalogue", () => {
     expect(submits).toHaveLength(1);
     expect(submits[0]?.retry).toBe("1");
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toBe("UNCERTAIN");
+    if (!result.ok) {
+      expect(result.error).toBe("UNCERTAIN");
+      expect(result.providerRequestId).toBe("req-1");
+      expect(result.message).toContain("fal request req-1");
+      expect(result.message).toContain("was not submitted again");
+    }
     const call = await prisma.aiCall.findFirst({ where: { tenantId: "fal-timeout" } });
     expect(call?.status).toBe("UNCERTAIN");
     expect(call?.charged).toBe(true);
+    expect(call?.providerRequestId).toBe("req-1");
+    const run = await prisma.benchmarkRun.findFirst({ where: { callId: call?.id || "" } });
+    expect(run?.providerRequestId).toBe("req-1");
+    expect(run?.status).toBe("UNCERTAIN");
   });
 
   it("reports a black fal frame as a safety block and does not submit again", async () => {
@@ -284,5 +309,122 @@ describe("fal and shutdown catalogue", () => {
       deadlineMs: 0,
     })).rejects.toBeInstanceOf(UncertainBillingError);
     expect(submits).toBe(1);
+  });
+
+  it("keeps polling the same request until a slow queue completes", async () => {
+    const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#cc8866" } }).png().toBuffer();
+    let submits = 0;
+    let statusReads = 0;
+    let resultReads = 0;
+    let clock = 0;
+    const fetchImpl = (async (url: string | URL) => {
+      const href = String(url);
+      if (href.includes("/storage/upload/initiate")) return json({ upload_url: "https://upload.example/put", file_url: "https://v3.fal.media/files/in.png" });
+      if (href.startsWith("https://upload.example")) return new Response(null, { status: 200 });
+      if (href.startsWith("https://queue.fal.run/") && !href.includes("/requests/")) {
+        submits += 1;
+        return json({ request_id: "req-slow", status_url: "https://queue.fal.run/fal-ai/flux-2/edit/requests/req-slow/status" });
+      }
+      if (href.endsWith("/status")) {
+        statusReads += 1;
+        if (statusReads < 3) return json({ status: "IN_PROGRESS" });
+        return json({ status: "COMPLETED" });
+      }
+      if (href.includes("/requests/req-slow")) {
+        resultReads += 1;
+        if (resultReads === 1) throw new Error("result not ready");
+        return json({ images: [{ url: "https://v3.fal.media/files/out.png" }], has_nsfw_concepts: [false] });
+      }
+      if (href.startsWith("https://v3.fal.media/")) return new Response(new Uint8Array(png), { status: 200 });
+      throw new Error(`unexpected ${href}`);
+    }) as typeof fetch;
+    const selfie = await sharp({ create: { width: 16, height: 16, channels: 3, background: "#ccbbaa" } }).png().toBuffer();
+    const result = await postFalReferenceEdit({
+      apiKey: "fal-test-key-123456",
+      endpointId: "fal-ai/flux-2/edit",
+      prompt: "Image 1 stays. Image 2 supplies the cut.",
+      selfiePng: selfie,
+      referenceJpeg: selfie,
+      size: "1024x1536",
+      estimateUsd: 0.05,
+      fetchImpl,
+      now: () => clock,
+      deadlineMs: 20_000,
+      sleep: async () => {
+        clock += 1_000;
+      },
+    });
+    expect(submits).toBe(1);
+    expect(statusReads).toBe(3);
+    expect(resultReads).toBe(2);
+    expect(result.requestId).toBe("req-slow");
+    expect(result.image.length).toBeGreaterThan(8);
+  });
+
+  it("stops at the deadline without a second submit when the queue never completes", async () => {
+    let submits = 0;
+    let statusReads = 0;
+    let clock = 0;
+    const seenIds: string[] = [];
+    const fetchImpl = (async (url: string | URL) => {
+      const href = String(url);
+      if (href.includes("/storage/upload/initiate")) return json({ upload_url: "https://upload.example/put", file_url: "https://v3.fal.media/files/in.png" });
+      if (href.startsWith("https://upload.example")) return new Response(null, { status: 200 });
+      if (href.startsWith("https://queue.fal.run/") && !href.includes("/requests/")) {
+        submits += 1;
+        return json({ request_id: "req-hang" });
+      }
+      if (href.includes("/requests/req-hang/status")) {
+        statusReads += 1;
+        return json({ status: "IN_PROGRESS" });
+      }
+      throw new Error(`unexpected ${href}`);
+    }) as typeof fetch;
+    const selfie = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#ccbbaa" } }).png().toBuffer();
+    const error = await postFalReferenceEdit({
+      apiKey: "fal-test-key-123456",
+      endpointId: "fal-ai/bytedance/seedream/v4/edit",
+      prompt: "edit",
+      selfiePng: selfie,
+      referenceJpeg: selfie,
+      size: "1024x1536",
+      estimateUsd: 0.03,
+      fetchImpl,
+      now: () => clock,
+      deadlineMs: 3_000,
+      sleep: async () => {
+        clock += 2_000;
+      },
+      onRequestId: (requestId) => {
+        seenIds.push(requestId);
+      },
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(UncertainBillingError);
+    if (error instanceof UncertainBillingError) {
+      expect(error.requestId).toBe("req-hang");
+      expect(error.message).toContain("did not finish before the deadline");
+      expect(error.message).toContain("was not submitted again");
+    }
+    expect(submits).toBe(1);
+    expect(statusReads).toBeGreaterThan(0);
+    expect(seenIds).toEqual(["req-hang"]);
+  });
+
+  it("raises the node server timeout above the one hour fal wait", async () => {
+    process.env.FAL_TIMEOUT_MS = "3600000";
+    const server = http.createServer((_req, res) => {
+      res.end("ok");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    relaxHttpServerTimeouts();
+    expect(server.requestTimeout).toBeGreaterThanOrEqual(3_600_000);
+    expect(server.headersTimeout).toBeGreaterThan(server.requestTimeout);
+    const later = http.createServer((_req, res) => {
+      res.end("ok");
+    });
+    await new Promise<void>((resolve) => later.listen(0, "127.0.0.1", () => resolve()));
+    expect(later.requestTimeout).toBeGreaterThanOrEqual(3_600_000);
+    await new Promise<void>((resolve, reject) => server.close((closeError) => (closeError ? reject(closeError) : resolve())));
+    await new Promise<void>((resolve, reject) => later.close((closeError) => (closeError ? reject(closeError) : resolve())));
   });
 });

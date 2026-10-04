@@ -84,6 +84,7 @@ export type ReferenceFailure = {
   outcome: "quote" | "key" | "spend-cap" | "uncertain" | "provider";
   id?: string;
   callId?: string;
+  providerRequestId?: string;
 };
 
 /**
@@ -249,6 +250,7 @@ export async function executeReferenceEdit(args: {
     },
   });
 
+  let falRequestId = "";
   try {
     const started = Date.now();
     let usage: ReturnType<typeof usageFrom>;
@@ -274,6 +276,11 @@ export async function executeReferenceEdit(args: {
         referenceJpeg: reference,
         size: quote.size as EditSize,
         estimateUsd: quote.estimateUsd,
+        onRequestId: async (requestId) => {
+          falRequestId = requestId;
+          await prisma.aiCall.updateMany({ where: { id: gate.id }, data: { providerRequestId: requestId } });
+          await prisma.benchmarkRun.updateMany({ where: { id }, data: { providerRequestId: requestId } });
+        },
       });
       usage = undefined;
       providerResponse = fal.image;
@@ -411,6 +418,7 @@ export async function executeReferenceEdit(args: {
     const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
     let message = `Unvalidated model output. The raw provider image is the result. One provider call. No mask, no face paste, no retry.${clothingNote}`;
     if (costIsEstimate && provider === "fal") message += " The shown cost is the conservative estimate. fal did not report usage.";
+    if (provider === "fal" && falRequestId) message += ` fal request ${falRequestId}.`;
     if (provider === "openrouter" && costIsEstimate) message += " The shown cost is the estimate. OpenRouter did not return usage.cost.";
     if (provider === "openrouter" && !costIsEstimate) message += " The shown cost is usage.cost from OpenRouter.";
     if (rawDrift?.flagged) message += " Face may differ from your photo.";
@@ -486,8 +494,16 @@ export async function executeReferenceEdit(args: {
       await finalizePaidCall(gate.id, { model: quote.model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize: quote.size });
       await releasePaidCall(gate.id, "REFUNDED");
     }
-    const message = error instanceof Error ? error.message : "The reference edit did not finish.";
-    await prisma.benchmarkRun.update({ where: { id }, data: { status: uncertain ? "UNCERTAIN" : "FAILED", message } });
+    const storedRequestId = error instanceof UncertainBillingError && error.requestId ? error.requestId : falRequestId;
+    const baseMessage = error instanceof Error ? error.message : "The reference edit did not finish.";
+    const message = storedRequestId && !baseMessage.includes(storedRequestId) ? `${baseMessage} fal request ${storedRequestId}.` : baseMessage;
+    if (storedRequestId) {
+      await prisma.aiCall.updateMany({ where: { id: gate.id }, data: { providerRequestId: storedRequestId } });
+    }
+    await prisma.benchmarkRun.update({
+      where: { id },
+      data: { status: uncertain ? "UNCERTAIN" : "FAILED", message, ...(storedRequestId ? { providerRequestId: storedRequestId } : {}) },
+    });
     const httpStatus = uncertain ? 504 : unknown || error instanceof UnbilledProviderError ? 422 : 502;
     return {
       ok: false,
@@ -497,6 +513,7 @@ export async function executeReferenceEdit(args: {
       outcome: uncertain ? "uncertain" : "provider",
       id,
       callId: gate.id,
+      providerRequestId: storedRequestId,
     };
   }
 }
@@ -576,7 +593,10 @@ export async function runTryOnReference(args: {
         },
       });
     }
-    return NextResponse.json({ error: executed.error, message: executed.message, id: executed.id }, { status: executed.httpStatus });
+    return NextResponse.json(
+      { error: executed.error, message: executed.message, id: executed.id, providerRequestId: executed.providerRequestId || "" },
+      { status: executed.httpStatus },
+    );
   }
   const payload = tryOnReferencePayload(executed, args.revealCost);
   await prisma.tryOn.create({

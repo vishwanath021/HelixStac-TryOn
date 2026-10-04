@@ -33,7 +33,7 @@ import { isSuperSession } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 3780;
 
 function startOfToday() {
   const date = new Date();

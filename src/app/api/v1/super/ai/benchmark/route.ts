@@ -9,7 +9,7 @@ import { requireSuper } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 3780;
 
 export async function GET(req: Request) {
   const access = await requireSuper();

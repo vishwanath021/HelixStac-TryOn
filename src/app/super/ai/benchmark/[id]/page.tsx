@@ -55,6 +55,9 @@ export default async function BenchmarkReviewPage({ params }: { params: Promise<
           Warning: clothing_changed. The neckline or shoulder band moved relative to the selfie. This is a finding, not an accepted result.
         </p>
       )}
+      {run.providerRequestId && (
+        <p className="mt-3 text-sm">fal request {run.providerRequestId}. This id was not submitted again.</p>
+      )}
       {run.message && <p className="mt-3 text-sm">{run.message}</p>}
       <dl className="mt-4 grid gap-2 text-sm leading-6 sm:grid-cols-2">
         <div>
