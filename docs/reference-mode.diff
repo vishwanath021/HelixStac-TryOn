@@ -1,8 +1,8 @@
 diff --git a/.env.example b/.env.example
-index 6ec3dab..e78886f 100644
+index 6ec3dab..a363306 100644
 --- a/.env.example
 +++ b/.env.example
-@@ -67,7 +67,21 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
+@@ -67,7 +67,26 @@ DAILY_PROVIDER_SPEND_CAP_USD="25"
  # Hard testing guard for paid image calls, in INR estimates (not a provider invoice).
  # Default ₹500. At the cap the app returns a labelled sample instead of calling the provider.
  AI_SPEND_CAP_INR="500"
@@ -19,6 +19,11 @@ index 6ec3dab..e78886f 100644
 +# BENCHMARK_INPUT_SIZE="1024"
 +# Hours to keep benchmark selfies under var/benchmarks. Super-admin only. Not public.
 +BENCHMARK_RETENTION_HOURS="72"
++# Salon try-on reference switch. Leave unset. A signed-in super-admin can turn on
++# "Reference mode (test)" on /s/demo-salon. Set to on only on a private machine if an
++# explicit referenceMode=yes request should be honored without that session. Guests never
++# see the switch. It does not change requests that do not ask for it.
++# TRYON_REFERENCE_MODE="on"
 +# How long a repeated guest request id can replay its stored JPEG. Photos stay under var/.
 +GENERATION_JOB_TTL_HOURS="24"
 +# When true or 1, write the provider JPEG (after square restore, before the face composite) under var/ai-debug/.
@@ -26,7 +31,7 @@ index 6ec3dab..e78886f 100644
  DEBUG_SAVE_RAW="false"
  # Optional overrides. Leave unset to use the model-id estimates (OpenAI test ₹0.6, medium ₹1.2, high ₹17.4; Gemini test ₹3.5, medium ₹7, high ₹7).
 diff --git a/README.md b/README.md
-index 7c86367..a5d7422 100644
+index 7c86367..02cd5da 100644
 --- a/README.md
 +++ b/README.md
 @@ -139,7 +139,7 @@ Needs a key (OpenAI or Gemini):
@@ -47,7 +52,7 @@ index 7c86367..a5d7422 100644
  
  ### What the offline tests prove
  
-@@ -182,13 +182,42 @@ Before a paid edit, the server finds the face from the skin region and places th
+@@ -182,13 +182,46 @@ Before a paid edit, the server finds the face from the skin region and places th
  - Beard: the jaw and chin below the nose, with the mouth left out
  - Nails: fingertip regions on a hand photo. A picture that looks like a face is refused
  
@@ -87,13 +92,17 @@ index 7c86367..a5d7422 100644
 +npm run benchmark:quote
 +```
 +
-+Paid run: sign in as the super-admin, open `/super/ai`, choose any hairstyle and one selfie from your computer, read the estimate and its breakdown, tick the confirmation, and press **Run benchmark**. Open `/super/ai/benchmark/{id}`. The page shows the sanitized selfie beside `provider-response.png`, labelled UNVALIDATED, plus usage, latency, the estimate, and the actual cost from provider usage. **Delete now** removes that run's photos. Stages older than `BENCHMARK_RETENTION_HOURS` (default 72) are deleted on the next benchmark request. They are never served to guests. Family photos are personal data and are sent only to OpenAI.
++Paid run from the salon page: sign in as the super-admin, open `/s/demo-salon`, stay on Hairstyle, and turn on **Reference mode (test)**. That switch is not rendered for a guest. Upload or take a selfie, pick a style (that click quotes the cost and does not call the provider), read the estimate, tick the confirmation, and press **Try this hairstyle**. The result is the raw provider image beside the original, labelled Experimental, unvalidated. Actual cost, usage, and latency are on that page for the super-admin only. **Delete now** removes the saved stages. The same request uses the provider spend ledger, the ₹500 cap, and the ₹30 per-run cap. It does not retry, does not send a mask, and does not paste the original face back.
++
++`/super/ai` still has the separate benchmark form. Sign in, choose any hairstyle and one selfie from your computer, read the estimate and its breakdown, tick the confirmation, and press **Run benchmark**. Open `/super/ai/benchmark/{id}`. The page shows the sanitized selfie beside `provider-response.png`, labelled UNVALIDATED, plus usage, latency, the estimate, and the actual cost from provider usage. **Delete now** removes that run's photos. Stages older than `BENCHMARK_RETENTION_HOURS` (default 72) are deleted on the next reference request. They are never served to guests. Family photos are personal data and are sent only to OpenAI.
++
++`TRYON_REFERENCE_MODE=on` is off by default. It does not show the switch to guests and it does not change a normal generate. On a private machine it can authorize an explicit `referenceMode=yes` request that has no super-admin session. Leave it unset on any server a guest can use.
 +
 +Score six runs (three selfies, two styles, including at least one long-to-short) in `docs/benchmark-score-sheet.csv`. Columns: likeness, style match, framing, edges, reconstruction, latency, token usage, output estimate, usage INR if the ledger has it, and whether you accept the frame. Do not treat a passing alignment, or this offline test suite, as a haircut score.
  
  The unit suite proves this without a provider key:
  
-@@ -202,7 +231,7 @@ The unit suite proves this without a provider key:
+@@ -202,7 +235,7 @@ The unit suite proves this without a provider key:
  - A hair edit that changes the eyes, or that zooms the face past the alignment window, is rejected once and is not retried
  - A modest zoom is warped back onto the original face and can then be composited
  - `npm run replay:raw -- raw.jpg original.jpg long-layers` runs that check on a saved provider JPEG with no network call
@@ -117,10 +126,10 @@ index c5ef9e0..6faa9da 100644
  
 diff --git a/docs/REFERENCE-MODE-REVIEW.md b/docs/REFERENCE-MODE-REVIEW.md
 new file mode 100644
-index 0000000..a355231
+index 0000000..159c0f6
 --- /dev/null
 +++ b/docs/REFERENCE-MODE-REVIEW.md
-@@ -0,0 +1,245 @@
+@@ -0,0 +1,257 @@
 +# Reference-mode review
 +
 +Date: 4 Oct 2026. Baseline before this work: `8a3a244` (`docs: record which image-edit parameters the hair path never sends`) on `cursor/feat-initial-build-5096`. The shareable diff against that commit is `docs/reference-mode.diff`.
@@ -297,7 +306,7 @@ index 0000000..a355231
 +
 +`npx tsc --noEmit` — exit 0, run again as part of `npm run build`.
 +
-+`npx vitest run tests/unit/reference-mode.test.ts tests/unit/tiers.test.ts tests/unit/masks.test.ts tests/unit/product.test.ts tests/unit/credits.test.ts` — 5 files, 63 tests passed. This run includes the length-category assertions and the dedupe status map.
++`npx vitest run tests/unit/reference-mode.test.ts tests/unit/tiers.test.ts tests/unit/masks.test.ts tests/unit/product.test.ts tests/unit/credits.test.ts` — 5 files, 67 tests passed. This run includes the salon reference switch: guests do not see it, an unrequested try-on stays on the production path, and an authorized reference edit sends the selfie before the style image with no mask.
 +
 +`npm run benchmark:quote` — the three rows in the cost table. “No provider call was made.”
 +
@@ -335,6 +344,18 @@ index 0000000..a355231
 +
 +The first paid pixie run showed a usable haircut with the face and background kept, and it also changed a crew neck into a shallow V. The prompt now tells the model to keep neckline, collar, sleeves, garment colour, and straps, including the exact crew neckline of a t-shirt. That sentence has not been tried on a second paid image. The six-row sheet `docs/benchmark-score-sheet.csv` is still empty.
 +
++## Salon try-on switch
++
++The separate `/super/ai` form is still there. A signed-in super-admin can also run the same edit from `/s/demo-salon` on the hairstyle tab.
++
++The switch is rendered only when `showReferenceToggle` is true, which is only a super-admin session. Guests do not get the control. `TRYON_REFERENCE_MODE` is unset by default. Setting it to `on` does not show the switch and does not change a generate that does not ask for reference mode. On a private machine it can authorize an explicit `referenceMode=yes` request that has no super-admin session. Leave it unset anywhere a guest can reach the server.
++
++With the switch off, the style button uses the production path: heuristic mask, production tier, and the face composite. With the switch on, choosing a style loads a quote and does not call the provider. The paid click is **Try this hairstyle**, after the estimate is visible and the confirmation box is ticked. That request is hairstyles only. Beard, nails, and brows ignore the flag.
++
++A local browser check, with no provider call: an anonymous `/s/demo-salon` page did not contain the switch. Signed in as the super-admin, the switch was visible. A synthetic 480×640 JPEG, privacy ticked, switch on, and Pixie selected quoted `gpt-image-1.5`, quality medium, size `1024x1536`, about ₹17.00 ($0.164). **Try this hairstyle** stayed disabled until the confirmation box was ticked, then became enabled, and was not clicked. `/super/ai` still showed Reference benchmark. An anonymous quote request returned 403.
++
++The generate route then uses the same reference edit as the benchmark: `gpt-image-1.5`, quality medium, `input_fidelity=high`, png, selfie then the style reference, no mask, no face paste, one call. It still claims the request id, reserves through `beginPaidCall` (the ₹500 ledger cap), and refuses when the ₹30 run cap is below the full estimate. A timeout stays an unknown bill and is not sent again. Salon preview credits are not consumed, and the try-on row is `UNVALIDATED`, so it does not count as a successful guest preview. Stages are written under `var/benchmarks` with the same 72-hour retention and **Delete now**. The raw provider image is shown beside the original with the label Experimental, unvalidated. `accepted` stays false. Actual cost, usage, and latency are included in the JSON only when the caller is a super-admin.
++
 +## How to run a controlled paid test locally
 +
 +```bash
@@ -348,9 +369,9 @@ index 0000000..a355231
 +1. Open http://localhost:3000/login and sign in as `super@helixstac.app` / `SuperAdmin#2026`.
 +2. Open http://localhost:3000/super/ai. If the platform provider is not already OpenAI, paste the key there. Do not put the key in git.
 +3. Optional, no charge: `npm run benchmark:quote`.
-+4. In Reference benchmark, pick a hairstyle, choose a selfie from this computer, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick the confirmation, and press **Run benchmark**. The note on the form says family photos are personal data and are sent only to OpenAI.
-+5. Open the result link. The left image is the sanitized selfie. The right image is `provider-response.png`, labelled UNVALIDATED. The page shows usage, latency, the estimate, and the actual cost from provider usage. `validation.json` stays `accepted: false`. A neckline shift is `clothing_changed`.
-+6. Press **Delete now** when you are finished, or leave the files for the 72-hour retention. Do not commit the photos.
++4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. Upload or take a selfie, pick a style, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick **I understand this makes one paid OpenAI call and does not retry**, and press **Try this hairstyle**.
++5. The page shows the original beside the raw result, labelled Experimental, unvalidated, plus usage, latency, and the actual cost. A neckline shift shows a clothing warning. **Delete now** removes that run, or leave the files for 72 hours. Do not commit the photos.
++6. The benchmark form still works: on `/super/ai`, pick a hairstyle, choose a selfie, tick the confirmation, and press **Run benchmark**. Open the result link. The right image is `provider-response.png`, labelled UNVALIDATED. `validation.json` stays `accepted: false`.
 +
 +`BENCHMARK_INPUT_SIZE=1024` in `.env`, then restart `npm run dev`, if you want a second run on a smaller canvas to compare cost. Leave it unset for the same 1536-class request as the first pixie run.
 +
@@ -392,10 +413,10 @@ index ab17942..2afbeda 100644
      "prepare": "git config core.hooksPath .githooks || true"
    },
 diff --git a/prisma/schema.prisma b/prisma/schema.prisma
-index 8f77e40..fc5b802 100644
+index 8f77e40..ee22172 100644
 --- a/prisma/schema.prisma
 +++ b/prisma/schema.prisma
-@@ -340,6 +340,49 @@ model AiCall {
+@@ -340,6 +340,50 @@ model AiCall {
    @@index([createdAt])
  }
  
@@ -438,6 +459,7 @@ index 8f77e40..fc5b802 100644
 +  clothingWarning  String   @default("")
 +  callId           String   @default("")
 +  dir              String
++  source           String   @default("benchmark")
 +  message          String   @default("")
 +  createdAt        DateTime @default(now())
 +}
@@ -554,60 +576,22 @@ index 0000000..d46572b
 +}
 diff --git a/src/app/api/v1/super/ai/benchmark/route.ts b/src/app/api/v1/super/ai/benchmark/route.ts
 new file mode 100644
-index 0000000..a71830d
+index 0000000..d67207c
 --- /dev/null
 +++ b/src/app/api/v1/super/ai/benchmark/route.ts
-@@ -0,0 +1,287 @@
-+import { randomUUID } from "node:crypto";
-+import { rm } from "node:fs/promises";
+@@ -0,0 +1,80 @@
 +import { NextResponse } from "next/server";
 +import sharp from "sharp";
-+import { benchmarkDir, prepareBenchmark, quoteBenchmark, restoredFromProvider, writeBenchmarkStages } from "@/lib/ai/benchmark";
-+import { assessClothing } from "@/lib/ai/clothing-check";
++import { quoteBenchmark } from "@/lib/ai/benchmark";
 +import { readHairstyleReference } from "@/lib/ai/style-reference";
-+import { resolveOpenAIKey } from "@/lib/ai/credentials";
-+import { editFormFields } from "@/lib/ai/edit-request";
-+import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
-+import { postImageEdit } from "@/lib/ai/openai";
-+import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
-+import { bufferedInr, costUsdFromUsage, exactInr, type UsageNumbers } from "@/lib/ai/tiers";
++import { executeReferenceEdit } from "@/lib/ai/reference-run";
++import { bufferedInr } from "@/lib/ai/tiers";
 +import { sanitizeSelfie, ImageError } from "@/lib/images";
-+import { numberEnv } from "@/lib/env";
-+import { prisma } from "@/lib/prisma";
 +import { requireSuper } from "@/lib/session";
 +
 +export const runtime = "nodejs";
 +export const dynamic = "force-dynamic";
 +export const maxDuration = 60;
-+
-+function usageFrom(payload: {
-+  usage?: {
-+    input_tokens?: number;
-+    output_tokens?: number;
-+    total_tokens?: number;
-+    input_tokens_details?: { text_tokens?: number; image_tokens?: number };
-+  };
-+}): UsageNumbers | undefined {
-+  const usage = payload.usage;
-+  if (!usage) return undefined;
-+  return {
-+    inputTokens: usage.input_tokens,
-+    outputTokens: usage.output_tokens,
-+    totalTokens: usage.total_tokens,
-+    textTokens: usage.input_tokens_details?.text_tokens,
-+    imageTokens: usage.input_tokens_details?.image_tokens,
-+  };
-+}
-+
-+async function purgeOldBenchmarks() {
-+  const hours = Math.max(1, numberEnv("BENCHMARK_RETENTION_HOURS", 72));
-+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
-+  const stale = await prisma.benchmarkRun.findMany({ where: { createdAt: { lt: cutoff } }, take: 20 });
-+  for (const row of stale) {
-+    await rm(row.dir, { recursive: true, force: true }).catch(() => undefined);
-+    await prisma.benchmarkRun.delete({ where: { id: row.id } }).catch(() => undefined);
-+  }
-+}
 +
 +export async function GET(req: Request) {
 +  const access = await requireSuper();
@@ -634,7 +618,6 @@ index 0000000..a71830d
 +  if ("error" in access && access.error) return access.error;
 +  const form = await req.formData().catch(() => null);
 +  if (!form) return NextResponse.json({ error: "INVALID", message: "Send one selfie and one style." }, { status: 400 });
-+  await purgeOldBenchmarks().catch(() => undefined);
 +  if (String(form.get("confirm") || "") !== "yes") {
 +    return NextResponse.json({ error: "CONFIRM", message: "Confirm the estimated cost before the paid call." }, { status: 400 });
 +  }
@@ -649,238 +632,122 @@ index 0000000..a71830d
 +    const code = error instanceof ImageError ? error.code : "DECODE";
 +    return NextResponse.json({ error: code, message: "Use a JPEG, PNG, or WebP selfie under 2 MB." }, { status: 400 });
 +  }
-+  const prepared = await prepareBenchmark({ jpeg, styleId });
-+  if (!prepared.ok) return NextResponse.json({ error: "BENCHMARK", message: prepared.message }, { status: 400 });
-+  const apiKey = await resolveOpenAIKey();
-+  if (!apiKey) {
-+    return NextResponse.json({
-+      error: "NO_OPENAI_KEY",
-+      message: "Add an OpenAI key on AI settings. Benchmark mode does not call Gemini, a mock, or another model.",
-+    }, { status: 400 });
-+  }
-+
-+  const { quote, planned, fitted, reference, style } = prepared;
-+  const gate = await beginPaidCall({
-+    provider: "openai",
-+    quality: quote.quality,
-+    model: quote.model,
-+    tenantId: "benchmark",
-+    tool: "benchmark",
-+    tier: "benchmark",
-+    imageSize: quote.size,
-+    estimateInr: quote.estimateInr,
-+    estimateUsd: quote.estimateUsd,
-+  });
-+  if (!gate.ok) {
-+    return NextResponse.json({ error: "SPEND_CAP", message: "The testing spend cap would be exceeded. No benchmark call was made." }, { status: 402 });
-+  }
-+
-+  const id = randomUUID();
-+  const dir = benchmarkDir(id);
-+  const validation = {
-+    label: "unvalidated model output",
-+    compositeApplied: false,
-+    maskSent: false,
-+    faceBlobUsedAsGate: false,
-+    accepted: false,
-+    model: quote.model,
-+    quality: quote.quality,
-+    size: quote.size,
-+    inputFidelity: "high",
-+    outputFormat: "png",
-+    referencePixels: { width: prepared.referenceWidth, height: prepared.referenceHeight },
-+    note: "The skin-colour face blob was not used. Alignment is not a haircut score. No original face was pasted back.",
-+  };
-+  await writeBenchmarkStages(dir, {
++  const executed = await executeReferenceEdit({
++    jpeg,
 +    original,
-+    sanitized: jpeg,
-+    providerInput: fitted.png,
-+    reference,
-+    validation,
-+    transform: fitted.transform,
++    styleId,
++    tenantId: "benchmark",
++    source: "benchmark",
++    tool: "benchmark",
 +  });
-+  await prisma.benchmarkRun.create({
-+    data: {
-+      id,
-+      styleId: style.id,
-+      model: quote.model,
-+      quality: quote.quality,
-+      size: quote.size,
-+      status: "PENDING",
-+      estimateInr: quote.estimateInr,
-+      estimateUsd: quote.estimateUsd,
-+      callId: gate.id,
-+      dir,
-+    },
-+  });
-+
-+  const fields = editFormFields(planned);
-+  const body = new FormData();
-+  for (const [key, value] of Object.entries(fields)) body.set(key, value);
-+  body.append("image[]", new Blob([new Uint8Array(fitted.png)], { type: "image/png" }), "selfie.png");
-+  body.append("image[]", new Blob([new Uint8Array(reference)], { type: "image/jpeg" }), "style-reference.jpg");
-+
-+  try {
-+    const started = Date.now();
-+    const response = await postImageEdit(apiKey, body);
-+    const payload = (await response.json()) as {
-+      data?: { b64_json?: string }[];
-+      usage?: {
-+        input_tokens?: number;
-+        output_tokens?: number;
-+        total_tokens?: number;
-+        input_tokens_details?: { text_tokens?: number; image_tokens?: number };
-+      };
-+    };
-+    const usage = usageFrom(payload);
-+    const latencyMs = Date.now() - started;
-+    const b64 = payload.data?.[0]?.b64_json;
-+    if (!b64) throw new BilledProviderError(quote.estimateUsd, usage);
-+    const providerResponse = Buffer.from(b64, "base64");
-+    const restored = await restoredFromProvider(providerResponse, fitted.transform);
-+    const clothing = await assessClothing(jpeg, restored).catch((): Awaited<ReturnType<typeof assessClothing>> => ({
-+      warning: null,
-+      meanDelta: 0,
-+      centerMean: 0,
-+      registered: false,
-+      accepted: false,
-+      detail: "clothing check failed. The run is not accepted.",
-+    }));
-+    await writeBenchmarkStages(dir, {
-+      original,
-+      sanitized: jpeg,
-+      providerInput: fitted.png,
-+      reference,
-+      providerResponse,
-+      restored,
-+      validation: {
-+        ...validation,
-+        providerResponseBytes: providerResponse.length,
-+        restoredBytes: restored.length,
-+        clothing,
-+        accepted: false,
-+        latencyMs,
-+        usage: usage || null,
-+      },
-+      transform: fitted.transform,
-+    });
-+    const usd = costUsdFromUsage(quote.model, usage) ?? quote.estimateUsd;
-+    await finalizePaidCall(gate.id, {
-+      model: quote.model,
-+      billed: true,
-+      charged: true,
-+      costUsd: usd,
-+      estimateInr: gate.estimateInr,
-+      usage,
-+      latencyMs,
-+      imageSize: quote.size,
-+    });
-+    const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
-+    await prisma.benchmarkRun.update({
-+      where: { id },
-+      data: {
-+        status: "UNVALIDATED",
-+        message: `Unvalidated model output.${clothingNote}`,
-+        actualUsd: usd,
-+        actualInr: exactInr(usd),
-+        inputTokens: usage?.inputTokens || 0,
-+        outputTokens: usage?.outputTokens || 0,
-+        imageTokens: usage?.imageTokens || 0,
-+        textTokens: usage?.textTokens || 0,
-+        latencyMs,
-+        clothingWarning: clothing.warning || "",
-+      },
-+    });
-+    return NextResponse.json({
-+      id,
-+      status: "UNVALIDATED",
-+      model: quote.model,
-+      quality: quote.quality,
-+      size: quote.size,
-+      estimateInr: quote.estimateInr,
-+      estimateUsd: quote.estimateUsd,
-+      actualUsd: usd,
-+      actualInr: exactInr(usd),
-+      bufferedActualInr: bufferedInr(usd),
-+      latencyMs,
-+      usage: usage || null,
-+      clothingWarning: clothing.warning,
-+      message: `Unvalidated model output. One provider call. No mask, no face paste, no retry.${clothingNote}`,
-+    });
-+  } catch (error) {
-+    const uncertain = error instanceof UncertainBillingError;
-+    const unknown = error instanceof UnknownModelError;
-+    if (uncertain) {
-+      await finalizePaidCall(gate.id, {
-+        model: quote.model,
-+        billed: true,
-+        charged: true,
-+        costUsd: quote.estimateUsd,
-+        estimateInr: gate.estimateInr,
-+        imageSize: quote.size,
-+      });
-+      await releasePaidCall(gate.id, "UNCERTAIN");
-+    } else if (error instanceof BilledProviderError) {
-+      await finalizePaidCall(gate.id, {
-+        model: quote.model,
-+        billed: true,
-+        charged: true,
-+        costUsd: error.costUsd,
-+        estimateInr: gate.estimateInr,
-+        usage: error.usage,
-+        imageSize: quote.size,
-+      });
-+      await releasePaidCall(gate.id, "BILLED_FAILED");
-+    } else {
-+      await finalizePaidCall(gate.id, { model: quote.model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize: quote.size });
-+      await releasePaidCall(gate.id, "REFUNDED");
-+    }
-+    const message = error instanceof Error ? error.message : "The benchmark did not finish.";
-+    await prisma.benchmarkRun.update({ where: { id }, data: { status: uncertain ? "UNCERTAIN" : "FAILED", message } });
-+    const status = uncertain ? 504 : unknown || error instanceof UnbilledProviderError ? 422 : 502;
-+    return NextResponse.json({
-+      error: uncertain ? "UNCERTAIN" : unknown ? "UNKNOWN_MODEL" : "BENCHMARK",
-+      message,
-+      id,
-+    }, { status });
++  if (!executed.ok) {
++    return NextResponse.json({ error: executed.error === "PROVIDER" ? "BENCHMARK" : executed.error, message: executed.message, id: executed.id }, { status: executed.httpStatus });
 +  }
++  return NextResponse.json({
++    id: executed.id,
++    status: "UNVALIDATED",
++    model: executed.model,
++    quality: executed.quality,
++    size: executed.size,
++    estimateInr: executed.estimateInr,
++    estimateUsd: executed.estimateUsd,
++    actualUsd: executed.actualUsd,
++    actualInr: executed.actualInr,
++    bufferedActualInr: bufferedInr(executed.actualUsd),
++    latencyMs: executed.latencyMs,
++    usage: executed.usage,
++    clothingWarning: executed.clothingWarning || null,
++    message: executed.message,
++  });
 +}
 diff --git a/src/app/api/v1/tryon/generate/route.ts b/src/app/api/v1/tryon/generate/route.ts
-index 85e0ff6..5b878b0 100644
+index 85e0ff6..96efab4 100644
 --- a/src/app/api/v1/tryon/generate/route.ts
 +++ b/src/app/api/v1/tryon/generate/route.ts
-@@ -5,7 +5,8 @@ import sharp from "sharp";
+@@ -5,7 +5,10 @@ import sharp from "sharp";
  import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
  import { shadeById } from "@/data/shades";
  import { resolveProviderChoice } from "@/lib/ai/credentials";
 -import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 +import { claimGenerationJob, completeGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
++import { referenceModeActive } from "@/lib/ai/reference-mode";
++import { runTryOnReference } from "@/lib/ai/reference-run";
 +import { salonOutcome, guestPreviewHeaders } from "@/lib/ai/guest-response";
  import { generateWithFailover, selectProvider } from "@/lib/ai/router";
  import { readTierFlags } from "@/lib/ai/settings-store";
  import { resolveGuestTier } from "@/lib/ai/tiers";
-@@ -128,13 +129,36 @@ export async function POST(req: Request) {
+@@ -25,6 +28,7 @@ import { browById } from "@/data/brows";
+ import { nailById } from "@/data/nails";
+ import { styleById } from "@/data/styles";
+ import { clientIp, rateLimit } from "@/lib/ratelimit";
++import { isSuperSession } from "@/lib/session";
+ 
+ export const runtime = "nodejs";
+ export const dynamic = "force-dynamic";
+@@ -113,9 +117,10 @@ export async function POST(req: Request) {
      }
    }
  
++  const original = Buffer.from(await photo.arrayBuffer());
+   let jpeg: Buffer;
+   try {
+-    jpeg = await sanitizeSelfie(Buffer.from(await photo.arrayBuffer()));
++    jpeg = await sanitizeSelfie(original);
+   } catch (error) {
+     const code = error instanceof ImageError ? error.code : "DECODE";
+     return NextResponse.json({ error: code, message: "Use a JPEG, PNG, or WebP selfie under 2 MB." }, { status: 400 });
+@@ -128,13 +133,66 @@ export async function POST(req: Request) {
+     }
+   }
+ 
++  const wantReference = referenceModeActive({
++    isSuperAdmin: await isSuperSession(),
++    requested: String(form.get("referenceMode") || "") === "yes",
++    tool,
++  });
++  if (wantReference && String(form.get("confirm") || "") !== "yes") {
++    return NextResponse.json({ error: "CONFIRM", message: "Confirm the estimated cost before this paid call." }, { status: 400 });
++  }
++
 +  const requestId = String(form.get("requestId") || "");
 +  let jobId = "";
 +  if (requestId) {
 +    const claim = await claimGenerationJob({
 +      tenantId: tenant.id,
 +      requestId,
-+      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: shadeId || "", mode: "production" }),
++      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: wantReference ? "" : shadeId || "", mode: wantReference ? "reference" : "production" }),
 +    });
 +    if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
 +    if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
 +    if (claim.kind === "repeat") return NextResponse.json({ error: "REPEAT", message: claim.message }, { status: claim.status });
 +    if (claim.kind === "replay") {
++      if (claim.demoReason === "reference") {
++        return new NextResponse(new Uint8Array(claim.image), {
++          status: 200,
++          headers: { "content-type": "application/json", "cache-control": "no-store" },
++        });
++      }
 +      return new NextResponse(new Uint8Array(claim.image), {
 +        status: 200,
 +        headers: guestPreviewHeaders({ tryOnId: "replay", creditsLeft: tenant.creditBalance, demoReason: claim.demoReason }),
 +      });
 +    }
 +    jobId = claim.id;
++  }
++
++  if (wantReference) {
++    return runTryOnReference({
++      jpeg,
++      original,
++      styleId,
++      tenantId: tenant.id,
++      sessionId,
++      tier,
++      actorKey,
++      jobId,
++      requestId,
++      revealCost: await isSuperSession(),
++    });
 +  }
 +
    const shade = tool === "style" ? shadeById(shadeId) : null;
@@ -897,7 +764,7 @@ index 85e0ff6..5b878b0 100644
    }
  
    const flags = await readTierFlags(tenant.id);
-@@ -147,11 +171,13 @@ export async function POST(req: Request) {
+@@ -147,11 +205,13 @@ export async function POST(req: Request) {
      await reserveCredits(tenant.id, credits, refId);
    } catch (error) {
      if (error instanceof CreditError && error.code === "INSUFFICIENT") {
@@ -911,7 +778,7 @@ index 85e0ff6..5b878b0 100644
      return NextResponse.json({ error: "SUSPENDED", message: "This salon's try-on is paused." }, { status: 403 });
    }
  
-@@ -191,17 +217,19 @@ export async function POST(req: Request) {
+@@ -191,17 +251,19 @@ export async function POST(req: Request) {
        styleName: look.name,
      };
      const result = await generateWithFailover(input, choice);
@@ -934,7 +801,7 @@ index 85e0ff6..5b878b0 100644
          latencyMs: result.latencyMs,
        },
      });
-@@ -209,10 +237,19 @@ export async function POST(req: Request) {
+@@ -209,10 +271,19 @@ export async function POST(req: Request) {
        data: {
          tenantId: tenant.id,
          sessionId,
@@ -955,7 +822,7 @@ index 85e0ff6..5b878b0 100644
      return new NextResponse(new Uint8Array(result.image), {
        status: 200,
        headers: guestPreviewHeaders({
-@@ -224,7 +261,12 @@ export async function POST(req: Request) {
+@@ -224,7 +295,12 @@ export async function POST(req: Request) {
    } catch (error) {
      await settleCredits(tenant.id, refId, "REFUND");
      await prisma.tryOn.update({ where: { id: tryOn.id }, data: { status: "FAILED" } });
@@ -969,9 +836,33 @@ index 85e0ff6..5b878b0 100644
 +    return NextResponse.json({ error: uncertain ? "UNCERTAIN" : "PROVIDER", message }, { status: uncertain ? 504 : 502 });
    }
  }
+diff --git a/src/app/s/[slug]/page.tsx b/src/app/s/[slug]/page.tsx
+index 794160f..84c4dd3 100644
+--- a/src/app/s/[slug]/page.tsx
++++ b/src/app/s/[slug]/page.tsx
+@@ -1,9 +1,11 @@
+ import { headers } from "next/headers";
+ import { notFound } from "next/navigation";
+ import { TryOnApp } from "@/components/tryon/TryOnApp";
++import { showReferenceToggle } from "@/lib/ai/reference-mode";
+ import { usingDemoProvider } from "@/lib/env";
+ import { verifySalonToken } from "@/lib/preview-access";
+ import { loadTenantByHost, loadTenantBySlug, toSalonConfig } from "@/lib/salon";
++import { isSuperSession } from "@/lib/session";
+ 
+ export const dynamic = "force-dynamic";
+ 
+@@ -31,6 +33,7 @@ export default async function SalonPage({
+       salonToken={salonMode ? query.salon : undefined}
+       salonMode={salonMode}
+       demoMode={usingDemoProvider()}
++      referenceModeAvailable={showReferenceToggle(await isSuperSession())}
+     />
+   );
+ }
 diff --git a/src/app/super/ai/benchmark/[id]/page.tsx b/src/app/super/ai/benchmark/[id]/page.tsx
 new file mode 100644
-index 0000000..ce71eae
+index 0000000..bc969e0
 --- /dev/null
 +++ b/src/app/super/ai/benchmark/[id]/page.tsx
 @@ -0,0 +1,93 @@
@@ -1001,7 +892,7 @@ index 0000000..ce71eae
 +      <p className="text-xs uppercase tracking-[0.16em] text-muted">Super admin</p>
 +      <h1 className="font-serif text-4xl">Unvalidated model output</h1>
 +      <p className="mt-2 text-sm leading-6">
-+        Hairstyle benchmark for {run.styleId}. Model {run.model}, quality {run.quality}, size {run.size}. Status {run.status}.
++        Hairstyle benchmark for {run.styleId}. Model {run.model}, quality {run.quality}, size {run.size}. Status {run.status}. Source {run.source === "tryon" ? "salon try-on" : "benchmark form"}.
 +        The right-hand photograph is the raw provider body, before any crop. Nothing here was accepted as a finished haircut.
 +      </p>
 +      <p className="mt-3 rounded-xl border border-line bg-white p-3 text-sm leading-6">
@@ -1298,7 +1189,7 @@ index 0000000..4850aa0
 +  );
 +}
 diff --git a/src/components/tryon/TryOnApp.tsx b/src/components/tryon/TryOnApp.tsx
-index b7bfc58..f494eb8 100644
+index b7bfc58..fbd0cf5 100644
 --- a/src/components/tryon/TryOnApp.tsx
 +++ b/src/components/tryon/TryOnApp.tsx
 @@ -5,6 +5,7 @@ import { BeforeAfter } from "@/components/tryon/BeforeAfter";
@@ -1309,15 +1200,47 @@ index b7bfc58..f494eb8 100644
  import { classifySkinPhoto } from "@/lib/hand-photo";
  import type { SalonConfig } from "@/lib/salon";
  import { normalizeWhatsAppPhone } from "@/lib/whatsapp";
-@@ -81,6 +82,7 @@ export function TryOnApp({
+@@ -19,6 +20,11 @@ type Look = {
+   serviceKeys: string[];
+   tool: "style" | "brows" | "beard" | "nails";
+   demo?: boolean;
++  unvalidated?: boolean;
++  referenceId?: string;
++  showCost?: boolean;
++  detail?: string;
++  clothingWarning?: string;
+ };
+ 
+ type TryTool = "colour" | "style" | "brows" | "beard" | "nails";
+@@ -54,6 +60,7 @@ export function TryOnApp({
+   salonToken,
+   salonMode = false,
+   demoMode = false,
++  referenceModeAvailable = false,
+ }: {
+   config: SalonConfig;
+   embed?: boolean;
+@@ -63,6 +70,7 @@ export function TryOnApp({
+   salonToken?: string;
+   salonMode?: boolean;
+   demoMode?: boolean;
++  referenceModeAvailable?: boolean;
+ }) {
+   const lang = config.defaultLang || "en";
+   const [sid, setSid] = useState("");
+@@ -81,6 +89,11 @@ export function TryOnApp({
    const [styleId, setStyleId] = useState("");
    const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
    const [busy, setBusy] = useState(false);
++  const [referenceMode, setReferenceMode] = useState(false);
++  const [referenceAck, setReferenceAck] = useState(false);
++  const [referenceQuote, setReferenceQuote] = useState<{ model: string; quality: string; size: string; rupees: number; dollars: number; note: string } | null>(null);
++  const [referenceChoice, setReferenceChoice] = useState<{ id: string; name: string; serviceKeys: string[]; tool: Look["tool"] } | null>(null);
 +  const previewLock = useRef(false);
    const [progress, setProgress] = useState(0);
    const [pendingName, setPendingName] = useState("");
    const [error, setError] = useState("");
-@@ -310,7 +312,7 @@ export function TryOnApp({
+@@ -310,7 +323,7 @@ export function TryOnApp({
      canvas.height = height;
      const ctx = canvas.getContext("2d");
      if (!ctx) return;
@@ -1326,7 +1249,84 @@ index b7bfc58..f494eb8 100644
        ctx.translate(width, 0);
        ctx.scale(-1, 1);
      }
-@@ -335,49 +337,55 @@ export function TryOnApp({
+@@ -320,9 +333,75 @@ export function TryOnApp({
+     await applyBlob(blob);
+   }
+ 
+-  async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }) {
++  async function stageReference(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }) {
++    setStyleId(chosen.id);
++    setTool("style");
++    if (!faceShot) {
++      setError(t(lang, "addPhotoFirst"));
++      frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
++      return;
++    }
++    const consent = consentRef.current || (await consenting.current) || "";
++    if (!consent) {
++      setError(t(lang, "privacyTick"));
++      return;
++    }
++    consentRef.current = consent;
++    setReferenceAck(false);
++    setReferenceChoice(chosen);
++    setError("");
++    setBusy(true);
++    try {
++      const width = faceShot.el.naturalWidth || 0;
++      const height = faceShot.el.naturalHeight || 0;
++      const res = await fetch(`/api/v1/tryon/reference-quote?width=${width}&height=${height}&styleId=${encodeURIComponent(chosen.id)}`);
++      const data = await res.json().catch(() => ({ message: "This reference try-on could not be quoted." }));
++      if (!res.ok) {
++        setReferenceQuote(null);
++        setError(data.message || "This reference try-on could not be quoted.");
++        return;
++      }
++      setReferenceQuote({
++        model: String(data.model || ""),
++        quality: String(data.quality || ""),
++        size: String(data.size || ""),
++        rupees: Number(data.rupees || 0),
++        dollars: Number(data.dollars || 0),
++        note: String(data.note || ""),
++      });
++    } finally {
++      setBusy(false);
++    }
++  }
++
++  function pngUrl(value: string) {
++    const binary = atob(value);
++    const bytes = new Uint8Array(binary.length);
++    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
++    return URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
++  }
++
++  async function deleteReferenceRun() {
++    if (!active?.referenceId) return;
++    if (!window.confirm("Delete this reference run and its photos now?")) return;
++    const res = await fetch(`/api/v1/super/ai/benchmark/${active.referenceId}`, { method: "DELETE" });
++    if (!res.ok) {
++      const data = await res.json().catch(() => ({ message: "Could not delete that run." }));
++      setError(data.message || "Could not delete that run.");
++      return;
++    }
++    setActive(null);
++    setStylePhase("pick");
++    setReferenceAck(false);
++  }
++
++  async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }, referenceConfirm = false) {
+     setStyleId(chosen.id);
+     setTool(chosen.tool);
++    if (referenceModeAvailable && referenceMode && chosen.tool === "style" && !referenceConfirm) {
++      await stageReference(chosen);
++      return;
++    }
+     const shot = chosen.tool === "nails" ? handShot : faceShot;
+     if (!shot) {
+       setError(t(lang, chosen.tool === "nails" ? "uploadHand" : "addPhotoFirst"));
+@@ -335,49 +414,97 @@ export function TryOnApp({
        return;
      }
      consentRef.current = consent;
@@ -1360,7 +1360,12 @@ index b7bfc58..f494eb8 100644
 +      body.set("consentId", consent);
 +      body.set("sessionId", sid || sessionId());
 +      body.set("requestId", crypto.randomUUID());
-+      if (chosen.tool === "style" && shadeId) body.set("shadeId", shadeId);
++      if (referenceConfirm) {
++        body.set("referenceMode", "yes");
++        body.set("confirm", "yes");
++      } else if (chosen.tool === "style" && shadeId) {
++        body.set("shadeId", shadeId);
++      }
 +      if (salonToken) body.set("salonToken", salonToken);
 +      const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
 +      if (!res.ok) {
@@ -1368,6 +1373,43 @@ index b7bfc58..f494eb8 100644
 +        setProgress(0);
 +        setError(data.message || t(lang, "creditsEmpty"));
 +        track("generate_failed", { styleId: chosen.id });
++        return;
++      }
++      const contentType = res.headers.get("content-type") || "";
++      if (contentType.includes("json")) {
++        const data = await res.json();
++        if (!data.imageBase64) {
++          setError(data.message || t(lang, "creditsEmpty"));
++          return;
++        }
++        const usage = data.usage as { inputTokens?: number; outputTokens?: number; imageTokens?: number; textTokens?: number } | null;
++        const detail = data.showCost
++          ? [
++              `Quoted ₹${Number(data.rupees || 0).toFixed(2)}. Actual $${Number(data.actualDollars || 0).toFixed(3)} (₹${Number(data.actualRupees || 0).toFixed(2)}).`,
++              data.latencyMs ? `Latency ${(Number(data.latencyMs) / 1000).toFixed(1)} s.` : "",
++              usage ? `Usage input ${usage.inputTokens || 0} (image ${usage.imageTokens || 0}, text ${usage.textTokens || 0}), output ${usage.outputTokens || 0}.` : "",
++            ].filter(Boolean).join(" ")
++          : "";
++        setNotice("");
++        setActive({
++          id: data.id || crypto.randomUUID(),
++          styleId: chosen.id,
++          styleName: chosen.name,
++          shadeName: null,
++          before: shot.url,
++          after: pngUrl(String(data.imageBase64)),
++          serviceKeys: chosen.serviceKeys,
++          tool: chosen.tool,
++          unvalidated: true,
++          referenceId: data.id,
++          showCost: Boolean(data.showCost),
++          detail,
++          clothingWarning: data.clothingWarning || "",
++        });
++        setReferenceAck(false);
++        setProgress(100);
++        setStylePhase("result");
++        frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 +        return;
 +      }
 +      const out = await res.blob();
@@ -1420,7 +1462,95 @@ index b7bfc58..f494eb8 100644
    }
  
    function pickShade(id: string) {
-@@ -593,7 +601,7 @@ export function TryOnApp({
+@@ -476,7 +603,21 @@ export function TryOnApp({
+       </div>
+ 
+       <section ref={frameRef} className="mt-4 overflow-hidden rounded-[28px] bg-[#14110e] shadow-lg" aria-label="Photo">
+-        {showResult && active ? (
++        {showResult && active?.unvalidated ? (
++          <div className="p-3">
++            <p className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-white">Experimental, unvalidated</p>
++            <div className="grid grid-cols-2 gap-2">
++              <figure>
++                <figcaption className="mb-1 text-center text-[11px] text-white">Original</figcaption>
++                <img src={active.before} alt="Original selfie" className="max-h-80 w-full object-contain" />
++              </figure>
++              <figure>
++                <figcaption className="mb-1 text-center text-[11px] text-white">Experimental, unvalidated</figcaption>
++                <img src={active.after} alt="Experimental, unvalidated result" className="max-h-80 w-full object-contain" />
++              </figure>
++            </div>
++          </div>
++        ) : showResult && active ? (
+           <div>
+             <BeforeAfter before={active.before} after={active.after} beforeLabel={t(lang, "before")} afterLabel={t(lang, "after")} />
+             {active.demo && <p className="bg-[#241c16] px-4 py-3 text-center text-sm leading-6 text-white" role="status">{t(lang, active.tool === "nails" ? "demoNailBanner" : "demoStyleBanner")}</p>}
+@@ -571,6 +712,20 @@ export function TryOnApp({
+       {showResult && active && (
+         <div className="mt-4 grid gap-2">
+           <h3 className="text-center font-serif text-2xl">{active.styleName}</h3>
++          {active.unvalidated && (
++            <div className="rounded-xl border border-line bg-white p-3 text-sm leading-6">
++              <p>Experimental, unvalidated. This is the raw provider image. The original face was not pasted back, and this frame was not accepted.</p>
++              {active.clothingWarning === "clothing_changed" && <p className="mt-2">Warning: the neckline or shoulder band changed.</p>}
++              {active.showCost && active.detail && <p className="mt-2">{active.detail}</p>}
++              {active.showCost && active.referenceId && (
++                <p className="mt-2 flex flex-wrap gap-3">
++                  <a className="underline" href={`/super/ai/benchmark/${active.referenceId}`}>Open saved stages</a>
++                  <button className="underline" type="button" onClick={() => void deleteReferenceRun()}>Delete now</button>
++                </p>
++              )}
++              <p className="mt-2 text-muted">Photos stay on this server for 72 hours. Real family photos are personal data and are sent only to OpenAI.</p>
++            </div>
++          )}
+           <p className="text-center text-sm text-muted">{t(lang, active.tool === "brows" ? "browDisclaimer" : active.tool === "beard" ? "beardDisclaimer" : active.tool === "nails" ? "nailDisclaimer" : "disclaimer")}</p>
+           <button className="btn" type="button" onClick={() => void downloadLook()}>{t(lang, "downloadLook")}</button>
+           <button className="btn" type="button" onClick={() => void book()}>{t(lang, "bookLook")}</button>
+@@ -581,6 +736,43 @@ export function TryOnApp({
+       <section ref={gridRef} className="mt-6" aria-label={tool === "style" ? t(lang, "styles") : tool === "colour" ? t(lang, "shades") : tool === "brows" ? t(lang, "brows") : tool === "beard" ? t(lang, "beards") : t(lang, "nails")}>
+         {tool === "style" && (
+           <>
++            {referenceModeAvailable && (
++              <div className="mb-3 rounded-2xl border border-line bg-white p-3 text-sm leading-6">
++                <label className="flex items-start gap-2 font-medium">
++                  <input
++                    type="checkbox"
++                    className="mt-1"
++                    checked={referenceMode}
++                    onChange={(event) => {
++                      setReferenceMode(event.target.checked);
++                      setReferenceAck(false);
++                      setReferenceQuote(null);
++                      setReferenceChoice(null);
++                    }}
++                  />
++                  <span>Reference mode (test)</span>
++                </label>
++                <p className="mt-2 text-muted">
++                  Shown only on this super-admin session. Off, a hairstyle uses the normal preview. On, it sends your selfie and then the style photo, with no mask and no pasted face.
++                  Real family photos are personal data and are sent only to OpenAI. Files stay on this server for 72 hours.
++                </p>
++                {referenceMode && referenceQuote && referenceChoice && (
++                  <div className="mt-3 border-t border-line pt-3">
++                    <p>
++                      {referenceChoice.name}. {referenceQuote.model}, quality {referenceQuote.quality}, size {referenceQuote.size}. About ₹{referenceQuote.rupees.toFixed(2)} (${referenceQuote.dollars.toFixed(3)}).
++                    </p>
++                    <p className="mt-1 text-muted">{referenceQuote.note}</p>
++                    <label className="mt-2 flex items-start gap-2">
++                      <input type="checkbox" className="mt-1" checked={referenceAck} onChange={(event) => setReferenceAck(event.target.checked)} />
++                      <span>I understand this makes one paid OpenAI call and does not retry.</span>
++                    </label>
++                    <button className="btn mt-3" type="button" disabled={busy || !referenceAck} onClick={() => void preview(referenceChoice, true)}>
++                      Try this hairstyle
++                    </button>
++                  </div>
++                )}
++              </div>
++            )}
+             <div className="mb-3 inline-flex flex-wrap gap-1 rounded-full bg-[#241c16] p-1" role="group" aria-label="Style audience">
+               {config.showWomen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "women" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "women"} onClick={() => chooseGender("women")}>{t(lang, "women")}</button>}
+               {config.showMen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "men" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
+@@ -593,7 +785,7 @@ export function TryOnApp({
                    type="button"
                    aria-pressed={style.id === styleId}
                    className={`overflow-hidden rounded-2xl border bg-white text-left ${style.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
@@ -1429,7 +1559,7 @@ index b7bfc58..f494eb8 100644
                  >
                    <StyleCard id={style.id} name={style.name} />
                    <span className="block px-2 py-2 text-center text-sm font-medium">{style.name}</span>
-@@ -623,7 +631,7 @@ export function TryOnApp({
+@@ -623,7 +815,7 @@ export function TryOnApp({
          {tool === "brows" && (
            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
              {config.brows.map((brow) => (
@@ -1438,7 +1568,7 @@ index b7bfc58..f494eb8 100644
                  <StyleCard id={brow.id} name={brow.name} folder="brows" />
                  <span className="block px-2 py-2 text-center text-sm font-medium">{brow.name}</span>
                </button>
-@@ -634,7 +642,7 @@ export function TryOnApp({
+@@ -634,7 +826,7 @@ export function TryOnApp({
          {tool === "beard" && (
            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
              {config.beards.map((beard) => (
@@ -1447,7 +1577,7 @@ index b7bfc58..f494eb8 100644
                  <StyleCard id={beard.id} name={beard.name} folder="beards" />
                  <span className="block px-2 py-2 text-center text-sm font-medium">{beard.name}</span>
                </button>
-@@ -645,7 +653,7 @@ export function TryOnApp({
+@@ -645,7 +837,7 @@ export function TryOnApp({
          {tool === "nails" && (
            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
              {config.nails.map((nail) => (
@@ -1892,10 +2022,10 @@ index e1a5dd8..a2b73a4 100644
 +}
 diff --git a/src/lib/ai/dedupe.ts b/src/lib/ai/dedupe.ts
 new file mode 100644
-index 0000000..dbc74de
+index 0000000..0dd0a92
 --- /dev/null
 +++ b/src/lib/ai/dedupe.ts
-@@ -0,0 +1,146 @@
+@@ -0,0 +1,147 @@
 +import { createHash } from "node:crypto";
 +import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 +import path from "node:path";
@@ -1972,9 +2102,10 @@ index 0000000..dbc74de
 +
 +function repeatStatus(outcome: string) {
 +  if (outcome === "placement") return 422;
-+  if (outcome === "credits") return 402;
++  if (outcome === "credits" || outcome === "spend-cap") return 402;
 +  if (outcome === "suspended") return 403;
 +  if (outcome === "uncertain") return 504;
++  if (outcome === "quote" || outcome === "key" || outcome === "confirm") return 400;
 +  return 502;
 +}
 +
@@ -2017,10 +2148,10 @@ index 0000000..dbc74de
 +  };
 +}
 +
-+export async function completeGenerationJob(id: string, args: { tenantId: string; requestId: string; image: Buffer; demoReason?: string; callId?: string }) {
++export async function completeGenerationJob(id: string, args: { tenantId: string; requestId: string; image: Buffer; demoReason?: string; callId?: string; fileName?: "result.jpg" | "result.json" }) {
 +  const dir = jobDir(args.tenantId, args.requestId);
 +  await mkdir(dir, { recursive: true });
-+  const file = path.join(dir, "result.jpg");
++  const file = path.join(dir, args.fileName || "result.jpg");
 +  await writeFile(file, args.image);
 +  await prisma.generationJob.update({
 +    where: { id },
@@ -2844,6 +2975,22 @@ index 41ef6a6..8705cb0 100644
  export function buildBrowPrompt(brow: BrowDef) {
    return [
      `Edit the eyebrows only. New brow shape: ${brow.name}.`,
+diff --git a/src/lib/session.ts b/src/lib/session.ts
+index be0b8ad..9afe4ab 100644
+--- a/src/lib/session.ts
++++ b/src/lib/session.ts
+@@ -28,6 +28,11 @@ export async function requireOwner() {
+   return result;
+ }
+ 
++export async function isSuperSession() {
++  const session = await auth();
++  return Boolean(session?.user?.isSuperAdmin);
++}
++
+ export async function requireSuper() {
+   const session = await auth();
+   if (!session?.user?.isSuperAdmin) {
 diff --git a/tests/unit/masks.test.ts b/tests/unit/masks.test.ts
 index 37383d5..0c485cb 100644
 --- a/tests/unit/masks.test.ts
@@ -2906,13 +3053,16 @@ index c371951..094bd18 100644
  });
 diff --git a/tests/unit/reference-mode.test.ts b/tests/unit/reference-mode.test.ts
 new file mode 100644
-index 0000000..79a9b45
+index 0000000..0f0a48c
 --- /dev/null
 +++ b/tests/unit/reference-mode.test.ts
-@@ -0,0 +1,289 @@
+@@ -0,0 +1,463 @@
 +import { readFileSync } from "node:fs";
++import { createElement } from "react";
++import { renderToStaticMarkup } from "react-dom/server";
 +import sharp from "sharp";
 +import { describe, expect, it } from "vitest";
++import { TryOnApp } from "@/components/tryon/TryOnApp";
 +import { STYLES } from "@/data/styles";
 +import { prepareBenchmark, quoteBenchmark } from "@/lib/ai/benchmark";
 +import { assessClothing, clothingBandDelta } from "@/lib/ai/clothing-check";
@@ -2927,7 +3077,10 @@ index 0000000..79a9b45
 +import { drawFrontal } from "@/lib/face/synthetic";
 +import { runLockedEdit } from "@/lib/face/pipeline";
 +import { prisma } from "@/lib/prisma";
++import { referenceModeActive, showReferenceToggle } from "@/lib/ai/reference-mode";
++import { executeReferenceEdit, tryOnReferencePayload, type ReferenceSuccess } from "@/lib/ai/reference-run";
 +import { buildReferencePrompt, buildStylePrompt } from "@/lib/prompts";
++import type { SalonConfig } from "@/lib/salon";
 +
 +describe("reference benchmark request", () => {
 +  it("plans gpt-image-1.5 with high fidelity, png output, and the selfie before the reference", () => {
@@ -3197,6 +3350,174 @@ index 0000000..79a9b45
 +    });
 +    expect(rejected.ok).toBe(false);
 +    if (!rejected.ok) expect(rejected.reason).toBe("face-guard");
++  });
++});
++
++const salonConfig = {
++  id: "tenant",
++  slug: "demo-salon",
++  name: "Demo",
++  logoUrl: null,
++  primaryColor: "#241c16",
++  accentColor: "#8a5a44",
++  languages: ["en"],
++  defaultLang: "en",
++  whatsapp: "",
++  address: "",
++  mapsUrl: "",
++  city: "",
++  plan: "starter",
++  status: "ACTIVE",
++  removeBranding: false,
++  creditBalance: 10,
++  showMen: true,
++  showWomen: true,
++  showKids: false,
++  toolColour: false,
++  toolStyle: true,
++  toolBrows: false,
++  toolBeard: false,
++  toolNails: false,
++  anonDailyCap: 3,
++  memberDailyCap: 6,
++  requireLoginToBook: false,
++  services: [],
++  styles: [],
++  brows: [],
++  beards: [],
++  nails: [],
++  shades: [],
++  outlets: [],
++  poweredBy: false,
++} satisfies SalonConfig;
++
++describe("salon reference switch", () => {
++  it("keeps guests off the switch and keeps an unrequested try-on on the production path", () => {
++    delete process.env.TRYON_REFERENCE_MODE;
++    expect(showReferenceToggle(false)).toBe(false);
++    expect(showReferenceToggle(true)).toBe(true);
++    expect(referenceModeActive({ isSuperAdmin: false, requested: true, tool: "style" })).toBe(false);
++    expect(referenceModeActive({ isSuperAdmin: true, requested: false, tool: "style" })).toBe(false);
++    expect(referenceModeActive({ isSuperAdmin: true, requested: true, tool: "beard" })).toBe(false);
++    expect(referenceModeActive({ isSuperAdmin: true, requested: true, tool: "style" })).toBe(true);
++    process.env.TRYON_REFERENCE_MODE = "on";
++    expect(showReferenceToggle(false)).toBe(false);
++    expect(referenceModeActive({ isSuperAdmin: false, requested: false, tool: "style" })).toBe(false);
++    expect(referenceModeActive({ isSuperAdmin: false, requested: true, tool: "style" })).toBe(true);
++    delete process.env.TRYON_REFERENCE_MODE;
++    const hidden = renderToStaticMarkup(createElement(TryOnApp, { config: salonConfig, referenceModeAvailable: false }));
++    const shown = renderToStaticMarkup(createElement(TryOnApp, { config: salonConfig, referenceModeAvailable: true }));
++    expect(hidden).not.toContain("Reference mode");
++    expect(shown).toContain("Reference mode (test)");
++    const page = readFileSync("src/app/s/[slug]/page.tsx", "utf8");
++    const route = readFileSync("src/app/api/v1/tryon/generate/route.ts", "utf8");
++    expect(page).toContain("showReferenceToggle");
++    expect(route.indexOf("return runTryOnReference")).toBeLessThan(route.indexOf("await generateWithFailover"));
++    expect(route).toContain("runTryOnReference");
++  });
++
++  it("hides the actual cost unless the viewer is a super-admin", () => {
++    const run = {
++      ok: true as const,
++      id: "run-1",
++      callId: "call-1",
++      model: "gpt-image-1.5",
++      quality: "medium",
++      size: "1024x1024",
++      estimateInr: 16.9,
++      estimateUsd: 0.163,
++      actualInr: 14.3,
++      actualUsd: 0.149,
++      latencyMs: 21200,
++      usage: { inputTokens: 11180, outputTokens: 1899, imageTokens: 10885, textTokens: 295 },
++      clothingWarning: "",
++      imagePng: Buffer.from("png"),
++      message: "Unvalidated model output.",
++    } satisfies ReferenceSuccess;
++    const guest = tryOnReferencePayload(run, false);
++    expect(guest.showCost).toBe(false);
++    expect(guest.accepted).toBe(false);
++    expect(guest).not.toHaveProperty("rupees");
++    expect(guest).not.toHaveProperty("actualRupees");
++    expect(guest).not.toHaveProperty("usage");
++    const admin = tryOnReferencePayload(run, true);
++    expect(admin.showCost).toBe(true);
++    expect(admin.rupees).toBe(16.9);
++    expect(admin.actualRupees).toBe(14.3);
++    expect(admin.label).toBe("Experimental, unvalidated");
++  });
++
++  it("sends the selfie before the reference when the switch is on, and does not call when the quote is over the run cap", async () => {
++    process.env.OPENAI_API_KEY = "unit-test-key";
++    process.env.AI_SPEND_CAP_INR = "500";
++    await prisma.aiCall.deleteMany();
++    const jpeg = await sharp({ create: { width: 480, height: 640, channels: 3, background: { r: 180, g: 140, b: 120 } } }).jpeg().toBuffer();
++    const canvas = await sharp({ create: { width: 1024, height: 1536, channels: 3, background: { r: 180, g: 140, b: 120 } } }).png().toBuffer();
++    const seen: { model: string; quality: string; names: string[]; mask: FormDataEntryValue | null; prompt: string; fidelity: string }[] = [];
++    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
++      const form = init?.body as FormData;
++      const files = form.getAll("image[]") as File[];
++      seen.push({
++        model: String(form.get("model")),
++        quality: String(form.get("quality")),
++        names: files.map((file) => file.name),
++        mask: form.get("mask"),
++        prompt: String(form.get("prompt")),
++        fidelity: String(form.get("input_fidelity")),
++      });
++      return new Response(JSON.stringify({
++        data: [{ b64_json: canvas.toString("base64") }],
++        usage: { input_tokens: 100, output_tokens: 40, total_tokens: 140, input_tokens_details: { text_tokens: 12, image_tokens: 88 } },
++      }), { status: 200 });
++    }) as typeof fetch;
++    const result = await executeReferenceEdit({
++      jpeg,
++      original: jpeg,
++      styleId: "pixie",
++      tenantId: "reference-tryon",
++      source: "tryon",
++      tool: "reference",
++    });
++    expect(seen).toHaveLength(1);
++    expect(seen[0].model).toBe("gpt-image-1.5");
++    expect(seen[0].quality).toBe("medium");
++    expect(seen[0].fidelity).toBe("high");
++    expect(seen[0].names).toEqual(["selfie.png", "style-reference.jpg"]);
++    expect(seen[0].mask).toBeNull();
++    expect(seen[0].prompt).toContain("Image 1 is the person to edit");
++    expect(seen[0].prompt).toContain("exact crew neckline");
++    expect(seen[0].prompt).not.toMatch(/mask/i);
++    expect(result.ok).toBe(true);
++    if (result.ok) {
++      expect(result.imagePng.equals(canvas)).toBe(true);
++      const row = await prisma.benchmarkRun.findUnique({ where: { id: result.id } });
++      expect(row?.status).toBe("UNVALIDATED");
++      expect(row?.source).toBe("tryon");
++      const validation = JSON.parse(readFileSync(`${row?.dir}/validation.json`, "utf8")) as { accepted: boolean; compositeApplied: boolean; maskSent: boolean };
++      expect(validation.accepted).toBe(false);
++      expect(validation.compositeApplied).toBe(false);
++      expect(validation.maskSent).toBe(false);
++    }
++    process.env.BENCHMARK_QUALITY = "high";
++    let hits = 0;
++    globalThis.fetch = (async () => {
++      hits += 1;
++      return new Response("no", { status: 500 });
++    }) as typeof fetch;
++    const wide = await sharp({ create: { width: 1280, height: 720, channels: 3, background: { r: 20, g: 20, b: 20 } } }).jpeg().toBuffer();
++    const refused = await executeReferenceEdit({
++      jpeg: wide,
++      original: wide,
++      styleId: "pixie",
++      tenantId: "reference-tryon",
++      source: "tryon",
++      tool: "reference",
++    });
++    expect(refused.ok).toBe(false);
++    expect(hits).toBe(0);
++    delete process.env.BENCHMARK_QUALITY;
++    delete process.env.OPENAI_API_KEY;
++    delete process.env.AI_SPEND_CAP_INR;
 +  });
 +});
 diff --git a/tests/unit/tiers.test.ts b/tests/unit/tiers.test.ts

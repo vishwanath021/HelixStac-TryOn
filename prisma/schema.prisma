@@ -379,6 +379,7 @@ model BenchmarkRun {
   clothingWarning  String   @default("")
   callId           String   @default("")
   dir              String
+  source           String   @default("benchmark")
   message          String   @default("")
   createdAt        DateTime @default(now())
 }

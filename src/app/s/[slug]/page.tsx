@@ -1,9 +1,11 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { TryOnApp } from "@/components/tryon/TryOnApp";
+import { showReferenceToggle } from "@/lib/ai/reference-mode";
 import { usingDemoProvider } from "@/lib/env";
 import { verifySalonToken } from "@/lib/preview-access";
 import { loadTenantByHost, loadTenantBySlug, toSalonConfig } from "@/lib/salon";
+import { isSuperSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +33,7 @@ export default async function SalonPage({
       salonToken={salonMode ? query.salon : undefined}
       salonMode={salonMode}
       demoMode={usingDemoProvider()}
+      referenceModeAvailable={showReferenceToggle(await isSuperSession())}
     />
   );
 }

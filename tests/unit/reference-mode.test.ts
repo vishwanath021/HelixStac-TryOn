@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { TryOnApp } from "@/components/tryon/TryOnApp";
 import { STYLES } from "@/data/styles";
 import { prepareBenchmark, quoteBenchmark } from "@/lib/ai/benchmark";
 import { assessClothing, clothingBandDelta } from "@/lib/ai/clothing-check";
@@ -15,7 +18,10 @@ import { captureShouldMirror } from "@/lib/capture";
 import { drawFrontal } from "@/lib/face/synthetic";
 import { runLockedEdit } from "@/lib/face/pipeline";
 import { prisma } from "@/lib/prisma";
+import { referenceModeActive, showReferenceToggle } from "@/lib/ai/reference-mode";
+import { executeReferenceEdit, tryOnReferencePayload, type ReferenceSuccess } from "@/lib/ai/reference-run";
 import { buildReferencePrompt, buildStylePrompt } from "@/lib/prompts";
+import type { SalonConfig } from "@/lib/salon";
 
 describe("reference benchmark request", () => {
   it("plans gpt-image-1.5 with high fidelity, png output, and the selfie before the reference", () => {
@@ -285,5 +291,173 @@ describe("spend and duplicate jobs", () => {
     });
     expect(rejected.ok).toBe(false);
     if (!rejected.ok) expect(rejected.reason).toBe("face-guard");
+  });
+});
+
+const salonConfig = {
+  id: "tenant",
+  slug: "demo-salon",
+  name: "Demo",
+  logoUrl: null,
+  primaryColor: "#241c16",
+  accentColor: "#8a5a44",
+  languages: ["en"],
+  defaultLang: "en",
+  whatsapp: "",
+  address: "",
+  mapsUrl: "",
+  city: "",
+  plan: "starter",
+  status: "ACTIVE",
+  removeBranding: false,
+  creditBalance: 10,
+  showMen: true,
+  showWomen: true,
+  showKids: false,
+  toolColour: false,
+  toolStyle: true,
+  toolBrows: false,
+  toolBeard: false,
+  toolNails: false,
+  anonDailyCap: 3,
+  memberDailyCap: 6,
+  requireLoginToBook: false,
+  services: [],
+  styles: [],
+  brows: [],
+  beards: [],
+  nails: [],
+  shades: [],
+  outlets: [],
+  poweredBy: false,
+} satisfies SalonConfig;
+
+describe("salon reference switch", () => {
+  it("keeps guests off the switch and keeps an unrequested try-on on the production path", () => {
+    delete process.env.TRYON_REFERENCE_MODE;
+    expect(showReferenceToggle(false)).toBe(false);
+    expect(showReferenceToggle(true)).toBe(true);
+    expect(referenceModeActive({ isSuperAdmin: false, requested: true, tool: "style" })).toBe(false);
+    expect(referenceModeActive({ isSuperAdmin: true, requested: false, tool: "style" })).toBe(false);
+    expect(referenceModeActive({ isSuperAdmin: true, requested: true, tool: "beard" })).toBe(false);
+    expect(referenceModeActive({ isSuperAdmin: true, requested: true, tool: "style" })).toBe(true);
+    process.env.TRYON_REFERENCE_MODE = "on";
+    expect(showReferenceToggle(false)).toBe(false);
+    expect(referenceModeActive({ isSuperAdmin: false, requested: false, tool: "style" })).toBe(false);
+    expect(referenceModeActive({ isSuperAdmin: false, requested: true, tool: "style" })).toBe(true);
+    delete process.env.TRYON_REFERENCE_MODE;
+    const hidden = renderToStaticMarkup(createElement(TryOnApp, { config: salonConfig, referenceModeAvailable: false }));
+    const shown = renderToStaticMarkup(createElement(TryOnApp, { config: salonConfig, referenceModeAvailable: true }));
+    expect(hidden).not.toContain("Reference mode");
+    expect(shown).toContain("Reference mode (test)");
+    const page = readFileSync("src/app/s/[slug]/page.tsx", "utf8");
+    const route = readFileSync("src/app/api/v1/tryon/generate/route.ts", "utf8");
+    expect(page).toContain("showReferenceToggle");
+    expect(route.indexOf("return runTryOnReference")).toBeLessThan(route.indexOf("await generateWithFailover"));
+    expect(route).toContain("runTryOnReference");
+  });
+
+  it("hides the actual cost unless the viewer is a super-admin", () => {
+    const run = {
+      ok: true as const,
+      id: "run-1",
+      callId: "call-1",
+      model: "gpt-image-1.5",
+      quality: "medium",
+      size: "1024x1024",
+      estimateInr: 16.9,
+      estimateUsd: 0.163,
+      actualInr: 14.3,
+      actualUsd: 0.149,
+      latencyMs: 21200,
+      usage: { inputTokens: 11180, outputTokens: 1899, imageTokens: 10885, textTokens: 295 },
+      clothingWarning: "",
+      imagePng: Buffer.from("png"),
+      message: "Unvalidated model output.",
+    } satisfies ReferenceSuccess;
+    const guest = tryOnReferencePayload(run, false);
+    expect(guest.showCost).toBe(false);
+    expect(guest.accepted).toBe(false);
+    expect(guest).not.toHaveProperty("rupees");
+    expect(guest).not.toHaveProperty("actualRupees");
+    expect(guest).not.toHaveProperty("usage");
+    const admin = tryOnReferencePayload(run, true);
+    expect(admin.showCost).toBe(true);
+    expect(admin.rupees).toBe(16.9);
+    expect(admin.actualRupees).toBe(14.3);
+    expect(admin.label).toBe("Experimental, unvalidated");
+  });
+
+  it("sends the selfie before the reference when the switch is on, and does not call when the quote is over the run cap", async () => {
+    process.env.OPENAI_API_KEY = "unit-test-key";
+    process.env.AI_SPEND_CAP_INR = "500";
+    await prisma.aiCall.deleteMany();
+    const jpeg = await sharp({ create: { width: 480, height: 640, channels: 3, background: { r: 180, g: 140, b: 120 } } }).jpeg().toBuffer();
+    const canvas = await sharp({ create: { width: 1024, height: 1536, channels: 3, background: { r: 180, g: 140, b: 120 } } }).png().toBuffer();
+    const seen: { model: string; quality: string; names: string[]; mask: FormDataEntryValue | null; prompt: string; fidelity: string }[] = [];
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      const form = init?.body as FormData;
+      const files = form.getAll("image[]") as File[];
+      seen.push({
+        model: String(form.get("model")),
+        quality: String(form.get("quality")),
+        names: files.map((file) => file.name),
+        mask: form.get("mask"),
+        prompt: String(form.get("prompt")),
+        fidelity: String(form.get("input_fidelity")),
+      });
+      return new Response(JSON.stringify({
+        data: [{ b64_json: canvas.toString("base64") }],
+        usage: { input_tokens: 100, output_tokens: 40, total_tokens: 140, input_tokens_details: { text_tokens: 12, image_tokens: 88 } },
+      }), { status: 200 });
+    }) as typeof fetch;
+    const result = await executeReferenceEdit({
+      jpeg,
+      original: jpeg,
+      styleId: "pixie",
+      tenantId: "reference-tryon",
+      source: "tryon",
+      tool: "reference",
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].model).toBe("gpt-image-1.5");
+    expect(seen[0].quality).toBe("medium");
+    expect(seen[0].fidelity).toBe("high");
+    expect(seen[0].names).toEqual(["selfie.png", "style-reference.jpg"]);
+    expect(seen[0].mask).toBeNull();
+    expect(seen[0].prompt).toContain("Image 1 is the person to edit");
+    expect(seen[0].prompt).toContain("exact crew neckline");
+    expect(seen[0].prompt).not.toMatch(/mask/i);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.imagePng.equals(canvas)).toBe(true);
+      const row = await prisma.benchmarkRun.findUnique({ where: { id: result.id } });
+      expect(row?.status).toBe("UNVALIDATED");
+      expect(row?.source).toBe("tryon");
+      const validation = JSON.parse(readFileSync(`${row?.dir}/validation.json`, "utf8")) as { accepted: boolean; compositeApplied: boolean; maskSent: boolean };
+      expect(validation.accepted).toBe(false);
+      expect(validation.compositeApplied).toBe(false);
+      expect(validation.maskSent).toBe(false);
+    }
+    process.env.BENCHMARK_QUALITY = "high";
+    let hits = 0;
+    globalThis.fetch = (async () => {
+      hits += 1;
+      return new Response("no", { status: 500 });
+    }) as typeof fetch;
+    const wide = await sharp({ create: { width: 1280, height: 720, channels: 3, background: { r: 20, g: 20, b: 20 } } }).jpeg().toBuffer();
+    const refused = await executeReferenceEdit({
+      jpeg: wide,
+      original: wide,
+      styleId: "pixie",
+      tenantId: "reference-tryon",
+      source: "tryon",
+      tool: "reference",
+    });
+    expect(refused.ok).toBe(false);
+    expect(hits).toBe(0);
+    delete process.env.BENCHMARK_QUALITY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.AI_SPEND_CAP_INR;
   });
 });

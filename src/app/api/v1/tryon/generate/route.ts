@@ -6,6 +6,8 @@ import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
 import { shadeById } from "@/data/shades";
 import { resolveProviderChoice } from "@/lib/ai/credentials";
 import { claimGenerationJob, completeGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
+import { referenceModeActive } from "@/lib/ai/reference-mode";
+import { runTryOnReference } from "@/lib/ai/reference-run";
 import { salonOutcome, guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { generateWithFailover, selectProvider } from "@/lib/ai/router";
 import { readTierFlags } from "@/lib/ai/settings-store";
@@ -26,6 +28,7 @@ import { browById } from "@/data/brows";
 import { nailById } from "@/data/nails";
 import { styleById } from "@/data/styles";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
+import { isSuperSession } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -114,9 +117,10 @@ export async function POST(req: Request) {
     }
   }
 
+  const original = Buffer.from(await photo.arrayBuffer());
   let jpeg: Buffer;
   try {
-    jpeg = await sanitizeSelfie(Buffer.from(await photo.arrayBuffer()));
+    jpeg = await sanitizeSelfie(original);
   } catch (error) {
     const code = error instanceof ImageError ? error.code : "DECODE";
     return NextResponse.json({ error: code, message: "Use a JPEG, PNG, or WebP selfie under 2 MB." }, { status: 400 });
@@ -129,24 +133,54 @@ export async function POST(req: Request) {
     }
   }
 
+  const wantReference = referenceModeActive({
+    isSuperAdmin: await isSuperSession(),
+    requested: String(form.get("referenceMode") || "") === "yes",
+    tool,
+  });
+  if (wantReference && String(form.get("confirm") || "") !== "yes") {
+    return NextResponse.json({ error: "CONFIRM", message: "Confirm the estimated cost before this paid call." }, { status: 400 });
+  }
+
   const requestId = String(form.get("requestId") || "");
   let jobId = "";
   if (requestId) {
     const claim = await claimGenerationJob({
       tenantId: tenant.id,
       requestId,
-      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: shadeId || "", mode: "production" }),
+      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: wantReference ? "" : shadeId || "", mode: wantReference ? "reference" : "production" }),
     });
     if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
     if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
     if (claim.kind === "repeat") return NextResponse.json({ error: "REPEAT", message: claim.message }, { status: claim.status });
     if (claim.kind === "replay") {
+      if (claim.demoReason === "reference") {
+        return new NextResponse(new Uint8Array(claim.image), {
+          status: 200,
+          headers: { "content-type": "application/json", "cache-control": "no-store" },
+        });
+      }
       return new NextResponse(new Uint8Array(claim.image), {
         status: 200,
         headers: guestPreviewHeaders({ tryOnId: "replay", creditsLeft: tenant.creditBalance, demoReason: claim.demoReason }),
       });
     }
     jobId = claim.id;
+  }
+
+  if (wantReference) {
+    return runTryOnReference({
+      jpeg,
+      original,
+      styleId,
+      tenantId: tenant.id,
+      sessionId,
+      tier,
+      actorKey,
+      jobId,
+      requestId,
+      revealCost: await isSuperSession(),
+    });
   }
 
   const shade = tool === "style" ? shadeById(shadeId) : null;

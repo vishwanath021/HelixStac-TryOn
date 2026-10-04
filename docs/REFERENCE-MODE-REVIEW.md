@@ -174,7 +174,7 @@ No OpenAI or Gemini request was made.
 
 `npx tsc --noEmit` — exit 0, run again as part of `npm run build`.
 
-`npx vitest run tests/unit/reference-mode.test.ts tests/unit/tiers.test.ts tests/unit/masks.test.ts tests/unit/product.test.ts tests/unit/credits.test.ts` — 5 files, 63 tests passed. This run includes the length-category assertions and the dedupe status map.
+`npx vitest run tests/unit/reference-mode.test.ts tests/unit/tiers.test.ts tests/unit/masks.test.ts tests/unit/product.test.ts tests/unit/credits.test.ts` — 5 files, 67 tests passed. This run includes the salon reference switch: guests do not see it, an unrequested try-on stays on the production path, and an authorized reference edit sends the selfie before the style image with no mask.
 
 `npm run benchmark:quote` — the three rows in the cost table. “No provider call was made.”
 
@@ -212,6 +212,18 @@ Implemented and checked offline: the request builder, reference lookup, prompt r
 
 The first paid pixie run showed a usable haircut with the face and background kept, and it also changed a crew neck into a shallow V. The prompt now tells the model to keep neckline, collar, sleeves, garment colour, and straps, including the exact crew neckline of a t-shirt. That sentence has not been tried on a second paid image. The six-row sheet `docs/benchmark-score-sheet.csv` is still empty.
 
+## Salon try-on switch
+
+The separate `/super/ai` form is still there. A signed-in super-admin can also run the same edit from `/s/demo-salon` on the hairstyle tab.
+
+The switch is rendered only when `showReferenceToggle` is true, which is only a super-admin session. Guests do not get the control. `TRYON_REFERENCE_MODE` is unset by default. Setting it to `on` does not show the switch and does not change a generate that does not ask for reference mode. On a private machine it can authorize an explicit `referenceMode=yes` request that has no super-admin session. Leave it unset anywhere a guest can reach the server.
+
+With the switch off, the style button uses the production path: heuristic mask, production tier, and the face composite. With the switch on, choosing a style loads a quote and does not call the provider. The paid click is **Try this hairstyle**, after the estimate is visible and the confirmation box is ticked. That request is hairstyles only. Beard, nails, and brows ignore the flag.
+
+A local browser check, with no provider call: an anonymous `/s/demo-salon` page did not contain the switch. Signed in as the super-admin, the switch was visible. A synthetic 480×640 JPEG, privacy ticked, switch on, and Pixie selected quoted `gpt-image-1.5`, quality medium, size `1024x1536`, about ₹17.00 ($0.164). **Try this hairstyle** stayed disabled until the confirmation box was ticked, then became enabled, and was not clicked. `/super/ai` still showed Reference benchmark. An anonymous quote request returned 403.
+
+The generate route then uses the same reference edit as the benchmark: `gpt-image-1.5`, quality medium, `input_fidelity=high`, png, selfie then the style reference, no mask, no face paste, one call. It still claims the request id, reserves through `beginPaidCall` (the ₹500 ledger cap), and refuses when the ₹30 run cap is below the full estimate. A timeout stays an unknown bill and is not sent again. Salon preview credits are not consumed, and the try-on row is `UNVALIDATED`, so it does not count as a successful guest preview. Stages are written under `var/benchmarks` with the same 72-hour retention and **Delete now**. The raw provider image is shown beside the original with the label Experimental, unvalidated. `accepted` stays false. Actual cost, usage, and latency are included in the JSON only when the caller is a super-admin.
+
 ## How to run a controlled paid test locally
 
 ```bash
@@ -225,9 +237,9 @@ npm run dev
 1. Open http://localhost:3000/login and sign in as `super@helixstac.app` / `SuperAdmin#2026`.
 2. Open http://localhost:3000/super/ai. If the platform provider is not already OpenAI, paste the key there. Do not put the key in git.
 3. Optional, no charge: `npm run benchmark:quote`.
-4. In Reference benchmark, pick a hairstyle, choose a selfie from this computer, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick the confirmation, and press **Run benchmark**. The note on the form says family photos are personal data and are sent only to OpenAI.
-5. Open the result link. The left image is the sanitized selfie. The right image is `provider-response.png`, labelled UNVALIDATED. The page shows usage, latency, the estimate, and the actual cost from provider usage. `validation.json` stays `accepted: false`. A neckline shift is `clothing_changed`.
-6. Press **Delete now** when you are finished, or leave the files for the 72-hour retention. Do not commit the photos.
+4. Open http://localhost:3000/s/demo-salon. On Hairstyle, turn on **Reference mode (test)**. Upload or take a selfie, pick a style, read the estimate (about ₹17 for a 1536-wide or tall canvas), tick **I understand this makes one paid OpenAI call and does not retry**, and press **Try this hairstyle**.
+5. The page shows the original beside the raw result, labelled Experimental, unvalidated, plus usage, latency, and the actual cost. A neckline shift shows a clothing warning. **Delete now** removes that run, or leave the files for 72 hours. Do not commit the photos.
+6. The benchmark form still works: on `/super/ai`, pick a hairstyle, choose a selfie, tick the confirmation, and press **Run benchmark**. Open the result link. The right image is `provider-response.png`, labelled UNVALIDATED. `validation.json` stays `accepted: false`.
 
 `BENCHMARK_INPUT_SIZE=1024` in `.env`, then restart `npm run dev`, if you want a second run on a smaller canvas to compare cost. Leave it unset for the same 1536-class request as the first pixie run.
 

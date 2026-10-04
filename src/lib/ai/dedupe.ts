@@ -74,9 +74,10 @@ export async function claimGenerationJob(args: { tenantId: string; requestId: st
 
 function repeatStatus(outcome: string) {
   if (outcome === "placement") return 422;
-  if (outcome === "credits") return 402;
+  if (outcome === "credits" || outcome === "spend-cap") return 402;
   if (outcome === "suspended") return 403;
   if (outcome === "uncertain") return 504;
+  if (outcome === "quote" || outcome === "key" || outcome === "confirm") return 400;
   return 502;
 }
 
@@ -119,10 +120,10 @@ async function resolveExisting(existing: {
   };
 }
 
-export async function completeGenerationJob(id: string, args: { tenantId: string; requestId: string; image: Buffer; demoReason?: string; callId?: string }) {
+export async function completeGenerationJob(id: string, args: { tenantId: string; requestId: string; image: Buffer; demoReason?: string; callId?: string; fileName?: "result.jpg" | "result.json" }) {
   const dir = jobDir(args.tenantId, args.requestId);
   await mkdir(dir, { recursive: true });
-  const file = path.join(dir, "result.jpg");
+  const file = path.join(dir, args.fileName || "result.jpg");
   await writeFile(file, args.image);
   await prisma.generationJob.update({
     where: { id },

@@ -28,6 +28,11 @@ export async function requireOwner() {
   return result;
 }
 
+export async function isSuperSession() {
+  const session = await auth();
+  return Boolean(session?.user?.isSuperAdmin);
+}
+
 export async function requireSuper() {
   const session = await auth();
   if (!session?.user?.isSuperAdmin) {

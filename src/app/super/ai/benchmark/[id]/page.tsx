@@ -24,7 +24,7 @@ export default async function BenchmarkReviewPage({ params }: { params: Promise<
       <p className="text-xs uppercase tracking-[0.16em] text-muted">Super admin</p>
       <h1 className="font-serif text-4xl">Unvalidated model output</h1>
       <p className="mt-2 text-sm leading-6">
-        Hairstyle benchmark for {run.styleId}. Model {run.model}, quality {run.quality}, size {run.size}. Status {run.status}.
+        Hairstyle benchmark for {run.styleId}. Model {run.model}, quality {run.quality}, size {run.size}. Status {run.status}. Source {run.source === "tryon" ? "salon try-on" : "benchmark form"}.
         The right-hand photograph is the raw provider body, before any crop. Nothing here was accepted as a finished haircut.
       </p>
       <p className="mt-3 rounded-xl border border-line bg-white p-3 text-sm leading-6">

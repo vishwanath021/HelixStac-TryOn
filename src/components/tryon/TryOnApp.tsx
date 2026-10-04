@@ -20,6 +20,11 @@ type Look = {
   serviceKeys: string[];
   tool: "style" | "brows" | "beard" | "nails";
   demo?: boolean;
+  unvalidated?: boolean;
+  referenceId?: string;
+  showCost?: boolean;
+  detail?: string;
+  clothingWarning?: string;
 };
 
 type TryTool = "colour" | "style" | "brows" | "beard" | "nails";
@@ -55,6 +60,7 @@ export function TryOnApp({
   salonToken,
   salonMode = false,
   demoMode = false,
+  referenceModeAvailable = false,
 }: {
   config: SalonConfig;
   embed?: boolean;
@@ -64,6 +70,7 @@ export function TryOnApp({
   salonToken?: string;
   salonMode?: boolean;
   demoMode?: boolean;
+  referenceModeAvailable?: boolean;
 }) {
   const lang = config.defaultLang || "en";
   const [sid, setSid] = useState("");
@@ -82,6 +89,10 @@ export function TryOnApp({
   const [styleId, setStyleId] = useState("");
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
   const [busy, setBusy] = useState(false);
+  const [referenceMode, setReferenceMode] = useState(false);
+  const [referenceAck, setReferenceAck] = useState(false);
+  const [referenceQuote, setReferenceQuote] = useState<{ model: string; quality: string; size: string; rupees: number; dollars: number; note: string } | null>(null);
+  const [referenceChoice, setReferenceChoice] = useState<{ id: string; name: string; serviceKeys: string[]; tool: Look["tool"] } | null>(null);
   const previewLock = useRef(false);
   const [progress, setProgress] = useState(0);
   const [pendingName, setPendingName] = useState("");
@@ -322,9 +333,75 @@ export function TryOnApp({
     await applyBlob(blob);
   }
 
-  async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }) {
+  async function stageReference(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }) {
+    setStyleId(chosen.id);
+    setTool("style");
+    if (!faceShot) {
+      setError(t(lang, "addPhotoFirst"));
+      frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    const consent = consentRef.current || (await consenting.current) || "";
+    if (!consent) {
+      setError(t(lang, "privacyTick"));
+      return;
+    }
+    consentRef.current = consent;
+    setReferenceAck(false);
+    setReferenceChoice(chosen);
+    setError("");
+    setBusy(true);
+    try {
+      const width = faceShot.el.naturalWidth || 0;
+      const height = faceShot.el.naturalHeight || 0;
+      const res = await fetch(`/api/v1/tryon/reference-quote?width=${width}&height=${height}&styleId=${encodeURIComponent(chosen.id)}`);
+      const data = await res.json().catch(() => ({ message: "This reference try-on could not be quoted." }));
+      if (!res.ok) {
+        setReferenceQuote(null);
+        setError(data.message || "This reference try-on could not be quoted.");
+        return;
+      }
+      setReferenceQuote({
+        model: String(data.model || ""),
+        quality: String(data.quality || ""),
+        size: String(data.size || ""),
+        rupees: Number(data.rupees || 0),
+        dollars: Number(data.dollars || 0),
+        note: String(data.note || ""),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function pngUrl(value: string) {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+  }
+
+  async function deleteReferenceRun() {
+    if (!active?.referenceId) return;
+    if (!window.confirm("Delete this reference run and its photos now?")) return;
+    const res = await fetch(`/api/v1/super/ai/benchmark/${active.referenceId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ message: "Could not delete that run." }));
+      setError(data.message || "Could not delete that run.");
+      return;
+    }
+    setActive(null);
+    setStylePhase("pick");
+    setReferenceAck(false);
+  }
+
+  async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }, referenceConfirm = false) {
     setStyleId(chosen.id);
     setTool(chosen.tool);
+    if (referenceModeAvailable && referenceMode && chosen.tool === "style" && !referenceConfirm) {
+      await stageReference(chosen);
+      return;
+    }
     const shot = chosen.tool === "nails" ? handShot : faceShot;
     if (!shot) {
       setError(t(lang, chosen.tool === "nails" ? "uploadHand" : "addPhotoFirst"));
@@ -353,7 +430,12 @@ export function TryOnApp({
       body.set("consentId", consent);
       body.set("sessionId", sid || sessionId());
       body.set("requestId", crypto.randomUUID());
-      if (chosen.tool === "style" && shadeId) body.set("shadeId", shadeId);
+      if (referenceConfirm) {
+        body.set("referenceMode", "yes");
+        body.set("confirm", "yes");
+      } else if (chosen.tool === "style" && shadeId) {
+        body.set("shadeId", shadeId);
+      }
       if (salonToken) body.set("salonToken", salonToken);
       const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
       if (!res.ok) {
@@ -361,6 +443,43 @@ export function TryOnApp({
         setProgress(0);
         setError(data.message || t(lang, "creditsEmpty"));
         track("generate_failed", { styleId: chosen.id });
+        return;
+      }
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("json")) {
+        const data = await res.json();
+        if (!data.imageBase64) {
+          setError(data.message || t(lang, "creditsEmpty"));
+          return;
+        }
+        const usage = data.usage as { inputTokens?: number; outputTokens?: number; imageTokens?: number; textTokens?: number } | null;
+        const detail = data.showCost
+          ? [
+              `Quoted ₹${Number(data.rupees || 0).toFixed(2)}. Actual $${Number(data.actualDollars || 0).toFixed(3)} (₹${Number(data.actualRupees || 0).toFixed(2)}).`,
+              data.latencyMs ? `Latency ${(Number(data.latencyMs) / 1000).toFixed(1)} s.` : "",
+              usage ? `Usage input ${usage.inputTokens || 0} (image ${usage.imageTokens || 0}, text ${usage.textTokens || 0}), output ${usage.outputTokens || 0}.` : "",
+            ].filter(Boolean).join(" ")
+          : "";
+        setNotice("");
+        setActive({
+          id: data.id || crypto.randomUUID(),
+          styleId: chosen.id,
+          styleName: chosen.name,
+          shadeName: null,
+          before: shot.url,
+          after: pngUrl(String(data.imageBase64)),
+          serviceKeys: chosen.serviceKeys,
+          tool: chosen.tool,
+          unvalidated: true,
+          referenceId: data.id,
+          showCost: Boolean(data.showCost),
+          detail,
+          clothingWarning: data.clothingWarning || "",
+        });
+        setReferenceAck(false);
+        setProgress(100);
+        setStylePhase("result");
+        frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
       const out = await res.blob();
@@ -484,7 +603,21 @@ export function TryOnApp({
       </div>
 
       <section ref={frameRef} className="mt-4 overflow-hidden rounded-[28px] bg-[#14110e] shadow-lg" aria-label="Photo">
-        {showResult && active ? (
+        {showResult && active?.unvalidated ? (
+          <div className="p-3">
+            <p className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-white">Experimental, unvalidated</p>
+            <div className="grid grid-cols-2 gap-2">
+              <figure>
+                <figcaption className="mb-1 text-center text-[11px] text-white">Original</figcaption>
+                <img src={active.before} alt="Original selfie" className="max-h-80 w-full object-contain" />
+              </figure>
+              <figure>
+                <figcaption className="mb-1 text-center text-[11px] text-white">Experimental, unvalidated</figcaption>
+                <img src={active.after} alt="Experimental, unvalidated result" className="max-h-80 w-full object-contain" />
+              </figure>
+            </div>
+          </div>
+        ) : showResult && active ? (
           <div>
             <BeforeAfter before={active.before} after={active.after} beforeLabel={t(lang, "before")} afterLabel={t(lang, "after")} />
             {active.demo && <p className="bg-[#241c16] px-4 py-3 text-center text-sm leading-6 text-white" role="status">{t(lang, active.tool === "nails" ? "demoNailBanner" : "demoStyleBanner")}</p>}
@@ -579,6 +712,20 @@ export function TryOnApp({
       {showResult && active && (
         <div className="mt-4 grid gap-2">
           <h3 className="text-center font-serif text-2xl">{active.styleName}</h3>
+          {active.unvalidated && (
+            <div className="rounded-xl border border-line bg-white p-3 text-sm leading-6">
+              <p>Experimental, unvalidated. This is the raw provider image. The original face was not pasted back, and this frame was not accepted.</p>
+              {active.clothingWarning === "clothing_changed" && <p className="mt-2">Warning: the neckline or shoulder band changed.</p>}
+              {active.showCost && active.detail && <p className="mt-2">{active.detail}</p>}
+              {active.showCost && active.referenceId && (
+                <p className="mt-2 flex flex-wrap gap-3">
+                  <a className="underline" href={`/super/ai/benchmark/${active.referenceId}`}>Open saved stages</a>
+                  <button className="underline" type="button" onClick={() => void deleteReferenceRun()}>Delete now</button>
+                </p>
+              )}
+              <p className="mt-2 text-muted">Photos stay on this server for 72 hours. Real family photos are personal data and are sent only to OpenAI.</p>
+            </div>
+          )}
           <p className="text-center text-sm text-muted">{t(lang, active.tool === "brows" ? "browDisclaimer" : active.tool === "beard" ? "beardDisclaimer" : active.tool === "nails" ? "nailDisclaimer" : "disclaimer")}</p>
           <button className="btn" type="button" onClick={() => void downloadLook()}>{t(lang, "downloadLook")}</button>
           <button className="btn" type="button" onClick={() => void book()}>{t(lang, "bookLook")}</button>
@@ -589,6 +736,43 @@ export function TryOnApp({
       <section ref={gridRef} className="mt-6" aria-label={tool === "style" ? t(lang, "styles") : tool === "colour" ? t(lang, "shades") : tool === "brows" ? t(lang, "brows") : tool === "beard" ? t(lang, "beards") : t(lang, "nails")}>
         {tool === "style" && (
           <>
+            {referenceModeAvailable && (
+              <div className="mb-3 rounded-2xl border border-line bg-white p-3 text-sm leading-6">
+                <label className="flex items-start gap-2 font-medium">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={referenceMode}
+                    onChange={(event) => {
+                      setReferenceMode(event.target.checked);
+                      setReferenceAck(false);
+                      setReferenceQuote(null);
+                      setReferenceChoice(null);
+                    }}
+                  />
+                  <span>Reference mode (test)</span>
+                </label>
+                <p className="mt-2 text-muted">
+                  Shown only on this super-admin session. Off, a hairstyle uses the normal preview. On, it sends your selfie and then the style photo, with no mask and no pasted face.
+                  Real family photos are personal data and are sent only to OpenAI. Files stay on this server for 72 hours.
+                </p>
+                {referenceMode && referenceQuote && referenceChoice && (
+                  <div className="mt-3 border-t border-line pt-3">
+                    <p>
+                      {referenceChoice.name}. {referenceQuote.model}, quality {referenceQuote.quality}, size {referenceQuote.size}. About ₹{referenceQuote.rupees.toFixed(2)} (${referenceQuote.dollars.toFixed(3)}).
+                    </p>
+                    <p className="mt-1 text-muted">{referenceQuote.note}</p>
+                    <label className="mt-2 flex items-start gap-2">
+                      <input type="checkbox" className="mt-1" checked={referenceAck} onChange={(event) => setReferenceAck(event.target.checked)} />
+                      <span>I understand this makes one paid OpenAI call and does not retry.</span>
+                    </label>
+                    <button className="btn mt-3" type="button" disabled={busy || !referenceAck} onClick={() => void preview(referenceChoice, true)}>
+                      Try this hairstyle
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="mb-3 inline-flex flex-wrap gap-1 rounded-full bg-[#241c16] p-1" role="group" aria-label="Style audience">
               {config.showWomen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "women" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "women"} onClick={() => chooseGender("women")}>{t(lang, "women")}</button>}
               {config.showMen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "men" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
