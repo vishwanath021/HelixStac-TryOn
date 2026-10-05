@@ -413,6 +413,37 @@ export function TryOnApp({
     setReferenceAck(false);
   }
 
+  function resetForAnotherPhoto() {
+    const blobs = new Set<string>();
+    const remember = (url?: string) => {
+      if (url?.startsWith("blob:")) blobs.add(url);
+    };
+    remember(faceShot?.url);
+    remember(handShot?.url);
+    for (const look of [active, ...comparisons]) {
+      if (!look) continue;
+      remember(look.before);
+      remember(look.after);
+      remember(look.composite);
+    }
+    for (const url of blobs) URL.revokeObjectURL(url);
+    setFaceShot(null);
+    setHandShot(null);
+    setActive(null);
+    setComparisons([]);
+    setStylePhase("pick");
+    setStyleId("");
+    setReferenceAck(false);
+    setReferenceQuote(null);
+    setReferenceChoice(null);
+    setError("");
+    setNotice("");
+    setPendingName("");
+    setProgress(0);
+    stopCamera();
+    frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }, referenceConfirm = false) {
     setStyleId(chosen.id);
     setTool(chosen.tool);
@@ -790,7 +821,7 @@ export function TryOnApp({
           <p className="text-center text-sm text-muted">{t(lang, active.tool === "brows" ? "browDisclaimer" : active.tool === "beard" ? "beardDisclaimer" : active.tool === "nails" ? "nailDisclaimer" : "disclaimer")}</p>
           <button className="btn" type="button" onClick={() => void downloadLook()}>{t(lang, "downloadLook")}</button>
           <button className="btn" type="button" onClick={() => void book()}>{t(lang, "bookLook")}</button>
-          <button className="btn secondary" type="button" onClick={() => gridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>{t(lang, "tryAnotherShort")}</button>
+          <button className="btn secondary" type="button" onClick={() => resetForAnotherPhoto()}>{t(lang, "tryAnotherShort")}</button>
         </div>
       )}
 

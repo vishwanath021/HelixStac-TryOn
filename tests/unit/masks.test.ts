@@ -8,7 +8,8 @@ import { NAILS } from "@/data/nails";
 import { CALIBRATION_CAP_INR, CALIBRATION_MAX_IMAGES, runCalibration } from "@/lib/ai/calibrate";
 import { paintFlat } from "@/lib/ai/flat-edit";
 import { cropRgb, padImageAndMask, padRgb } from "@/lib/ai/square";
-import { finalizePaidCall, releasePaidCall, beginPaidCall } from "@/lib/ai/spend";
+import { finalizePaidCall, releasePaidCall, beginPaidCall, spendSummary } from "@/lib/ai/spend";
+import { costUsdFromUsage, exactInr } from "@/lib/ai/tiers";
 import { writeOverlays } from "@/lib/face/fixtures";
 import { outsideMaskDelta, runLockedEdit, saveRawProviderImage } from "@/lib/face/pipeline";
 import { analyzeRegion, compositeLocked, decodeRgb, maskPng, preflightPhoto, type FaceBox, type RegionTool } from "@/lib/face/region";
@@ -523,6 +524,61 @@ describe("calibration budget", () => {
     expect(row?.billed).toBe(true);
     const second = await beginPaidCall({ provider: "openai", quality: "test", model: "gpt-image-1-mini", tenantId: "face-guard", estimateInr: 0.6 });
     expect(second.ok).toBe(false);
+    delete process.env.AI_SPEND_CAP_INR;
+  });
+
+  it("settles a successful call to actual usage and keeps the estimate when the bill is unknown", async () => {
+    process.env.AI_SPEND_CAP_INR = "40";
+    await prisma.aiCall.deleteMany();
+    const usage = { textTokens: 100, imageTokens: 1000, outputTokens: 800, inputTokens: 1100, totalTokens: 1900 };
+    const actualUsd = costUsdFromUsage("gpt-image-2.5-sunburst", usage);
+    expect(actualUsd).not.toBeNull();
+    const actualInr = exactInr(actualUsd || 0);
+    const success = await beginPaidCall({
+      provider: "openai",
+      quality: "edit",
+      model: "gpt-image-2.5-sunburst",
+      tenantId: "settle-actual",
+      estimateInr: 16.6,
+      estimateUsd: 0.16,
+    });
+    expect(success.ok).toBe(true);
+    if (!success.ok) return;
+    await finalizePaidCall(success.id, {
+      model: "gpt-image-2.5-sunburst",
+      billed: true,
+      charged: true,
+      costUsd: 0.16,
+      estimateInr: 16.6,
+      usage,
+    });
+    const settled = await prisma.aiCall.findFirst({ where: { id: success.id } });
+    expect(settled?.costSource).toBe("usage");
+    expect(settled?.estimatePaise).toBe(Math.round(actualInr * 100));
+    expect(settled?.estimatePaise).toBeLessThan(1660);
+    const unknown = await beginPaidCall({
+      provider: "openai",
+      quality: "edit",
+      model: "gpt-image-2.5-sunburst",
+      tenantId: "settle-unknown",
+      estimateInr: 16.6,
+      estimateUsd: 0.16,
+    });
+    expect(unknown.ok).toBe(true);
+    if (!unknown.ok) return;
+    await finalizePaidCall(unknown.id, {
+      model: "gpt-image-2.5-sunburst",
+      billed: true,
+      charged: true,
+      costUsd: 0.16,
+      estimateInr: 16.6,
+    });
+    await releasePaidCall(unknown.id, "UNCERTAIN");
+    const held = await prisma.aiCall.findFirst({ where: { id: unknown.id } });
+    expect(held?.status).toBe("UNCERTAIN");
+    expect(held?.estimatePaise).toBe(1660);
+    const summary = await spendSummary();
+    expect(summary.spentInr).toBeCloseTo(actualInr + 16.6, 2);
     delete process.env.AI_SPEND_CAP_INR;
   });
 });

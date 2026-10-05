@@ -70,11 +70,13 @@ export async function finalizePaidCall(
   const usd = !args.billed ? 0 : fromUsage ?? args.costUsd;
   const inr = !args.billed ? 0 : fromUsage != null ? exactInr(fromUsage) : (args.estimateInr ?? exactInr(args.costUsd));
   const source = fromUsage != null ? "usage" : "estimate";
+  const settledPaise = fromUsage != null && args.charged ? Math.round(inr * 100) : null;
   await prisma.aiCall.updateMany({
     where: { id },
     data: {
       billed: args.billed,
       charged: args.charged,
+      ...(settledPaise != null ? { estimatePaise: settledPaise } : {}),
       costUsdMicros: Math.round(usd * 1_000_000),
       costInrPaise: Math.round(inr * 100),
       costSource: source,
@@ -106,7 +108,7 @@ export async function spendSummary() {
     }),
   ]);
   return {
-    /** Cap basis. Reserved estimates, including billed failures and uncertain timeouts. */
+    /** Cap basis. The reserved estimate, replaced by actual usage once that cost is known. An unknown bill stays on the estimate. */
     spentInr: (reserved._sum.estimatePaise || 0) / 100,
     /** Provider-reported usage converted at FX, with no 1.08 buffer. Unknown until a usage payload exists. */
     actualInr: (actual._sum.costInrPaise || 0) / 100,
