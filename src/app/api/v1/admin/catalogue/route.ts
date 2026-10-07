@@ -3,11 +3,21 @@ import { z } from "zod";
 import { planById } from "@/data/plans";
 import { SHADES } from "@/data/shades";
 import { STYLES } from "@/data/styles";
+import { suitabilityJsonFor } from "@/lib/hair-suitability";
 import { prisma } from "@/lib/prisma";
 import { requireMembership } from "@/lib/session";
 
 const schema = z.object({
-  styles: z.array(z.object({ styleId: z.string(), enabled: z.boolean(), customName: z.string().max(80).optional().nullable() })),
+  styles: z.array(z.object({
+    styleId: z.string(),
+    enabled: z.boolean(),
+    customName: z.string().max(80).optional().nullable(),
+    suitability: z.object({
+      density: z.array(z.enum(["thin", "medium", "thick"])).min(1).max(3),
+      texture: z.array(z.enum(["straight", "wavy", "curly"])).min(1).max(3),
+      faceShapes: z.array(z.enum(["oval", "round", "square", "heart", "oblong", "diamond"])).max(6).optional(),
+    }).optional(),
+  })),
   shades: z.array(z.object({ shadeId: z.string(), enabled: z.boolean() })),
 });
 
@@ -26,10 +36,21 @@ export async function PUT(req: Request) {
   }
   for (const style of parsed.data.styles) {
     if (!knownStyles.has(style.styleId)) continue;
+    const suitabilityJson = style.suitability ? suitabilityJsonFor(style.styleId, style.suitability) : undefined;
     await prisma.tenantStyle.upsert({
       where: { tenantId_styleId: { tenantId: access.tenant.id, styleId: style.styleId } },
-      update: { enabled: style.enabled, customName: style.customName || null },
-      create: { tenantId: access.tenant.id, styleId: style.styleId, enabled: style.enabled, customName: style.customName || null },
+      update: {
+        enabled: style.enabled,
+        customName: style.customName || null,
+        ...(suitabilityJson !== undefined ? { suitabilityJson } : {}),
+      },
+      create: {
+        tenantId: access.tenant.id,
+        styleId: style.styleId,
+        enabled: style.enabled,
+        customName: style.customName || null,
+        suitabilityJson: suitabilityJson || "",
+      },
     });
   }
   for (const shade of parsed.data.shades) {

@@ -21,6 +21,9 @@ export function SettingsForm({
     toolBrows: boolean;
     toolBeard: boolean;
     toolNails: boolean;
+    hairPickerOn: boolean;
+    hairSuggestOn: boolean;
+    hairSuggestUsesCredits: boolean;
     anonDailyCap: number;
     memberDailyCap: number;
     requireLoginToBook: boolean;
@@ -90,6 +93,13 @@ export function SettingsForm({
           <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolBrows} onChange={(event) => set("toolBrows", event.target.checked)} /> Eyebrow mapping</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolBeard} onChange={(event) => set("toolBeard", event.target.checked)} /> Beard try-on</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolNails} onChange={(event) => set("toolNails", event.target.checked)} /> Nail try-on</label>
+        </fieldset>
+        <fieldset className="grid gap-2 text-sm">
+          <legend className="font-medium">Hair suggestions</legend>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.hairPickerOn} onChange={(event) => set("hairPickerOn", event.target.checked)} /> Hair-type picker. Free, on by default. Density and texture chips filter the style photos.</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.hairSuggestOn} onChange={(event) => set("hairSuggestOn", event.target.checked)} /> Get AI suggestions. Paid, off by default. One vision reading of the selfie, then style photos from this menu.</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.hairSuggestUsesCredits} onChange={(event) => set("hairSuggestUsesCredits", event.target.checked)} /> Charge 1 salon credit for each new suggestion. Repeat clicks on the same photo stay free.</label>
+          <p className="text-xs text-muted">Suitable density, texture, and face shape are edited on Styles. The reading uses the platform OpenAI key. SUGGEST_MODEL chooses the vision model. The default is gpt-4.1-nano.</p>
         </fieldset>
         <div className="grid grid-cols-2 gap-3">
           <label className="text-sm">Anonymous daily previews

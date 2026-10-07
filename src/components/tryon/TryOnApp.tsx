@@ -4,8 +4,10 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { ColourStage } from "@/components/tryon/ColourStage";
 import { ReferenceTextureWarning } from "@/components/tryon/ReferenceTextureWarning";
+import { HairTypePicker } from "@/components/tryon/HairTypePicker";
 import { StyleCard } from "@/components/tryon/StyleCard";
 import { t } from "@/data/i18n";
+import { orderStylesForPicker, suggestStyles, type HairReading } from "@/lib/hair-suitability";
 import { captureShouldMirror, visiblePortraitCrop } from "@/lib/capture";
 import { brandStyle } from "@/lib/contrast";
 import { classifySkinPhoto } from "@/lib/hand-photo";
@@ -102,6 +104,13 @@ export function TryOnApp({
   const [referenceMode, setReferenceMode] = useState(false);
   const [hairComposite, setHairComposite] = useState(false);
   const [hairTexture, setHairTexture] = useState<AskedTexture>("natural");
+  const [pickedDensity, setPickedDensity] = useState("");
+  const [pickedTexture, setPickedTexture] = useState("");
+  const [showAllStyles, setShowAllStyles] = useState(false);
+  const [hairReading, setHairReading] = useState<HairReading | null>(null);
+  const [suggestNote, setSuggestNote] = useState("");
+  const [suggestCost, setSuggestCost] = useState("");
+  const [suggestBusy, setSuggestBusy] = useState(false);
   const [referenceAck, setReferenceAck] = useState(false);
   const [referenceQuote, setReferenceQuote] = useState<{ model: string; provider: string; quality: string; size: string; rupees: number; dollars: number; note: string; warning: string } | null>(null);
   const [compareModel, setCompareModel] = useState(comparisonModels[0]?.id ?? "");
@@ -169,6 +178,17 @@ export function TryOnApp({
   const shade = config.shades.find((item) => item.id === shadeId) ?? null;
   const activeShot = tool === "nails" ? handShot : faceShot;
   const styles = config.styles.filter((style) => style.gender === gender);
+  const visibleStyles = config.hairPickerOn
+    ? orderStylesForPicker(styles, { density: pickedDensity, texture: pickedTexture }, showAllStyles)
+    : styles;
+  const hairSuggestions = hairReading
+    ? suggestStyles(styles, hairReading).map((row) => ({
+        id: row.style.id,
+        name: row.style.name,
+        reason: row.reason,
+        serviceKeys: row.style.serviceKeys ?? [],
+      }))
+    : [];
   const showResult = tool !== "colour" && stylePhase === "result" && active?.tool === tool && !busy;
   const phone = normalizeWhatsAppPhone(config.whatsapp);
   const bookHref = phone
@@ -438,12 +458,72 @@ export function TryOnApp({
     setReferenceAck(false);
     setReferenceQuote(null);
     setReferenceChoice(null);
+    setHairReading(null);
+    setPickedDensity("");
+    setPickedTexture("");
+    setShowAllStyles(false);
+    setSuggestNote("");
+    setSuggestCost("");
     setError("");
     setNotice("");
     setPendingName("");
     setProgress(0);
     stopCamera();
     frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function suggestHair() {
+    if (!faceShot) {
+      needPhoto();
+      return;
+    }
+    const consent = consentRef.current || (await consenting.current) || "";
+    if (!consent) {
+      setError(t(lang, "privacyTick"));
+      return;
+    }
+    consentRef.current = consent;
+    if (suggestBusy || busy) return;
+    setSuggestBusy(true);
+    setError("");
+    setSuggestNote("");
+    try {
+      const body = new FormData();
+      body.set("photo", faceShot.blob, "selfie.jpg");
+      body.set("slug", config.slug);
+      body.set("consentId", consent);
+      body.set("sessionId", sid || sessionId());
+      body.set("gender", gender);
+      const res = await fetch("/api/v1/tryon/suggest", { method: "POST", body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.message || "Could not read that photo.");
+        return;
+      }
+      setHairReading({
+        density: data.density,
+        texture: data.texture,
+        hairline: data.hairline,
+        faceShape: data.faceShape,
+        confidence: Number(data.confidence),
+      });
+      setPickedDensity(String(data.density || ""));
+      setPickedTexture(String(data.texture || ""));
+      setShowAllStyles(false);
+      const low = Number(data.confidence) < 0.4;
+      setSuggestNote(low ? "Low confidence. Adjust the hair type if this looks wrong." : data.cached ? "Same photo. No new reading." : "");
+      if (data.showCost) {
+        const cached = data.cached ? "Cached reading. No new provider charge. " : "";
+        const actual = data.actualKnown
+          ? `${data.actualLabel || "Actual"} $${Number(data.actualDollars || 0).toFixed(3)} (₹${Number(data.actualRupees || 0).toFixed(2)}).`
+          : "Actual —.";
+        setSuggestCost(`${cached}Estimate (reserved) ₹${Number(data.rupees || 0).toFixed(2)}. ${actual} Source: ${data.sourceLabel || "unknown"}.`);
+      } else {
+        setSuggestCost("");
+      }
+    } finally {
+      setSuggestBusy(false);
+    }
   }
 
   async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }, referenceConfirm = false) {
@@ -974,8 +1054,29 @@ export function TryOnApp({
               {config.showMen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "men" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
               {config.showKids && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "kids" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "kids"} onClick={() => chooseGender("kids")}>{t(lang, "kids")}</button>}
             </div>
+            <HairTypePicker
+              pickerOn={config.hairPickerOn}
+              suggestOn={config.hairSuggestOn}
+              usesCredits={config.hairSuggestUsesCredits}
+              density={pickedDensity}
+              texture={pickedTexture}
+              showAll={showAllStyles}
+              suggestions={hairSuggestions}
+              selectedId={styleId}
+              busy={busy || suggestBusy}
+              note={suggestNote}
+              costLine={suggestCost}
+              onDensity={setPickedDensity}
+              onTexture={setPickedTexture}
+              onShowAll={setShowAllStyles}
+              onSuggest={() => void suggestHair()}
+              onPick={(card) => void preview({ id: card.id, name: card.name, serviceKeys: card.serviceKeys, tool: "style" })}
+            />
+            {config.hairPickerOn && (pickedDensity || pickedTexture) && visibleStyles.length === 0 && (
+              <p className="mb-2 text-sm">No style photos for that hair type. Turn on Show all.</p>
+            )}
             <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
-              {styles.map((style) => (
+              {visibleStyles.map((style) => (
                 <button
                   key={style.id}
                   type="button"

@@ -41,6 +41,9 @@ model Tenant {
   toolBrows           Boolean   @default(true)
   toolBeard           Boolean   @default(true)
   toolNails           Boolean   @default(true)
+  hairPickerOn        Boolean   @default(true)
+  hairSuggestOn       Boolean   @default(false)
+  hairSuggestUsesCredits Boolean @default(false)
   anonDailyCap        Int       @default(8)
   memberDailyCap      Int       @default(30)
   requireLoginToBook  Boolean   @default(false)
@@ -139,6 +142,8 @@ model TenantStyle {
   customName String?
   sort       Int     @default(0)
   serviceIds String  @default("[]")
+  /** Owner override of density, texture, and optional face shapes. Empty uses the catalog seed. */
+  suitabilityJson String @default("")
   tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, styleId])
@@ -340,6 +345,20 @@ model AiCall {
 
   @@index([status, createdAt])
   @@index([createdAt])
+}
+
+/// One vision reading of a sanitized selfie. The photo itself is not stored. A repeat of the same hash is free.
+model HairSuggest {
+  id         String   @id @default(cuid())
+  tenantId   String
+  photoHash  String
+  model      String
+  resultJson String   @default("")
+  callId     String   @default("")
+  createdAt  DateTime @default(now())
+
+  @@unique([tenantId, photoHash])
+  @@index([tenantId])
 }
 
 /// One guest or benchmark submission. The same request id must not start a second provider call.

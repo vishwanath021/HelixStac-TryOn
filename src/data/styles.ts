@@ -6,6 +6,8 @@ export { referenceTextureFor } from "@/data/hair-texture";
 export type Gender = "women" | "men" | "kids";
 export type FaceShape = "oval" | "round" | "square" | "heart" | "oblong" | "diamond";
 export type HairType = "straight" | "wavy" | "curly" | "thick" | "thin";
+export type HairDensity = "thin" | "medium" | "thick";
+export type HairTexture = "straight" | "wavy" | "curly";
 export type LengthCategory = "short" | "medium" | "long";
 
 export type StyleDef = {
@@ -22,6 +24,10 @@ export type StyleDef = {
   tags: string[];
   faceShapes: FaceShape[];
   hairTypes: HairType[];
+  /** Hair amounts this cut is suitable for. Seeded from hairTypes. */
+  density: HairDensity[];
+  /** Curl patterns this cut is suitable for. Seeded from hairTypes, else the reference photo. */
+  texture: HairTexture[];
   serviceKeys: string[];
 };
 
@@ -43,14 +49,37 @@ export function lengthCategoryFor(style: { id?: string; category?: string; lengt
   return "long";
 }
 
+const DENSITY: HairDensity[] = ["thin", "medium", "thick"];
+const TEXTURE: HairTexture[] = ["straight", "wavy", "curly"];
+
+/** Sensible seed: thick and thin come from hairTypes; both means the cut is flexible; neither means medium. */
+export function densityFor(hairTypes: readonly string[]): HairDensity[] {
+  const thin = hairTypes.includes("thin");
+  const thick = hairTypes.includes("thick");
+  if (thin && thick) return [...DENSITY];
+  if (thin) return ["thin"];
+  if (thick) return ["thick"];
+  return ["medium"];
+}
+
+/** Sensible seed: keep every texture named on the style. Otherwise use the reference photo's texture. */
+export function textureFor(hairTypes: readonly string[], reference: ReferenceTexture): HairTexture[] {
+  const named = TEXTURE.filter((item) => hairTypes.includes(item));
+  return named.length ? named : [reference];
+}
+
 function s(draft: Draft): StyleDef {
+  const hairTypes = draft.hairTypes ?? ["straight", "wavy", "thick"];
+  const referenceTexture = draft.referenceTexture ?? referenceTextureFor(draft);
   return {
     ...draft,
     lengthCategory: draft.lengthCategory ?? lengthCategoryFor(draft),
-    referenceTexture: draft.referenceTexture ?? referenceTextureFor(draft),
+    referenceTexture,
     tags: draft.tags ?? [draft.category],
     faceShapes: draft.faceShapes ?? ["oval"],
-    hairTypes: draft.hairTypes ?? ["straight", "wavy", "thick"],
+    hairTypes,
+    density: densityFor(hairTypes),
+    texture: textureFor(hairTypes, referenceTexture),
     serviceKeys: draft.serviceKeys ?? ["haircut", "styling"],
   };
 }

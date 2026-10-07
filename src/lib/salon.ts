@@ -4,6 +4,7 @@ import { NAILS, toPublicNail, type PublicNail } from "@/data/nails";
 import { planById } from "@/data/plans";
 import { SHADES } from "@/data/shades";
 import { STYLES, toPublicStyle, type PublicStyle } from "@/data/styles";
+import { applySuitability } from "@/lib/hair-suitability";
 import { parseJson } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
@@ -41,6 +42,9 @@ export type SalonConfig = {
   toolBrows: boolean;
   toolBeard: boolean;
   toolNails: boolean;
+  hairPickerOn: boolean;
+  hairSuggestOn: boolean;
+  hairSuggestUsesCredits: boolean;
   anonDailyCap: number;
   memberDailyCap: number;
   requireLoginToBook: boolean;
@@ -82,10 +86,12 @@ export function toSalonConfig(tenant: TenantWithRelations): SalonConfig {
   const plan = planById(tenant.plan);
   const enabledStyles = new Set(tenant.styles.filter((row) => row.enabled).map((row) => row.styleId));
   const customNames = new Map(tenant.styles.map((row) => [row.styleId, row.customName]));
+  const suitability = new Map(tenant.styles.map((row) => [row.styleId, row.suitabilityJson]));
   let styles = STYLES.filter((style) => enabledStyles.has(style.id)).map((style) => {
     const pub = toPublicStyle(style);
     const custom = customNames.get(style.id);
-    return custom ? { ...pub, name: custom } : pub;
+    const named = custom ? { ...pub, name: custom } : pub;
+    return applySuitability(named, suitability.get(style.id) || "");
   });
   if (!tenant.showWomen) styles = styles.filter((style) => style.gender !== "women");
   if (!tenant.showMen) styles = styles.filter((style) => style.gender !== "men");
@@ -124,6 +130,9 @@ export function toSalonConfig(tenant: TenantWithRelations): SalonConfig {
     toolBrows: tenant.toolBrows,
     toolBeard: tenant.toolBeard,
     toolNails: tenant.toolNails,
+    hairPickerOn: tenant.hairPickerOn,
+    hairSuggestOn: tenant.hairSuggestOn,
+    hairSuggestUsesCredits: tenant.hairSuggestUsesCredits,
     anonDailyCap: tenant.anonDailyCap,
     memberDailyCap: tenant.memberDailyCap,
     requireLoginToBook: tenant.requireLoginToBook,

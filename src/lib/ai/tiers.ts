@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import { PLANS, type PlanId } from "@/data/plans";
+import { suggestRates } from "@/lib/ai/suggest-models";
 import { numberEnv } from "@/lib/env";
 
 export type ModelTier = "test" | "medium" | "high";
@@ -131,6 +132,8 @@ export function resolveGuestTier(args: {
 type TokenRates = { textIn: number; imageIn: number; imageOut: number; textOut: number };
 
 function tokenRates(model: string): TokenRates | null {
+  const chat = suggestRates(model);
+  if (chat) return { textIn: chat.inputPerMillion, imageIn: chat.inputPerMillion, imageOut: chat.outputPerMillion, textOut: chat.outputPerMillion };
   if (model === "gpt-image-1-mini") return { textIn: 2, imageIn: 2.5, imageOut: 8, textOut: 8 };
   if (model === "gpt-image-1.5") return { textIn: 5, imageIn: 8, imageOut: 32, textOut: 32 };
   if (model === "gpt-image-1") return { textIn: 5, imageIn: 10, imageOut: 40, textOut: 40 };
