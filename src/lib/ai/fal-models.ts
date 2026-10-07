@@ -278,7 +278,7 @@ export function quoteFalModel(id: string, width: number, height: number, referen
     inputSizeMode: "native" as const,
     rangeLowInr: lowInr,
     rangeHighInr: highInr,
-    note: `Estimate ${rangeText} at FX 96 before the 8% buffer. The figure used for the ₹${capInr.toFixed(0)} cap is the higher end with that buffer (₹${estimateInr.toFixed(2)}). ${range.detail} fal does not report token usage, so a finished call is billed at this estimate. Not an invoice.`,
+    note: `Estimate ${rangeText} at FX 96 before the 8% buffer. The figure used for the ₹${capInr.toFixed(0)} cap is the higher end with that buffer (₹${estimateInr.toFixed(2)}) until an actual is known. ${range.detail} A finished call stores the price-list figure from the downloaded size. Sync real cost from fal replaces it with billing-events cost_total. Not an invoice.`,
   };
 }
 

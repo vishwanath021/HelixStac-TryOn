@@ -18,6 +18,7 @@ import { postGeminiReferenceEdit } from "@/lib/ai/gemini-reference";
 import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
 import { postImageEdit } from "@/lib/ai/openai";
 import { completeGenerationJob, failGenerationJob } from "@/lib/ai/dedupe";
+import { actualHeading, costSourceLabel, falPriceListUsd } from "@/lib/ai/cost-source";
 import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
 import { costUsdFromUsage, exactInr, type UsageNumbers } from "@/lib/ai/tiers";
 import { numberEnv } from "@/lib/env";
@@ -74,6 +75,8 @@ export type ReferenceSuccess = {
   faceScore: number | null;
   hairComposite: boolean;
   message: string;
+  costSource: string;
+  actualKnown: boolean;
 };
 
 export type ReferenceFailure = {
@@ -250,6 +253,9 @@ export async function executeReferenceEdit(args: {
   });
 
   let recordedSize = quote.size;
+  let providerRequestId = "";
+  let openRouterCostReport: "usage.cost" | "generation" | "none" | "" = "";
+  let falComputedUsd: number | null = null;
   try {
     const started = Date.now();
     let usage: ReturnType<typeof usageFrom>;
@@ -278,7 +284,12 @@ export async function executeReferenceEdit(args: {
       });
       usage = undefined;
       providerResponse = fal.image;
-      if (fal.outputSize) recordedSize = fal.outputSize;
+      providerRequestId = fal.requestId;
+      if (fal.outputSize) {
+        recordedSize = fal.outputSize;
+        const [outputWidth, outputHeight] = fal.outputSize.split("x").map((part) => Number(part));
+        falComputedUsd = falPriceListUsd({ model: quote.model, outputWidth, outputHeight })?.usd ?? null;
+      }
     } else if (provider === "openrouter") {
       const prompt = "prompt" in prepared ? prepared.prompt : planned?.prompt || "";
       const selfieMeta = await sharp(inputPng, { failOn: "none" }).metadata();
@@ -294,6 +305,8 @@ export async function executeReferenceEdit(args: {
       });
       usage = openrouter.usage;
       providerResponse = openrouter.image;
+      providerRequestId = openrouter.generationId;
+      openRouterCostReport = openrouter.costReport;
     } else {
       if (!planned) {
         throw new UnknownModelError(`${quote.model} is not a configured image-edit model. No other model was called.`);
@@ -398,23 +411,32 @@ export async function executeReferenceEdit(args: {
       faceCheck: faceCheckPng,
     });
     const reported = costUsdFromUsage(quote.model, usage);
-    const usd = reported ?? quote.estimateUsd;
-    const costIsEstimate = reported == null;
+    let costSource = reported != null ? "usage" : "estimate";
+    let usd = reported ?? 0;
+    if (provider === "fal" && falComputedUsd != null) {
+      costSource = "price_list";
+      usd = falComputedUsd;
+    }
+    const actualKnown = costSource === "usage" || costSource === "price_list";
     await finalizePaidCall(gate.id, {
       model: quote.model,
       billed: true,
       charged: true,
-      costUsd: usd,
+      costUsd: actualKnown ? usd : 0,
       estimateInr: gate.estimateInr,
       usage,
       latencyMs,
       imageSize: recordedSize,
+      costSource,
+      providerRequestId,
     });
     const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
     let message = `Unvalidated model output. The raw provider image is the result. One provider call. No mask, no face paste, no retry.${clothingNote}`;
-    if (costIsEstimate && provider === "fal") message += " The shown cost is the conservative estimate. fal did not report usage.";
-    if (provider === "openrouter" && costIsEstimate) message += " The shown cost is the estimate. OpenRouter did not return usage.cost.";
-    if (provider === "openrouter" && !costIsEstimate) message += " The shown cost is usage.cost from OpenRouter.";
+    if (provider === "fal" && costSource === "price_list") message += " The shown cost is computed from the fal price list. It is not fal's invoice.";
+    if (provider === "openai" && costSource === "usage") message += " The shown cost is actual from provider usage.";
+    if (provider === "openrouter" && openRouterCostReport === "usage.cost") message += " The shown cost is usage.cost from OpenRouter.";
+    if (provider === "openrouter" && openRouterCostReport === "generation") message += " The shown cost is total_cost from OpenRouter generation stats.";
+    if (provider === "openrouter" && openRouterCostReport === "none") message += " OpenRouter did not return usage.cost or generation total_cost. The reserved estimate is still the cap until an actual is known.";
     if (rawDrift?.flagged) message += " Face may differ from your photo.";
     if (args.hairComposite && compositePng) {
       message += " Hair-only composite saved separately as an optional fallback. It is not the download.";
@@ -427,8 +449,8 @@ export async function executeReferenceEdit(args: {
       data: {
         status: "UNVALIDATED",
         message,
-        actualUsd: usd,
-        actualInr: exactInr(usd),
+        actualUsd: actualKnown ? usd : 0,
+        actualInr: actualKnown ? exactInr(usd) : 0,
         inputTokens: usage?.inputTokens || 0,
         outputTokens: usage?.outputTokens || 0,
         imageTokens: usage?.imageTokens || 0,
@@ -448,8 +470,10 @@ export async function executeReferenceEdit(args: {
       size: recordedSize,
       estimateInr: quote.estimateInr,
       estimateUsd: quote.estimateUsd,
-      actualInr: exactInr(usd),
-      actualUsd: usd,
+      actualInr: actualKnown ? exactInr(usd) : 0,
+      actualUsd: actualKnown ? usd : 0,
+      costSource,
+      actualKnown,
       latencyMs,
       usage: usage || null,
       clothingWarning: clothing.warning || "",
@@ -464,14 +488,17 @@ export async function executeReferenceEdit(args: {
   } catch (error) {
     const uncertain = error instanceof UncertainBillingError;
     const unknown = error instanceof UnknownModelError;
+    const failedRequestId = error instanceof UncertainBillingError || error instanceof BilledProviderError ? error.requestId : "";
     if (uncertain) {
       await finalizePaidCall(gate.id, {
         model: quote.model,
         billed: true,
         charged: true,
-        costUsd: quote.estimateUsd,
+        costUsd: 0,
         estimateInr: gate.estimateInr,
         imageSize: quote.size,
+        costSource: "timeout",
+        providerRequestId: failedRequestId,
       });
       await releasePaidCall(gate.id, "UNCERTAIN");
     } else if (error instanceof BilledProviderError) {
@@ -483,6 +510,7 @@ export async function executeReferenceEdit(args: {
         estimateInr: gate.estimateInr,
         usage: error.usage,
         imageSize: quote.size,
+        providerRequestId: failedRequestId,
       });
       await releasePaidCall(gate.id, "BILLED_FAILED");
     } else {
@@ -526,8 +554,11 @@ export function tryOnReferencePayload(run: ReferenceSuccess, revealCost: boolean
   if (revealCost) {
     body.rupees = run.estimateInr;
     body.dollars = run.estimateUsd;
-    body.actualRupees = run.actualInr;
-    body.actualDollars = run.actualUsd;
+    body.actualKnown = run.actualKnown;
+    body.actualRupees = run.actualKnown ? run.actualInr : 0;
+    body.actualDollars = run.actualKnown ? run.actualUsd : 0;
+    body.sourceLabel = costSourceLabel(run.costSource);
+    body.actualLabel = actualHeading(run.costSource);
     body.latencyMs = run.latencyMs;
     body.usage = run.usage;
     body.model = run.model;

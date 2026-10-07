@@ -11,7 +11,7 @@ type Report = {
   usingEstimate: boolean;
   averageInr: number;
   imagesPerMonth: number;
-  last: { costInr: number; costSource: string; status: string } | null;
+  last: { costInr: number; sourceLabel: string; actualKnown: boolean; status: string } | null;
   averages: { tool: string; tier: string; count: number; avgInr: number }[];
   calls: {
     id: string;
@@ -27,7 +27,11 @@ type Report = {
     totalTokens: number;
     costUsd: number;
     costInr: number;
-    chargedInr: number;
+    estimateInr: number;
+    actualKnown: boolean;
+    sourceLabel: string;
+    costNote: string;
+    providerRequestId: string;
     charged: boolean;
   }[];
   plans: { id: string; name: string; priceInr: number; projectedInr: number; marginInr: number }[];
@@ -37,6 +41,8 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
   const [report, setReport] = useState(initial);
   const [images, setImages] = useState(initial.imagesPerMonth);
   const [since, setSince] = useState("");
+  const [notice, setNotice] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, { usd: string; note: string }>>({});
 
   async function load(sessionStart: string, count: number) {
     const params = new URLSearchParams({ imagesPerMonth: String(count) });
@@ -58,13 +64,35 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
     void load(sessionStart, images);
   }, [images]);
 
+  async function syncFal() {
+    setNotice("Reading fal billing events…");
+    const res = await fetch("/api/v1/super/ai/costs/sync-fal", { method: "POST" });
+    const data = (await res.json().catch(() => ({}))) as { message?: string };
+    setNotice(data.message || "fal billing sync did not finish.");
+    if (res.ok && since) await load(since, images);
+  }
+
+  async function correct(id: string) {
+    const draft = drafts[id] || { usd: "", note: "" };
+    const actualUsd = Number(draft.usd);
+    setNotice("Saving the corrected actual…");
+    const res = await fetch("/api/v1/super/ai/costs/correct", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, actualUsd, note: draft.note }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { message?: string };
+    setNotice(data.message || "The correction was not saved.");
+    if (res.ok && since) await load(since, images);
+  }
+
   const last = report.last;
 
   return (
     <section className="card mt-6 grid max-w-3xl gap-4 p-5">
       <h2 className="font-serif text-2xl">Image costs</h2>
       <p className="text-sm">
-        Last image: {last ? `₹${last.costInr.toFixed(2)} (${last.costSource}, ${last.status})` : "none yet"}.
+        Last image: {last ? (last.actualKnown ? `₹${last.costInr.toFixed(2)} (${last.sourceLabel}, ${last.status})` : `no actual yet (${last.sourceLabel}, ${last.status})`) : "none yet"}.
         {" "}Session ₹{report.sessionInr.toFixed(2)} · today ₹{report.dayInr.toFixed(2)} · month ₹{report.monthInr.toFixed(2)} · cap ₹{report.spentInr.toFixed(2)} of ₹{report.capInr.toFixed(0)}.
       </p>
       {report.usingEstimate && <p className="text-xs text-muted">No billed image yet. The projection uses the selected tier estimate.</p>}
@@ -98,37 +126,67 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
           </li>
         ))}
       </ul>
+      <div className="flex flex-wrap items-center gap-3">
+        <button className="btn secondary" type="button" onClick={() => void syncFal()}>Sync real cost from fal</button>
+        <p className="text-xs text-muted">Uses the saved fal key. Billing events need an ADMIN-scoped key. An API-scoped key can run models and is refused here.</p>
+      </div>
+      {notice && <p className="text-sm" role="status">{notice}</p>}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
           <thead>
             <tr>
-              <th className="py-1 pr-2">When</th>
-              <th className="py-1 pr-2">Salon</th>
-              <th className="py-1 pr-2">Tool</th>
-              <th className="py-1 pr-2">Model</th>
-              <th className="py-1 pr-2">Tier</th>
-              <th className="py-1 pr-2">Size</th>
-              <th className="py-1 pr-2">Tokens</th>
-              <th className="py-1 pr-2">USD</th>
-              <th className="py-1 pr-2">INR</th>
-              <th className="py-1">Charged</th>
+              <th scope="col" className="py-1 pr-2">When</th>
+              <th scope="col" className="py-1 pr-2">Model</th>
+              <th scope="col" className="py-1 pr-2">Size</th>
+              <th scope="col" className="py-1 pr-2">Estimate (reserved)</th>
+              <th scope="col" className="py-1 pr-2">Actual</th>
+              <th scope="col" className="py-1">Source</th>
             </tr>
           </thead>
           <tbody>
-            {report.calls.map((row) => (
-              <tr key={row.id} className="border-t border-black/10">
-                <td className="py-1 pr-2">{row.at.slice(0, 16).replace("T", " ")}</td>
-                <td className="py-1 pr-2">{row.tenantName}</td>
-                <td className="py-1 pr-2">{row.tool}</td>
-                <td className="py-1 pr-2">{row.model}</td>
-                <td className="py-1 pr-2">{row.tier} {row.quality}</td>
-                <td className="py-1 pr-2">{row.imageSize}</td>
-                <td className="py-1 pr-2">{row.totalTokens || `${row.inputTokens}/${row.outputTokens}`}</td>
-                <td className="py-1 pr-2">{row.costUsd.toFixed(4)}</td>
-                <td className="py-1 pr-2">{row.costInr.toFixed(2)}</td>
-                <td className="py-1">{row.charged ? row.chargedInr.toFixed(2) : "0"}</td>
-              </tr>
-            ))}
+            {report.calls.map((row) => {
+              const draft = drafts[row.id] || { usd: "", note: "" };
+              return (
+                <tr key={row.id} className="border-t border-black/10 align-top">
+                  <td className="py-1 pr-2">{row.at.slice(0, 16).replace("T", " ")}</td>
+                  <td className="py-1 pr-2">
+                    {row.model}
+                    {row.providerRequestId ? <span className="block text-muted">{row.providerRequestId}</span> : null}
+                  </td>
+                  <td className="py-1 pr-2">{row.imageSize}</td>
+                  <td className="py-1 pr-2">₹{row.estimateInr.toFixed(2)}</td>
+                  <td className="py-1 pr-2">{row.actualKnown ? `$${row.costUsd.toFixed(3)} (₹${row.costInr.toFixed(2)})` : "—"}</td>
+                  <td className="py-1">
+                    <div>{row.sourceLabel}</div>
+                    {row.costNote ? <div className="text-muted">{row.costNote}</div> : null}
+                    <form
+                      className="mt-1 flex flex-wrap gap-1"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void correct(row.id);
+                      }}
+                    >
+                      <input
+                        className="field w-20"
+                        aria-label={`Correct actual dollars for ${row.model || row.id}`}
+                        inputMode="decimal"
+                        placeholder="USD"
+                        value={draft.usd}
+                        onChange={(event) => setDrafts((current) => ({ ...current, [row.id]: { ...draft, usd: event.target.value } }))}
+                      />
+                      <input
+                        className="field w-40"
+                        aria-label={`Audit note for ${row.model || row.id}`}
+                        placeholder="Audit note"
+                        value={draft.note}
+                        onChange={(event) => setDrafts((current) => ({ ...current, [row.id]: { ...draft, note: event.target.value } }))}
+                      />
+                      <button className="underline" type="submit">Correct actual</button>
+                    </form>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

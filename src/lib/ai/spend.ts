@@ -1,6 +1,7 @@
 import { numberEnv } from "@/lib/env";
 import { logInfo } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { actualIsKnown, capPaise } from "@/lib/ai/cost-source";
 import { costUsdFromUsage, exactInr, isModelTier, tierRequest, type UsageNumbers } from "@/lib/ai/tiers";
 
 const DEFAULTS: Record<string, number> = {
@@ -52,6 +53,19 @@ export async function releasePaidCall(id: string, status: "REFUNDED" | "BILLED_F
   await prisma.aiCall.updateMany({ where: { id, status: "CHARGED" }, data: { status, charged: counts } });
 }
 
+type CapRow = { estimatePaise: number; costInrPaise: number; costSource: string; charged: boolean };
+
+export async function sumCapPaise(
+  findMany: (args: object) => Promise<CapRow[]>,
+  extra?: { createdAt?: { gte: Date } },
+) {
+  const rows = await findMany({
+    where: { ...spendCapWhere(), ...extra },
+    select: { estimatePaise: true, costInrPaise: true, costSource: true, charged: true },
+  });
+  return rows.reduce((sum, row) => sum + capPaise(row), 0);
+}
+
 export async function finalizePaidCall(
   id: string,
   args: {
@@ -63,20 +77,22 @@ export async function finalizePaidCall(
     usage?: UsageNumbers;
     latencyMs?: number;
     imageSize?: string;
+    /** usage, billing, price_list, manual, timeout, or estimate. Omitted follows token usage. */
+    costSource?: string;
+    providerRequestId?: string;
   },
 ) {
   if (!id) return;
   const fromUsage = args.billed ? costUsdFromUsage(args.model, args.usage) : null;
-  const usd = !args.billed ? 0 : fromUsage ?? args.costUsd;
-  const inr = !args.billed ? 0 : fromUsage != null ? exactInr(fromUsage) : (args.estimateInr ?? exactInr(args.costUsd));
-  const source = fromUsage != null ? "usage" : "estimate";
-  const settledPaise = fromUsage != null && args.charged ? Math.round(inr * 100) : null;
+  const source = args.costSource ?? (fromUsage != null ? "usage" : "estimate");
+  const known = args.billed && (args.costSource ? actualIsKnown(args.costSource) : fromUsage != null);
+  const usd = known ? (fromUsage ?? args.costUsd) : 0;
+  const inr = known ? (fromUsage != null ? exactInr(fromUsage) : exactInr(args.costUsd)) : 0;
   await prisma.aiCall.updateMany({
     where: { id },
     data: {
       billed: args.billed,
       charged: args.charged,
-      ...(settledPaise != null ? { estimatePaise: settledPaise } : {}),
       costUsdMicros: Math.round(usd * 1_000_000),
       costInrPaise: Math.round(inr * 100),
       costSource: source,
@@ -86,8 +102,47 @@ export async function finalizePaidCall(
       usageJson: args.usage ? JSON.stringify(args.usage) : "",
       latencyMs: args.latencyMs ?? 0,
       ...(args.imageSize ? { imageSize: args.imageSize } : {}),
+      ...(args.providerRequestId ? { providerRequestId: args.providerRequestId } : {}),
     },
   });
+}
+
+/** Super-admin correction. The reserved estimate is left as it was. */
+export async function correctActualCost(args: { id: string; actorId: string; actualUsd: number; note: string }) {
+  const row = await prisma.aiCall.findUnique({ where: { id: args.id } });
+  if (!row) return { ok: false as const, message: "That ledger row was not found." };
+  const note = args.note.trim();
+  if (!note) return { ok: false as const, message: "An audit note is required." };
+  if (!Number.isFinite(args.actualUsd) || args.actualUsd < 0 || args.actualUsd > 1000) {
+    return { ok: false as const, message: "Enter the billed amount in US dollars." };
+  }
+  const inr = exactInr(args.actualUsd);
+  await prisma.aiCall.update({
+    where: { id: row.id },
+    data: {
+      costUsdMicros: Math.round(args.actualUsd * 1_000_000),
+      costInrPaise: Math.round(inr * 100),
+      costSource: "manual",
+      costNote: note.slice(0, 500),
+      billed: true,
+      charged: true,
+    },
+  });
+  await prisma.auditLog.create({
+    data: {
+      actorId: args.actorId,
+      action: "correct_actual",
+      target: row.id,
+      meta: JSON.stringify({
+        note: note.slice(0, 500),
+        previousSource: row.costSource,
+        previousUsdMicros: row.costUsdMicros,
+        nextUsdMicros: Math.round(args.actualUsd * 1_000_000),
+        model: row.model,
+      }),
+    },
+  });
+  return { ok: true as const, message: `Actual set to $${args.actualUsd.toFixed(3)} (₹${inr.toFixed(2)}).` };
 }
 
 export function spendCapWhere() {
@@ -95,26 +150,19 @@ export function spendCapWhere() {
 }
 
 export async function spendSummary() {
-  const [reserved, actual] = await Promise.all([
-    prisma.aiCall.aggregate({
-      where: spendCapWhere(),
-      _sum: { estimatePaise: true },
-      _count: true,
-    }),
-    prisma.aiCall.aggregate({
-      where: { ...spendCapWhere(), costSource: "usage" },
-      _sum: { costInrPaise: true },
-      _count: true,
-    }),
-  ]);
+  const rows = await prisma.aiCall.findMany({
+    where: spendCapWhere(),
+    select: { estimatePaise: true, costInrPaise: true, costSource: true, charged: true },
+  });
+  const known = rows.filter((row) => row.charged && actualIsKnown(row.costSource));
   return {
-    /** Cap basis. The reserved estimate, replaced by actual usage once that cost is known. An unknown bill stays on the estimate. */
-    spentInr: (reserved._sum.estimatePaise || 0) / 100,
-    /** Provider-reported usage converted at FX, with no 1.08 buffer. Unknown until a usage payload exists. */
-    actualInr: (actual._sum.costInrPaise || 0) / 100,
-    actualCalls: actual._count,
+    /** Cap basis. Actual once that cost is known. An unknown bill stays on the reserved estimate. */
+    spentInr: rows.reduce((sum, row) => sum + capPaise(row), 0) / 100,
+    /** Known actuals at FX, with no 1.08 buffer. */
+    actualInr: known.reduce((sum, row) => sum + row.costInrPaise, 0) / 100,
+    actualCalls: known.length,
     capInr: spendCapInr(),
-    calls: reserved._count,
+    calls: rows.length,
   };
 }
 
@@ -134,8 +182,7 @@ export async function beginPaidCall(args: {
   const capPaise = Math.round(spendCapInr() * 100);
   return exclusive(() =>
     prisma.$transaction(async (tx) => {
-      const agg = await tx.aiCall.aggregate({ where: spendCapWhere(), _sum: { estimatePaise: true } });
-      const spent = agg._sum.estimatePaise || 0;
+      const spent = await sumCapPaise(tx.aiCall.findMany.bind(tx.aiCall));
       if (spent + estimatePaise > capPaise) {
         await tx.aiCall.create({
           data: {

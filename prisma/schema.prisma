@@ -333,8 +333,10 @@ model AiCall {
   charged       Boolean  @default(false)
   billed        Boolean  @default(false)
   latencyMs     Int      @default(0)
-  costSource    String   @default("estimate")
-  createdAt     DateTime @default(now())
+  costSource        String   @default("estimate")
+  providerRequestId String   @default("")
+  costNote          String   @default("")
+  createdAt         DateTime @default(now())
 
   @@index([status, createdAt])
   @@index([createdAt])

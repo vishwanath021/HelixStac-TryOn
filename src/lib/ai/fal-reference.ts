@@ -210,6 +210,7 @@ export async function postFalReferenceEdit(args: {
 
   let completed = false;
   let lastStatusError = "";
+  try {
   while (now() < deadline) {
     let statusResponse: Response;
     try {
@@ -291,4 +292,8 @@ export async function postFalReferenceEdit(args: {
   const width = meta.width || result.images?.[0]?.width || 0;
   const height = meta.height || result.images?.[0]?.height || 0;
   return { image: png, requestId, outputSize: width && height ? `${width}x${height}` : "" };
+  } catch (error) {
+    if (requestId && (error instanceof UncertainBillingError || error instanceof BilledProviderError)) error.requestId = requestId;
+    throw error;
+  }
 }

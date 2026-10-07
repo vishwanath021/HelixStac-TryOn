@@ -179,7 +179,7 @@ export function quoteOpenRouterModel(id: string, width: number, height: number, 
     inputSizeMode: "native" as const,
     rangeLowInr: exactInr(estimateUsd),
     rangeHighInr: exactInr(estimateUsd),
-    note: `Estimate about ₹${exactInr(estimateUsd).toFixed(2)} at FX 96 before the 8% buffer. The ₹${capInr.toFixed(0)} cap uses ₹${estimateInr.toFixed(2)} after that buffer. ${detail} A finished call uses usage.cost when OpenRouter returns it. Not an invoice. OpenRouter does not proxy fal.ai.`,
+    note: `Estimate about ₹${exactInr(estimateUsd).toFixed(2)} at FX 96 before the 8% buffer. The ₹${capInr.toFixed(0)} cap uses ₹${estimateInr.toFixed(2)} after that buffer until an actual is known. ${detail} A finished call uses usage.cost when OpenRouter returns it, otherwise total_cost from GET /api/v1/generation. Not an invoice. OpenRouter does not proxy fal.ai.`,
   };
 }
 

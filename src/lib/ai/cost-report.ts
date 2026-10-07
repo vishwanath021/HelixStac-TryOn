@@ -1,5 +1,6 @@
 import { PLANS } from "@/data/plans";
-import { spendCapInr, spendCapWhere } from "@/lib/ai/spend";
+import { actualIsKnown, capPaise, costSourceLabel } from "@/lib/ai/cost-source";
+import { spendCapInr, sumCapPaise } from "@/lib/ai/spend";
 import { parseTier, projectSalonMonth, tierRequest, type ImageProviderName } from "@/lib/ai/tiers";
 import { prisma } from "@/lib/prisma";
 
@@ -19,6 +20,11 @@ export type CostCallRow = {
   totalTokens: number;
   costUsd: number;
   costInr: number;
+  estimateInr: number;
+  actualKnown: boolean;
+  sourceLabel: string;
+  costNote: string;
+  providerRequestId: string;
   chargedInr: number;
   charged: boolean;
   billed: boolean;
@@ -39,11 +45,8 @@ function startOfMonth(now: Date) {
 }
 
 async function chargedSince(from: Date) {
-  const agg = await prisma.aiCall.aggregate({
-    where: { ...spendCapWhere(), createdAt: { gte: from } },
-    _sum: { estimatePaise: true },
-  });
-  return inr(agg._sum.estimatePaise || 0);
+  const paise = await sumCapPaise(prisma.aiCall.findMany.bind(prisma.aiCall), { createdAt: { gte: from } });
+  return inr(paise);
 }
 
 export async function costReport(args: { since?: Date; imagesPerMonth?: number; provider?: ImageProviderName; tier?: string } = {}) {
@@ -56,7 +59,7 @@ export async function costReport(args: { since?: Date; imagesPerMonth?: number; 
     chargedSince(since),
     chargedSince(startOfDay(now)),
     chargedSince(startOfMonth(now)),
-    prisma.aiCall.aggregate({ where: spendCapWhere(), _sum: { estimatePaise: true } }),
+    sumCapPaise(prisma.aiCall.findMany.bind(prisma.aiCall)),
   ]);
   const ids = [...new Set(recent.map((row) => row.tenantId).filter((id) => id.length > 8))];
   const tenants = ids.length
@@ -96,9 +99,14 @@ export async function costReport(args: { since?: Date; imagesPerMonth?: number; 
     inputTokens: row.inputTokens,
     outputTokens: row.outputTokens,
     totalTokens: row.totalTokens,
-    costUsd: row.costUsdMicros / 1_000_000,
-    costInr: inr(row.costInrPaise),
-    chargedInr: row.charged ? inr(row.estimatePaise) : 0,
+    costUsd: actualIsKnown(row.costSource) ? row.costUsdMicros / 1_000_000 : 0,
+    costInr: actualIsKnown(row.costSource) ? inr(row.costInrPaise) : 0,
+    estimateInr: inr(row.estimatePaise),
+    actualKnown: actualIsKnown(row.costSource),
+    sourceLabel: costSourceLabel(row.costSource, row.status),
+    costNote: row.costNote,
+    providerRequestId: row.providerRequestId,
+    chargedInr: row.charged ? inr(capPaise(row)) : 0,
     charged: row.charged,
     billed: row.billed,
     status: row.status,
@@ -106,7 +114,7 @@ export async function costReport(args: { since?: Date; imagesPerMonth?: number; 
   }));
   return {
     capInr: spendCapInr(),
-    spentInr: inr(capSpend._sum.estimatePaise || 0),
+    spentInr: inr(capSpend),
     sessionInr,
     dayInr,
     monthInr,

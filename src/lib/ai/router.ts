@@ -115,9 +115,10 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
             model,
             billed: true,
             charged: true,
-            costUsd: estimateUsd || 0,
+            costUsd: 0,
             estimateInr: gate.estimateInr,
             imageSize,
+            costSource: "timeout",
           });
           await releasePaidCall(gate.id, "UNCERTAIN");
           throw error;

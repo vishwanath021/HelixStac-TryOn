@@ -4,7 +4,7 @@ import { comparisonModel, quoteComparisonModel } from "@/lib/ai/compare-models";
 import { resolveOpenRouterKey } from "@/lib/ai/credentials";
 import { BilledProviderError } from "@/lib/ai/errors";
 import { buildOpenRouterChatBody } from "@/lib/ai/openrouter-models";
-import { postOpenRouterReferenceEdit } from "@/lib/ai/openrouter-reference";
+import { openRouterTotalCost, postOpenRouterReferenceEdit } from "@/lib/ai/openrouter-reference";
 import { executeReferenceEdit } from "@/lib/ai/reference-run";
 import { saveOpenRouterKey } from "@/lib/ai/settings-store";
 import { costUsdFromUsage } from "@/lib/ai/tiers";
@@ -203,6 +203,7 @@ describe("openrouter comparison", () => {
     expect(sent).not.toContain("\"route\"");
     expect(result.costFromUsage).toBe(true);
     expect(costUsdFromUsage("google/gemini-3.1-flash-image", result.usage)).toBe(0.04);
+    expect(result.costReport).toBe("usage.cost");
     const wrong = (async () => {
       const mismatch = (async () => json({
         model: "google/gemini-3-pro-image",
@@ -223,6 +224,48 @@ describe("openrouter comparison", () => {
     })();
     await expect(wrong).rejects.toBeInstanceOf(BilledProviderError);
     await expect(wrong).rejects.toThrow(/was not retried/);
+  });
+
+  it("reads total_cost from the generation stats endpoint when usage.cost is missing", async () => {
+    expect(openRouterTotalCost({ data: { total_cost: 0.021 } })).toBe(0.021);
+    const png = await sharp({ create: { width: 16, height: 24, channels: 3, background: "#d8c8b8" } }).png().toBuffer();
+    const dataUrl = `data:image/png;base64,${png.toString("base64")}`;
+    const urls: string[] = [];
+    let generationCalls = 0;
+    const fetchImpl = (async (url: string | URL) => {
+      const href = String(url);
+      urls.push(href);
+      if (href.includes("/generation?")) {
+        generationCalls += 1;
+        if (generationCalls === 1) return json({ data: {} }, 404);
+        return json({ data: { id: "gen-test-1", total_cost: 0.021 } });
+      }
+      return json({
+        id: "gen-test-1",
+        model: "google/gemini-3.1-flash-image",
+        choices: [{ message: { images: [{ image_url: { url: dataUrl } }] } }],
+        usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+      });
+    }) as typeof fetch;
+    const selfie = await sharp({ create: { width: 12, height: 16, channels: 3, background: "#ccbbaa" } }).png().toBuffer();
+    const reference = await sharp({ create: { width: 12, height: 12, channels: 3, background: "#998877" } }).jpeg().toBuffer();
+    const result = await postOpenRouterReferenceEdit({
+      apiKey: "openrouter-test-key",
+      modelId: "google/gemini-3.1-flash-image",
+      prompt: "Image 1 is the person.",
+      selfiePng: selfie,
+      referenceJpeg: reference,
+      width: 80,
+      height: 120,
+      estimateUsd: 0.07,
+      fetchImpl,
+      sleep: async () => undefined,
+    });
+    expect(result.costReport).toBe("generation");
+    expect(result.generationId).toBe("gen-test-1");
+    expect(costUsdFromUsage("google/gemini-3.1-flash-image", result.usage)).toBe(0.021);
+    expect(urls.filter((href) => href.startsWith("https://openrouter.ai/api/v1/generation?id=gen-test-1"))).toHaveLength(2);
+    expect(urls.some((href) => href.includes("openrouter-test-key"))).toBe(false);
   });
 
   it("does not use the environment key when the saved key is off", async () => {

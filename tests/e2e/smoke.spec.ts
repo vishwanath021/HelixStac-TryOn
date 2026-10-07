@@ -437,6 +437,13 @@ test("super admin sees assumed COGS", async ({ page }) => {
   await expect(page.getByText(/assumption/i)).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/09-super.png", fullPage: true });
   await page.goto("/super/ai");
+  await expect(page.getByRole("columnheader", { name: "Estimate (reserved)" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Actual", exact: true })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Source" })).toBeVisible();
+  const sync = page.getByRole("button", { name: "Sync real cost from fal" });
+  await expect(sync).toBeVisible();
+  await sync.click();
+  await expect(page.getByText(/ADMIN-scoped key/)).toBeVisible();
   await page.getByRole("button", { name: "Calibration run" }).click();
   await expect(page.getByText(/Offline calibration/i)).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("img", { name: /mask/i })).toHaveCount(5);

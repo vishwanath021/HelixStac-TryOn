@@ -554,8 +554,9 @@ describe("calibration budget", () => {
     });
     const settled = await prisma.aiCall.findFirst({ where: { id: success.id } });
     expect(settled?.costSource).toBe("usage");
-    expect(settled?.estimatePaise).toBe(Math.round(actualInr * 100));
-    expect(settled?.estimatePaise).toBeLessThan(1660);
+    expect(settled?.estimatePaise).toBe(1660);
+    expect(settled?.costInrPaise).toBe(Math.round(actualInr * 100));
+    expect(settled?.costInrPaise).toBeLessThan(1660);
     const unknown = await beginPaidCall({
       provider: "openai",
       quality: "edit",

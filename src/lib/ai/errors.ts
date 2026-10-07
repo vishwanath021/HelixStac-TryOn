@@ -26,6 +26,7 @@ export class SpendCapError extends Error {
  */
 export class UncertainBillingError extends Error {
   readonly code = "UNCERTAIN_BILLING" as const;
+  requestId = "";
 
   constructor(message = "The provider outcome is unknown. No second generation was started.") {
     super(message);
@@ -48,6 +49,7 @@ export class BilledProviderError extends Error {
   readonly code = "BILLED_PROVIDER" as const;
   readonly costUsd: number;
   readonly usage?: UsageNumbers;
+  requestId = "";
 
   constructor(costUsd: number, usage?: UsageNumbers, message = "The provider billed the call and returned no image.") {
     super(message);

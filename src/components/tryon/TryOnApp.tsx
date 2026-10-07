@@ -509,7 +509,11 @@ export function TryOnApp({
         const usage = data.usage as { inputTokens?: number; outputTokens?: number; imageTokens?: number; textTokens?: number } | null;
         const detail = data.showCost
           ? [
-              `Quoted ₹${Number(data.rupees || 0).toFixed(2)}. Actual $${Number(data.actualDollars || 0).toFixed(3)} (₹${Number(data.actualRupees || 0).toFixed(2)}).`,
+              `Estimate (reserved) ₹${Number(data.rupees || 0).toFixed(2)}.`,
+              data.actualKnown
+                ? `${data.actualLabel || "Actual"} $${Number(data.actualDollars || 0).toFixed(3)} (₹${Number(data.actualRupees || 0).toFixed(2)}).`
+                : "Actual —.",
+              `Source: ${data.sourceLabel || "unknown"}.`,
               data.latencyMs ? `Latency ${(Number(data.latencyMs) / 1000).toFixed(1)} s.` : "",
               usage ? `Usage input ${usage.inputTokens || 0} (image ${usage.imageTokens || 0}, text ${usage.textTokens || 0}), output ${usage.outputTokens || 0}.` : "",
             ].filter(Boolean).join(" ")

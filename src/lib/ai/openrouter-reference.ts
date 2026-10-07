@@ -4,6 +4,7 @@ import type { UsageNumbers } from "@/lib/ai/tiers";
 import { numberEnv } from "@/lib/env";
 
 const CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
+const GENERATION_URL = "https://openrouter.ai/api/v1/generation";
 
 export function openRouterHeaders(apiKey: string): Record<string, string> {
   return {
@@ -27,6 +28,20 @@ function dataUrl(bytes: Buffer, mime: string) {
 
 function reportedCost(usage: { cost?: unknown } | undefined): number | undefined {
   return typeof usage?.cost === "number" && Number.isFinite(usage.cost) && usage.cost >= 0 ? usage.cost : undefined;
+}
+
+/** Documented generation id: https://openrouter.ai/docs/api/api-reference/generations/get-request-&-usage-metadata-for-a-generation */
+export function openRouterGenerationId(id: unknown) {
+  if (typeof id !== "string" || id.length > 128) return "";
+  return /^gen-[0-9A-Za-z-]+$/.test(id) ? id : "";
+}
+
+/** total_cost is the billed USD on GET /api/v1/generation?id= */
+export function openRouterTotalCost(payload: unknown): number | null {
+  if (!payload || typeof payload !== "object") return null;
+  const root = payload as { total_cost?: unknown; data?: { total_cost?: unknown } };
+  const value = root.data && typeof root.data === "object" ? root.data.total_cost : root.total_cost;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function usageFrom(payload: { usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost?: number } }): UsageNumbers | undefined {
@@ -72,6 +87,7 @@ export async function postOpenRouterReferenceEdit(args: {
   estimateUsd: number;
   fetchImpl?: FetchImpl;
   deadlineMs?: number;
+  sleep?: (ms: number) => Promise<void>;
 }) {
   const row = openRouterModel(args.modelId);
   if (!row) throw new UnknownModelError(`${args.modelId} is not a configured OpenRouter comparison model. No other model was called.`);
@@ -110,6 +126,7 @@ export async function postOpenRouterReferenceEdit(args: {
     throw new UnbilledProviderError(scrub(raw, args.apiKey) || "OpenRouter refused the request before an image was returned.");
   }
   let payload: {
+    id?: string;
     model?: string;
     choices?: { message?: { images?: unknown } }[];
     usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost?: number };
@@ -119,7 +136,21 @@ export async function postOpenRouterReferenceEdit(args: {
   } catch {
     throw new UncertainBillingError("OpenRouter returned a response that could not be read. The call was not sent again.");
   }
-  const usage = usageFrom(payload);
+  let usage = usageFrom(payload);
+  const generationId = openRouterGenerationId(payload.id);
+  let costReport: "usage.cost" | "generation" | "none" = usage?.reportedCostUsd != null ? "usage.cost" : "none";
+  if (costReport === "none" && generationId) {
+    const billed = await generationTotalCost({
+      apiKey: args.apiKey,
+      id: generationId,
+      fetchImpl,
+      sleep: args.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+    });
+    if (billed != null) {
+      usage = { ...(usage ?? {}), reportedCostUsd: billed };
+      costReport = "generation";
+    }
+  }
   const cost = usage?.reportedCostUsd ?? args.estimateUsd;
   if (typeof payload.model === "string" && payload.model !== row.id) {
     throw new BilledProviderError(
@@ -132,5 +163,32 @@ export async function postOpenRouterReferenceEdit(args: {
   if (!image) {
     throw new BilledProviderError(cost, usage, "OpenRouter did not return a base64 image in message.images. The call was not retried.");
   }
-  return { image, usage, model: row.id, costFromUsage: usage?.reportedCostUsd != null };
+  return { image, usage, model: row.id, costFromUsage: usage?.reportedCostUsd != null, generationId, costReport };
+}
+
+/** GET the generation stats. A short wait covers the case where total_cost is not written yet. The image call is not repeated. */
+async function generationTotalCost(args: {
+  apiKey: string;
+  id: string;
+  fetchImpl: FetchImpl;
+  sleep: (ms: number) => Promise<void>;
+}) {
+  const delays = [0, 600, 1500];
+  for (let attempt = 0; attempt < delays.length; attempt += 1) {
+    if (delays[attempt] > 0) await args.sleep(delays[attempt]);
+    let response: Response;
+    try {
+      response = await args.fetchImpl(`${GENERATION_URL}?id=${encodeURIComponent(args.id)}`, {
+        headers: openRouterHeaders(args.apiKey),
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch {
+      continue;
+    }
+    if (response.status === 401 || response.status === 403) return null;
+    if (!response.ok) continue;
+    const cost = openRouterTotalCost(await response.json().catch(() => null));
+    if (cost != null) return cost;
+  }
+  return null;
 }

@@ -410,12 +410,15 @@ describe("salon reference switch", () => {
       provider: "openai",
       hairComposite: false,
       message: "Unvalidated model output.",
+      costSource: "usage",
+      actualKnown: true,
     } satisfies ReferenceSuccess;
     const guest = tryOnReferencePayload(run, false);
     expect(guest.showCost).toBe(false);
     expect(guest.accepted).toBe(false);
     expect(guest).not.toHaveProperty("rupees");
     expect(guest).not.toHaveProperty("actualRupees");
+    expect(guest).not.toHaveProperty("sourceLabel");
     expect(guest).not.toHaveProperty("usage");
     expect(guest).not.toHaveProperty("faceScore");
     expect(guest).not.toHaveProperty("model");
@@ -424,6 +427,8 @@ describe("salon reference switch", () => {
     expect(admin.showCost).toBe(true);
     expect(admin.rupees).toBe(16.9);
     expect(admin.actualRupees).toBe(14.3);
+    expect(admin.actualLabel).toBe("Actual (from provider usage)");
+    expect(admin.sourceLabel).toBe("provider usage");
     expect(admin.label).toBe("Experimental, unvalidated");
     const warned = tryOnReferencePayload({ ...run, rawFaceDrift: true, faceScore: 0.121 }, true);
     expect(warned.accepted).toBe(false);
