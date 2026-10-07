@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const host = headerList.get("x-tenant-host") || headerList.get("host") || "";
   const tenant = slug === "by-host" ? await loadTenantByHost(host.split(":")[0] || "") : await loadTenantBySlug(slug);
   const name = tenant?.name || "HelixStac TryOn";
-  return { title: name, description: `${name}. See a haircut on your own photo.` };
+  return { title: { absolute: name }, description: `${name}. See a haircut on your own photo.` };
 }
 
 export default async function SalonPage({

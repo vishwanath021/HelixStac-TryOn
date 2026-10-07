@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const tenant = await loadTenantBySlug(slug);
   const name = tenant?.name || "HelixStac TryOn";
-  return { title: `${name} QR` };
+  return { title: { absolute: `${name} QR` } };
 }
 
 export default async function QrStandee({ params }: { params: Promise<{ slug: string }> }) {

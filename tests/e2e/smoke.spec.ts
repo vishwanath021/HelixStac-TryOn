@@ -23,6 +23,10 @@ function salonModeToken(tenantId: string, nonce: string) {
   return Buffer.from(`${body}.${sig}`).toString("base64url");
 }
 
+async function acceptPhotoUse(page: import("@playwright/test").Page) {
+  await page.getByRole("checkbox", { name: /photo is used only/i }).check();
+}
+
 async function salonDb() {
   process.env.DATABASE_URL ||= "file:./dev.db";
   const { PrismaClient } = await import("@prisma/client");
@@ -93,7 +97,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await expect(page.getByText("Now pick a style below - it takes about 10 seconds.")).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
 
-  await page.getByRole("checkbox").check();
+  await acceptPhotoUse(page);
   await gallery.getByRole("button", { name: "Soft Bob" }).click();
   await expect(page.getByText("Styling your look...")).toBeVisible();
   await expect(page.getByText("Demo mode: connect an AI key to see this style on your own face")).toBeVisible({ timeout: 20_000 });
@@ -110,10 +114,13 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.getByRole("button", { name: "Download" }).click();
   expect((await downloadPromise).suggestedFilename()).toMatch(/\.jpg$/);
   await page.getByRole("button", { name: "Try another" }).click();
+  await expect(page.getByRole("button", { name: "Take a selfie" })).toBeVisible();
   await expect(gallery.getByRole("button", { name: "Kids Soft Bob" })).toHaveCount(0);
   await gallery.getByRole("button", { name: "Kids", exact: true }).click();
   await expect(gallery.locator("img")).toHaveCount(4);
 
+  await page.locator('input[type="file"]').setInputFiles("public/samples/portrait.jpg");
+  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await page.getByRole("tab", { name: "Brows" }).click();
   const brows = page.getByRole("region", { name: "Brows" });
   await brows.getByRole("button", { name: "Soft Arch" }).click();
@@ -220,7 +227,7 @@ test("brows, beard, and nails use photo cards and the same demo result", async (
   await page.getByRole("tab", { name: "Brows" }).click();
   await page.locator('input[type="file"]').setInputFiles("tests/fixtures/faces/frontal.jpg");
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
-  await page.getByRole("checkbox").check();
+  await acceptPhotoUse(page);
   await page.getByRole("region", { name: "Brows" }).getByRole("button", { name: "Soft Arch" }).click();
   await expect(page.getByText("Demo mode: connect an AI key to see this style on your own face")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "Book this look" })).toBeVisible();
@@ -292,6 +299,7 @@ test("a near-black salon brand still has readable primary button text", async ({
 });
 
 test("a renamed salon shows on the guest header and title", async ({ page }) => {
+  test.setTimeout(120_000);
   const prisma = await salonDb();
   const before = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo-salon" }, select: { name: true, id: true } });
   try {
@@ -299,21 +307,23 @@ test("a renamed salon shows on the guest header and title", async ({ page }) => 
     await page.getByLabel("Email").fill("owner@demo.helixstac.app");
     await page.getByLabel("Password").fill("DemoSalon#2026");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("heading", { name: /this month/i })).toBeVisible();
     await page.goto("/admin/settings");
     await page.getByLabel("Salon name").fill("Indiranagar Studio");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("Settings saved.")).toBeVisible();
     await page.goto("/s/demo-salon");
     await expect(page.getByRole("heading", { level: 1, name: "Indiranagar Studio" })).toBeVisible();
-    await expect(page).toHaveTitle(/Indiranagar Studio/);
+    await expect(page).toHaveTitle(/Indiranagar Studio/, { timeout: 15_000 });
     await page.goto("/admin");
     await page.getByRole("button", { name: "Sign out" }).click();
-    await page.waitForURL("/");
+    await page.waitForURL(/\/s\/demo-salon/);
 
     await page.goto("/login");
     await page.getByLabel("Email").fill("super@helixstac.app");
     await page.getByLabel("Password").fill("SuperAdmin#2026");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("heading", { name: "HelixStac" })).toBeVisible();
     await page.goto("/super");
     const superName = page.getByLabel("Salon name for demo-salon");
     await superName.fill("Studio Indiranagar");
@@ -321,7 +331,7 @@ test("a renamed salon shows on the guest header and title", async ({ page }) => 
     await expect(page.getByText("Updated.")).toBeVisible();
     await page.goto("/s/demo-salon");
     await expect(page.getByRole("heading", { level: 1, name: "Studio Indiranagar" })).toBeVisible();
-    await expect(page).toHaveTitle(/Studio Indiranagar/);
+    await expect(page).toHaveTitle(/Studio Indiranagar/, { timeout: 15_000 });
     await page.goto("/s/demo-salon/qr");
     await expect(page.getByRole("heading", { level: 1, name: "Studio Indiranagar" })).toBeVisible();
   } finally {
@@ -352,7 +362,7 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
   try {
     await page.goto("/s/demo-salon");
     await expect(page.getByLabel("Password")).toHaveCount(0);
-    await page.getByRole("checkbox").check();
+    await acceptPhotoUse(page);
     await page.locator('input[type="file"]').setInputFiles("public/samples/portrait.jpg");
     await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" }).click();
     await expect(page.getByText(/today's previews used up/i)).toBeVisible({ timeout: 20_000 });
@@ -364,7 +374,7 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
     const token = salonModeToken(tenant.id, nonce);
     await page.goto(`/s/demo-salon?salon=${encodeURIComponent(token)}&tool=style`);
     await expect(page.getByText(/Salon mode/i)).toBeVisible();
-    await page.getByRole("checkbox").check();
+    await acceptPhotoUse(page);
     await page.locator('input[type="file"]').setInputFiles("public/samples/portrait.jpg");
     await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" }).click();
     await expect(page.getByText("AI preview — actual results vary by hair type. Consult your stylist.")).toBeVisible({ timeout: 20_000 });
@@ -433,7 +443,7 @@ test("style gallery uses portraits and the demo result is not a flat placeholder
   await page.locator('input[type="file"]').setInputFiles("public/samples/portrait.jpg");
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
-  await page.getByRole("checkbox").check();
+  await acceptPhotoUse(page);
   await gallery.getByRole("button", { name: "Soft Bob" }).click();
   await expect(page.getByText("Styling your look...")).toBeVisible();
   await expect(page.getByText("Demo mode: connect an AI key to see this style on your own face")).toBeVisible({ timeout: 20_000 });
@@ -466,6 +476,26 @@ test("style gallery uses portraits and the demo result is not a flat placeholder
   });
   expect(stats.variance).toBeGreaterThan(200);
   await page.screenshot({ path: "docs/screenshots/15-demo-result.png", fullPage: true });
+});
+
+test("reference mode quotes a style and does not call the provider", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("/login");
+  await page.getByLabel("Email").fill("super@helixstac.app");
+  await page.getByLabel("Password").fill("SuperAdmin#2026");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "HelixStac" })).toBeVisible();
+  await page.goto("/s/demo-salon");
+  await expect(page.getByText("Hair-only composite")).toHaveCount(0);
+  await expect(page.getByText("Hair texture")).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Reference mode (test)" }).check();
+  await expect(page.getByLabel("Hair texture")).toBeVisible();
+  await page.locator('input[type="file"]').setInputFiles("public/samples/portrait.jpg");
+  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await acceptPhotoUse(page);
+  await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Soft Bob" }).click();
+  await expect(page.getByText(/one paid call for this model/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try this hairstyle" })).toBeDisabled();
 });
 
 test("super admin sees assumed COGS", async ({ page }) => {

@@ -7,10 +7,18 @@ export default defineConfig({
   testDir: "tests/e2e",
   timeout: 60_000,
   fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  projects: [
+    { name: "android", use: { ...devices["Pixel 5"] } },
+    {
+      name: "iphone",
+      use: { ...devices["iPhone 13"], browserName: "chromium", defaultBrowserType: "chromium" },
+    },
+    { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } } },
+  ],
   use: {
-    ...devices["Pixel 5"],
     baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3000",
     trace: "retain-on-failure",
     permissions: ["camera"],
