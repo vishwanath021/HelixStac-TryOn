@@ -55,7 +55,21 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   test.setTimeout(120_000);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Virtual Try-On" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Demo Salon – Bengaluru" })).toBeVisible();
+  const salonName = page.getByRole("heading", { level: 1, name: "Demo Salon – Bengaluru" });
+  await expect(salonName).toBeVisible();
+  await expect(salonName).toHaveText("Demo Salon – Bengaluru");
+  await expect.poll(() => salonName.evaluate((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)).toBe(false);
+  const viewportWidth = page.viewportSize()?.width ?? 0;
+  const header = page.locator("header");
+  for (const label of ["Book Now", "WhatsApp"]) {
+    const box = await header.getByRole("link", { name: label }).boundingBox();
+    expect(box).toBeTruthy();
+    expect(box && box.x >= 0 && box.x + box.width <= viewportWidth + 1).toBe(true);
+  }
+  await expect.poll(() => page.evaluate(() => {
+    const badge = document.querySelector("nextjs-portal")?.shadowRoot?.querySelector("[data-next-badge]");
+    return badge?.getAttribute("data-error") ?? "absent";
+  })).not.toBe("true");
   await expect(page.getByLabel("Password")).toHaveCount(0);
   await expect(page.getByText("Demo mode", { exact: true })).toBeVisible();
   await expect(page.getByText(/before we use a photo/i)).toHaveCount(0);

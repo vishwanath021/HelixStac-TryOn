@@ -704,18 +704,18 @@ export function TryOnApp({
 
   return (
     <div style={brandStyle(config.primaryColor, config.accentColor) as CSSProperties} className={embed ? "" : "mx-auto max-w-lg px-4 pb-16 pt-4"}>
-      <header className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+      <header className="mb-4 flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
           {config.logoUrl ? (
             <img src={config.logoUrl} alt="" className="h-11 w-11 shrink-0 rounded-2xl border border-line bg-white object-cover" />
           ) : (
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[var(--brand-btn)] font-serif text-lg text-[var(--on-brand)]">{config.name.slice(0, 1)}</div>
           )}
-          <h1 className="truncate font-serif text-xl leading-tight">{config.name}</h1>
+          <h1 className="min-w-0 text-balance font-serif text-[15px] leading-snug sm:text-xl">{config.name}</h1>
         </div>
-        <div className="flex shrink-0 gap-2">
-          <a className="btn px-3 py-2 text-sm" href={bookHref || undefined} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
-          <a className="btn secondary px-3 py-2 text-sm" href={chatHref || undefined} target="_blank" rel="noreferrer">{t(lang, "whatsappBtn")}</a>
+        <div className="flex shrink-0 gap-1.5">
+          <a className="btn whitespace-nowrap px-2.5 py-2 text-xs sm:px-3 sm:text-sm" href={bookHref || undefined} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
+          <a className="btn secondary whitespace-nowrap px-2.5 py-2 text-xs sm:px-3 sm:text-sm" href={chatHref || undefined} target="_blank" rel="noreferrer">{t(lang, "whatsappBtn")}</a>
         </div>
       </header>
 
