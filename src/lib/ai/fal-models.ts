@@ -40,7 +40,7 @@ export function falUsesNumberedPrompt(id: string) {
 export const FAL_COMPARISON_MODELS: readonly FalModelRow[] = [
   {
     id: "blackforestlabs/flux-3/edit-image",
-    label: "blackforestlabs/flux-3/edit-image (size left to the endpoint default)",
+    label: "blackforestlabs/flux-3/edit-image (aspect_ratio from the selfie; resolution left at 1k)",
     experimental: false,
     safetyChecker: false,
     sizeMode: "defaults",
@@ -48,7 +48,7 @@ export const FAL_COMPARISON_MODELS: readonly FalModelRow[] = [
   },
   {
     id: "fal-ai/nano-banana-pro/edit",
-    label: "fal-ai/nano-banana-pro/edit (size left to the endpoint default)",
+    label: "fal-ai/nano-banana-pro/edit (aspect_ratio from the selfie; resolution left at 1K)",
     experimental: false,
     safetyChecker: false,
     sizeMode: "defaults",
@@ -56,7 +56,7 @@ export const FAL_COMPARISON_MODELS: readonly FalModelRow[] = [
   },
   {
     id: "fal-ai/nano-banana-2/edit",
-    label: "fal-ai/nano-banana-2/edit (1K price; resolution left to the endpoint default)",
+    label: "fal-ai/nano-banana-2/edit (1K price; aspect_ratio from the selfie)",
     experimental: false,
     safetyChecker: false,
     sizeMode: "defaults",
@@ -64,7 +64,7 @@ export const FAL_COMPARISON_MODELS: readonly FalModelRow[] = [
   },
   {
     id: "bytedance/seedream/v5/lite/edit",
-    label: "bytedance/seedream/v5/lite/edit (size left to the endpoint default)",
+    label: "bytedance/seedream/v5/lite/edit (image_size from the selfie)",
     experimental: false,
     safetyChecker: false,
     sizeMode: "defaults",
@@ -72,7 +72,7 @@ export const FAL_COMPARISON_MODELS: readonly FalModelRow[] = [
   },
   {
     id: "openai/gpt-image-2/edit",
-    label: "openai/gpt-image-2/edit (quality medium; size left to the endpoint default)",
+    label: "openai/gpt-image-2/edit (quality medium; image_size from the selfie)",
     experimental: false,
     safetyChecker: false,
     sizeMode: "defaults",
@@ -195,35 +195,35 @@ export function falUsdRange(
     return {
       lowUsd: outMp * 0.024,
       highUsd: outMp * 0.048,
-      detail: "$0.024 per output megapixel is the launch price until 8 Oct 2026, then $0.048. The cap uses $0.048. image_urls accepts 1–10 images. Output size is left to the endpoint default, and this cap prices the app's portrait reading of that size.",
+      detail: "$0.024 per output megapixel is the launch price until 8 Oct 2026, then $0.048. The cap uses $0.048. image_urls accepts 1–10 images. aspect_ratio is sent (2:3, 3:2, or 1:1). Resolution stays at the 1k default.",
     };
   }
   if (id === "fal-ai/nano-banana-pro/edit") {
     return {
       lowUsd: 0.15,
       highUsd: 0.15,
-      detail: "$0.15 per image. Output size is left to the endpoint default. The request sends image_urls and prompt only.",
+      detail: "$0.15 per image. aspect_ratio is sent (2:3, 3:2, or 1:1). Resolution stays at the 1K default.",
     };
   }
   if (id === "fal-ai/nano-banana-2/edit") {
     return {
       lowUsd: 0.08,
       highUsd: 0.08,
-      detail: "$0.08 per image at 1K. Resolution is left to the endpoint default. The request sends image_urls and prompt only.",
+      detail: "$0.08 per image at 1K. aspect_ratio is sent (2:3, 3:2, or 1:1). Resolution stays at the 1K default.",
     };
   }
   if (id === "bytedance/seedream/v5/lite/edit") {
     return {
       lowUsd: 0.035,
       highUsd: 0.035,
-      detail: "$0.035 per image. Output size is left to the endpoint default. The request sends image_urls and prompt only.",
+      detail: "$0.035 per image. image_size is the selfie aspect (1024x1536, 1536x1024, or 1024x1024). The schema scales a size outside 2560x1440 to 4096x4096. The price stays per image.",
     };
   }
   if (id === "openai/gpt-image-2/edit") {
     return {
       lowUsd: 0.054,
       highUsd: 0.054,
-      detail: "Token billed. The estimate is $0.054 for a 1024x1536 image at quality medium. quality is hard-set to medium and is never high. Output size is left to the endpoint default.",
+      detail: "Token billed. The estimate is $0.054 for a 1024x1536 image at quality medium. quality is hard-set to medium and is never high. image_size is the selfie aspect as width and height.",
     };
   }
   if (id === "fal-ai/nano-banana/edit") {
@@ -288,16 +288,30 @@ export function falAspectRatio(size: EditSize) {
   return "1:1";
 }
 
+const ASPECT_ON_MINIMAL = new Set([
+  "blackforestlabs/flux-3/edit-image",
+  "fal-ai/nano-banana-pro/edit",
+  "fal-ai/nano-banana-2/edit",
+]);
+
+const IMAGE_SIZE_ON_MINIMAL = new Set([
+  "bytedance/seedream/v5/lite/edit",
+  "openai/gpt-image-2/edit",
+]);
+
 /** JSON body for one edit. image_urls is selfie then the hairstyle reference. Seed, mask, and guidance are omitted. */
 export function buildFalEditBody(id: string, args: { prompt: string; selfieUrl: string; referenceUrl: string; size: EditSize }) {
   const row = falModel(id);
   if (!row) return null;
   if (row.maxInputs > 0 && row.maxInputs < 2) return null;
   if (row.sizeMode === "defaults") {
+    const [width, height] = args.size.split("x").map((part) => Number(part));
     const minimal: Record<string, unknown> = {
       prompt: args.prompt,
       image_urls: [args.selfieUrl, args.referenceUrl],
     };
+    if (ASPECT_ON_MINIMAL.has(row.id)) minimal.aspect_ratio = falAspectRatio(args.size);
+    if (IMAGE_SIZE_ON_MINIMAL.has(row.id)) minimal.image_size = { width, height };
     if (row.id === "openai/gpt-image-2/edit") minimal.quality = "medium";
     return minimal;
   }

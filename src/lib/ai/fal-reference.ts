@@ -3,6 +3,7 @@ import { BilledProviderError, UnbilledProviderError, UncertainBillingError, Unkn
 import { buildFalEditBody, falModel } from "@/lib/ai/fal-models";
 import type { EditSize } from "@/lib/ai/edit-request";
 import { numberEnv } from "@/lib/env";
+import { logInfo } from "@/lib/logger";
 
 const QUEUE_ORIGIN = "https://queue.fal.run";
 const REST_ORIGIN = "https://rest.fal.ai";
@@ -26,6 +27,51 @@ function sameOrigin(url: string, origin: string) {
   } catch {
     return false;
   }
+}
+
+/** Queue routes live on the app id (owner/name), not a nested endpoint path. */
+export function falQueueAppId(endpointId: string) {
+  const [owner, app] = endpointId.split("/").filter(Boolean);
+  if (!owner || !app) return endpointId;
+  return `${owner}/${app}`;
+}
+
+/**
+ * Use the URL fal returned when it is on queue.fal.run and names this request.
+ * A nested endpoint's status_url is shorter than the submit path, so it must not be rebuilt from the full id.
+ */
+export function acceptedQueueUrl(raw: string | undefined, requestId: string) {
+  if (!raw || !requestId || !sameOrigin(raw, QUEUE_ORIGIN)) return "";
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return "";
+  }
+  if (!parsed.pathname.includes(`/requests/${requestId}`)) return "";
+  if (parsed.pathname.endsWith("/cancel")) return "";
+  return parsed.toString();
+}
+
+function withLogs(url: string) {
+  const parsed = new URL(url);
+  if (!parsed.searchParams.has("logs")) parsed.searchParams.set("logs", "1");
+  return parsed.toString();
+}
+
+type StatusBody = {
+  status?: string;
+  response_url?: string;
+  error?: string;
+  error_type?: string;
+  logs?: { message?: string }[];
+};
+
+function statusDetail(status: StatusBody) {
+  const logs = Array.isArray(status.logs)
+    ? status.logs.map((entry) => entry?.message || "").filter(Boolean).slice(-3).join(" | ")
+    : "";
+  return scrub([status.error_type, status.error, logs].filter(Boolean).join(" — "));
 }
 
 async function imageLooksBlocked(bytes: Buffer, nsfw?: boolean[]) {
@@ -126,6 +172,7 @@ export async function postFalReferenceEdit(args: {
   let submitted = false;
   let requestId = "";
   let statusUrl = "";
+  let resultUrl = "";
   try {
     const response = await fetchImpl(`${QUEUE_ORIGIN}/${row.id}`, {
       method: "POST",
@@ -138,7 +185,7 @@ export async function postFalReferenceEdit(args: {
     if (response.status === 401 || response.status === 403) {
       throw new UnbilledProviderError("fal rejected the key. The edit was not accepted.");
     }
-    let payload: { request_id?: string; status_url?: string; error?: string } = {};
+    let payload: { request_id?: string; status_url?: string; response_url?: string; error?: string } = {};
     try {
       payload = JSON.parse(text) as typeof payload;
     } catch {
@@ -146,14 +193,15 @@ export async function postFalReferenceEdit(args: {
     }
     if (!response.ok || !payload.request_id) {
       if (response.status >= 400 && response.status < 500) {
-        throw new UnbilledProviderError(scrub(payload.error || "fal refused the edit before it was queued."));
+        throw new UnbilledProviderError(scrub(payload.error || text || "fal refused the edit before it was queued."));
       }
       throw new UncertainBillingError("fal did not confirm the queue request. It was not submitted again.");
     }
     requestId = payload.request_id;
-    const expected = `${QUEUE_ORIGIN}/${row.id}/requests/${requestId}/status`;
-    statusUrl = payload.status_url && payload.status_url.startsWith(expected) ? payload.status_url : expected;
-    if (!sameOrigin(statusUrl, QUEUE_ORIGIN)) statusUrl = expected;
+    logInfo("fal queue submit", { endpointId: row.id, requestId });
+    const appId = falQueueAppId(row.id);
+    statusUrl = acceptedQueueUrl(payload.status_url, requestId) || `${QUEUE_ORIGIN}/${appId}/requests/${requestId}/status`;
+    resultUrl = acceptedQueueUrl(payload.response_url, requestId) || `${QUEUE_ORIGIN}/${appId}/requests/${requestId}/response`;
   } catch (error) {
     if (error instanceof UnbilledProviderError || error instanceof UncertainBillingError || error instanceof UnknownModelError) throw error;
     if (submitted) throw new UncertainBillingError("The fal queue request left this server and the reply was lost. It was not submitted again.");
@@ -161,11 +209,11 @@ export async function postFalReferenceEdit(args: {
   }
 
   let completed = false;
-  let resultUrl = `${QUEUE_ORIGIN}/${row.id}/requests/${requestId}`;
+  let lastStatusError = "";
   while (now() < deadline) {
     let statusResponse: Response;
     try {
-      statusResponse = await fetchImpl(statusUrl, {
+      statusResponse = await fetchImpl(withLogs(statusUrl), {
         headers: { Authorization: `Key ${args.apiKey}` },
         signal: AbortSignal.timeout(15_000),
       });
@@ -174,25 +222,32 @@ export async function postFalReferenceEdit(args: {
       continue;
     }
     if (!statusResponse.ok) {
+      lastStatusError = scrub(await statusResponse.text().catch(() => ""));
       await sleep(2_000);
       continue;
     }
-    const status = (await statusResponse.json()) as { status?: string; response_url?: string; error?: string };
+    const status = (await statusResponse.json()) as StatusBody;
+    const returned = acceptedQueueUrl(status.response_url, requestId);
+    if (returned) resultUrl = returned;
+    if (status.status === "IN_QUEUE" || status.status === "IN_PROGRESS") {
+      await sleep(2_000);
+      continue;
+    }
     if (status.status === "COMPLETED") {
       completed = true;
-      if (status.response_url && status.response_url.startsWith(`${QUEUE_ORIGIN}/${row.id}/requests/${requestId}`)) {
-        resultUrl = status.response_url;
-      }
-      if (status.error) {
-        throw new BilledProviderError(args.estimateUsd, undefined, `fal finished with an error. The call was not retried. ${scrub(status.error)}`);
+      const detail = statusDetail(status);
+      if (status.error || status.error_type) {
+        throw new BilledProviderError(args.estimateUsd, undefined, `fal finished with an error. The call was not retried. ${detail}`);
       }
       break;
     }
+    lastStatusError = statusDetail(status) || scrub(JSON.stringify(status).slice(0, 400));
     await sleep(2_000);
   }
   if (!completed) {
-    throw new UncertainBillingError("The fal edit did not finish before the deadline. The queue request was not submitted again.");
+    throw new UncertainBillingError(`The fal edit did not finish before the deadline. The queue request was not submitted again.${lastStatusError ? ` ${lastStatusError}` : ""}`);
   }
+  if (!resultUrl) resultUrl = `${QUEUE_ORIGIN}/${falQueueAppId(row.id)}/requests/${requestId}/response`;
 
   const resultResponse = await fetchImpl(resultUrl, {
     headers: { Authorization: `Key ${args.apiKey}` },
@@ -201,12 +256,18 @@ export async function postFalReferenceEdit(args: {
     throw new UncertainBillingError("fal marked the edit complete and the result could not be read. It was not submitted again.");
   });
   if (!resultResponse.ok) {
-    throw new UncertainBillingError("fal marked the edit complete and the result was refused. It was not submitted again.");
+    const body = scrub(await resultResponse.text().catch(() => ""));
+    throw new UncertainBillingError(`fal marked the edit complete and the result was refused. It was not submitted again.${body ? ` ${body}` : ""}`);
   }
   const result = (await resultResponse.json()) as {
-    images?: { url?: string }[];
+    images?: { url?: string; width?: number; height?: number }[];
     has_nsfw_concepts?: boolean[];
+    error?: string;
+    detail?: string;
   };
+  if (result.error || (typeof result.detail === "string" && result.detail)) {
+    throw new BilledProviderError(args.estimateUsd, undefined, `fal finished with an error. The call was not retried. ${scrub(result.error || result.detail || "")}`);
+  }
   const imageUrl = result.images?.[0]?.url || "";
   if (!imageUrl.startsWith("https://")) {
     throw new BilledProviderError(args.estimateUsd, undefined, "fal finished without an image URL. The call was not retried.");
@@ -226,5 +287,8 @@ export async function postFalReferenceEdit(args: {
     );
   }
   const png = await sharp(bytes, { failOn: "none" }).rotate().png().toBuffer();
-  return { image: png, requestId };
+  const meta = await sharp(png, { failOn: "none" }).metadata();
+  const width = meta.width || result.images?.[0]?.width || 0;
+  const height = meta.height || result.images?.[0]?.height || 0;
+  return { image: png, requestId, outputSize: width && height ? `${width}x${height}` : "" };
 }

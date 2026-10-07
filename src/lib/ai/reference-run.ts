@@ -249,6 +249,7 @@ export async function executeReferenceEdit(args: {
     },
   });
 
+  let recordedSize = quote.size;
   try {
     const started = Date.now();
     let usage: ReturnType<typeof usageFrom>;
@@ -277,6 +278,7 @@ export async function executeReferenceEdit(args: {
       });
       usage = undefined;
       providerResponse = fal.image;
+      if (fal.outputSize) recordedSize = fal.outputSize;
     } else if (provider === "openrouter") {
       const prompt = "prompt" in prepared ? prepared.prompt : planned?.prompt || "";
       const selfieMeta = await sharp(inputPng, { failOn: "none" }).metadata();
@@ -406,7 +408,7 @@ export async function executeReferenceEdit(args: {
       estimateInr: gate.estimateInr,
       usage,
       latencyMs,
-      imageSize: quote.size,
+      imageSize: recordedSize,
     });
     const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
     let message = `Unvalidated model output. The raw provider image is the result. One provider call. No mask, no face paste, no retry.${clothingNote}`;
@@ -433,6 +435,7 @@ export async function executeReferenceEdit(args: {
         textTokens: usage?.textTokens || 0,
         latencyMs,
         clothingWarning: clothing.warning || "",
+        size: recordedSize,
       },
     });
     return {
@@ -442,7 +445,7 @@ export async function executeReferenceEdit(args: {
       provider,
       model: quote.model,
       quality: quote.quality,
-      size: quote.size,
+      size: recordedSize,
       estimateInr: quote.estimateInr,
       estimateUsd: quote.estimateUsd,
       actualInr: exactInr(usd),

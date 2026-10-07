@@ -1,6 +1,8 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { notFound } from "next/navigation";
 import { PrintButton } from "@/components/PrintButton";
+import { brandStyle } from "@/lib/contrast";
 import { appBaseUrl } from "@/lib/env";
 import { loadTenantBySlug } from "@/lib/salon";
 
@@ -12,8 +14,8 @@ export default async function QrStandee({ params }: { params: Promise<{ slug: st
   if (!tenant) notFound();
   const target = `${appBaseUrl()}/s/${tenant.slug}?src=qr`;
   return (
-    <main className="mx-auto max-w-md px-4 py-8 print:max-w-none">
-      <article className="card p-8 text-center print:border-0 print:shadow-none" style={{ ["--brand" as string]: tenant.primaryColor }}>
+    <main className="mx-auto max-w-md px-4 py-8 print:max-w-none" style={brandStyle(tenant.primaryColor, tenant.accentColor) as CSSProperties}>
+      <article className="card p-8 text-center print:border-0 print:shadow-none">
         <p className="text-xs uppercase tracking-[0.2em] text-muted">Try a look</p>
         <h1 className="mt-2 font-serif text-4xl">{tenant.name}</h1>
         <p className="mt-2 text-sm text-muted">Scan to see a haircut and colour on your phone. The preview is a guide.</p>

@@ -59,6 +59,7 @@ const en: Record<string, string> = {
   colourOnDevice: "Live colour does not leave this phone.",
   startCamera: "START CAMERA",
   uploadPhoto: "Upload photo",
+  uploadInstead: "Upload a photo instead",
   colourTab: "COLOUR",
   styleTab: "STYLE",
   browsTab: "BROWS",

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { ColourStage } from "@/components/tryon/ColourStage";
 import { ReferenceTextureWarning } from "@/components/tryon/ReferenceTextureWarning";
 import { StyleCard } from "@/components/tryon/StyleCard";
 import { t } from "@/data/i18n";
-import { captureShouldMirror } from "@/lib/capture";
+import { captureShouldMirror, visiblePortraitCrop } from "@/lib/capture";
+import { brandStyle } from "@/lib/contrast";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 import { parseAskedTexture, type AskedTexture } from "@/lib/ai/reference-texture";
 import type { SalonConfig } from "@/lib/salon";
@@ -328,9 +329,10 @@ export function TryOnApp({
     if (!video || !cameraOn) return;
     const srcW = video.videoWidth || 720;
     const srcH = video.videoHeight || 960;
-    const scale = Math.min(1, 1024 / Math.max(srcW, srcH));
-    const width = Math.max(2, Math.round(srcW * scale));
-    const height = Math.max(2, Math.round(srcH * scale));
+    const crop = visiblePortraitCrop(srcW, srcH);
+    const scale = Math.min(1, 1024 / Math.max(crop.sw, crop.sh));
+    const width = Math.max(2, Math.round(crop.sw * scale));
+    const height = Math.max(2, Math.round(crop.sh * scale));
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
@@ -340,7 +342,7 @@ export function TryOnApp({
       ctx.translate(width, 0);
       ctx.scale(-1, 1);
     }
-    ctx.drawImage(video, 0, 0, width, height);
+    ctx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, width, height);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
     if (!blob) return;
     await applyBlob(blob);
@@ -624,13 +626,13 @@ export function TryOnApp({
   ];
 
   return (
-    <div style={{ ["--brand" as string]: config.primaryColor, ["--accent" as string]: config.accentColor }} className={embed ? "" : "mx-auto max-w-lg px-4 pb-16 pt-4"}>
+    <div style={brandStyle(config.primaryColor, config.accentColor) as CSSProperties} className={embed ? "" : "mx-auto max-w-lg px-4 pb-16 pt-4"}>
       <header className="mb-4 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           {config.logoUrl ? (
             <img src={config.logoUrl} alt="" className="h-11 w-11 shrink-0 rounded-2xl border border-line bg-white object-cover" />
           ) : (
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[var(--brand)] font-serif text-lg text-white">{config.name.slice(0, 1)}</div>
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[var(--brand-btn)] font-serif text-lg text-[var(--on-brand)]">{config.name.slice(0, 1)}</div>
           )}
           <h1 className="truncate font-serif text-xl leading-tight">{config.name}</h1>
         </div>
@@ -715,13 +717,26 @@ export function TryOnApp({
               <div className="absolute inset-0 grid content-center justify-items-center gap-3 px-6">
                 {tool === "nails" && <p className="text-center text-lg text-white">{t(lang, "uploadHand")}</p>}
                 <button className="btn min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "takeSelfie")}</button>
-                <button className="btn secondary min-w-44 bg-white" type="button" onClick={() => fileRef.current?.click()}>{tool === "nails" ? t(lang, "uploadHand") : t(lang, "uploadPhoto")}</button>
+                <button className="btn on-photo min-w-44" type="button" onClick={() => fileRef.current?.click()}>{tool === "nails" ? t(lang, "uploadHand") : t(lang, "uploadPhoto")}</button>
                 {cameraError && <p className="text-center text-sm text-[#f0c7b0]" role="alert">{cameraError}</p>}
               </div>
             )}
             {cameraOn && (
-              <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center bg-gradient-to-t from-black/70 to-transparent pb-4 pt-16">
+              <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-3 bg-gradient-to-t from-black/70 to-transparent px-4 pb-4 pt-16">
                 <button className="h-[4.5rem] w-[4.5rem] rounded-full border-[5px] border-white/50 bg-white disabled:opacity-50" type="button" aria-label={t(lang, "takePhoto")} disabled={!cameraReady} onClick={() => void shutter()} />
+                <div className="flex flex-wrap justify-center gap-2">
+                  <button
+                    className="btn on-photo px-4 py-2 text-sm"
+                    type="button"
+                    onClick={() => {
+                      stopCamera();
+                      fileRef.current?.click();
+                    }}
+                  >
+                    {t(lang, "uploadInstead")}
+                  </button>
+                  <button className="btn on-photo px-4 py-2 text-sm" type="button" onClick={() => stopCamera()}>{t(lang, "back")}</button>
+                </div>
               </div>
             )}
             {activeShot && !cameraOn && (

@@ -202,7 +202,7 @@ export async function prepareComparison(args: { jpeg: Buffer; styleId: string; c
       message: `No reference image for ${style.id}. Add public/styles/${style.id}.jpg. Comparison mode does not fall back to a text-only edit.`,
     };
   }
-  const selfieMeta = await sharp(args.jpeg, { failOn: "none" }).metadata();
+  const selfieMeta = await sharp(args.jpeg, { failOn: "none" }).rotate().metadata();
   const referenceMeta = await sharp(reference, { failOn: "none" }).metadata();
   const width = selfieMeta.width || 0;
   const height = selfieMeta.height || 0;

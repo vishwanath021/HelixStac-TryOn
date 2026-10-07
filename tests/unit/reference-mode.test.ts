@@ -14,7 +14,7 @@ import { fitInsideCanvas, restoreFrame } from "@/lib/ai/frame";
 import { salonOutcome } from "@/lib/ai/guest-response";
 import { beginPaidCall, releasePaidCall } from "@/lib/ai/spend";
 import { readHairstyleReference } from "@/lib/ai/style-reference";
-import { captureShouldMirror } from "@/lib/capture";
+import { captureShouldMirror, visiblePortraitCrop } from "@/lib/capture";
 import { drawFrontal } from "@/lib/face/synthetic";
 import { runLockedEdit } from "@/lib/face/pipeline";
 import { prisma } from "@/lib/prisma";
@@ -138,6 +138,18 @@ describe("reference benchmark request", () => {
   it("mirrors only a user-facing shutter", () => {
     expect(captureShouldMirror("user")).toBe(true);
     expect(captureShouldMirror("environment")).toBe(false);
+  });
+
+  it("crops a landscape camera frame to the portrait the preview shows", () => {
+    const crop = visiblePortraitCrop(1280, 720);
+    expect(crop.sh).toBe(720);
+    expect(crop.sw).toBeCloseTo(540);
+    expect(crop.sx).toBeCloseTo(370);
+    expect(crop.sy).toBe(0);
+    const portrait = visiblePortraitCrop(720, 1280);
+    expect(portrait.sx).toBe(0);
+    expect(portrait.sw).toBe(720);
+    expect(portrait.sh).toBeCloseTo(960);
   });
 });
 

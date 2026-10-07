@@ -4,6 +4,8 @@
 
 :root {
   --brand: #c4622d;
+  --brand-btn: #c86c3a;
+  --on-brand: #241c16;
   --accent: #241c16;
   --bg: #f3ece3;
   --card: #fffdfb;
@@ -43,8 +45,8 @@ button, input, select, textarea { font: inherit; }
   border-radius: 999px;
   padding: 0.75rem 1.1rem;
   border: 1px solid transparent;
-  background: var(--brand);
-  color: #fffaf6;
+  background: var(--brand-btn, var(--brand));
+  color: var(--on-brand, #fffaf6);
   font-weight: 600;
   cursor: pointer;
 }
@@ -53,6 +55,11 @@ button, input, select, textarea { font: inherit; }
   background: transparent;
   color: var(--ink);
   border-color: var(--line);
+}
+.btn.on-photo {
+  background: #fffaf6;
+  color: #241c16;
+  border-color: transparent;
 }
 .btn.ghost { background: transparent; color: var(--ink); }
 .field {

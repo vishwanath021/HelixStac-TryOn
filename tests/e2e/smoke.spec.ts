@@ -1,5 +1,20 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import { contrastRatio } from "@/lib/contrast";
+
+function rgbToHex(rgb: string) {
+  const match = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!match) throw new Error(rgb);
+  return `#${match.slice(1, 4).map((part) => Number(part).toString(16).padStart(2, "0")).join("")}`;
+}
+
+async function buttonContrast(locator: import("@playwright/test").Locator) {
+  const colors = await locator.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { color: style.color, background: style.backgroundColor };
+  });
+  return contrastRatio(rgbToHex(colors.color), rgbToHex(colors.background));
+}
 
 function salonModeToken(tenantId: string, nonce: string) {
   const exp = Date.now() + 30 * 24 * 60 * 60 * 1000;
@@ -225,6 +240,55 @@ test("brows, beard, and nails use photo cards and the same demo result", async (
   await page.getByRole("region", { name: "Nails" }).getByRole("button", { name: "Classic French" }).click();
   await expect(page.getByText("Demo mode: connect an AI key to see this style on your own hand")).toBeVisible({ timeout: 20_000 });
   await page.screenshot({ path: "docs/screenshots/23-nails-result.png", fullPage: true });
+});
+
+test("camera view can switch to upload without a refresh", async ({ page }) => {
+  await page.goto("/s/demo-salon");
+  const upload = page.getByRole("button", { name: "Upload photo" });
+  const take = page.getByRole("button", { name: "Take a selfie" });
+  await expect(upload).toBeVisible();
+  expect(await buttonContrast(upload)).toBeGreaterThanOrEqual(4.5);
+  expect(await buttonContrast(take)).toBeGreaterThanOrEqual(4.5);
+
+  await take.click();
+  const instead = page.getByRole("button", { name: "Upload a photo instead" });
+  const back = page.getByRole("button", { name: "Back" });
+  await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
+  await expect(instead).toBeVisible();
+  await expect(back).toBeVisible();
+  expect(await buttonContrast(instead)).toBeGreaterThanOrEqual(4.5);
+  expect(await buttonContrast(back)).toBeGreaterThanOrEqual(4.5);
+
+  await back.click();
+  await expect(take).toBeVisible();
+  await expect(upload).toBeVisible();
+  await expect(page.getByRole("button", { name: "Take photo" })).toHaveCount(0);
+  await page.waitForFunction(() => !document.querySelector("video")?.srcObject);
+
+  await take.click();
+  await expect(instead).toBeVisible();
+  const chooser = page.waitForEvent("filechooser");
+  await instead.click();
+  await (await chooser).setFiles("public/samples/portrait.jpg");
+  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await expect(instead).toHaveCount(0);
+  await page.waitForFunction(() => !document.querySelector("video")?.srcObject);
+});
+
+test("a near-black salon brand still has readable primary button text", async ({ page }) => {
+  const prisma = await salonDb();
+  const before = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo-salon" }, select: { primaryColor: true } });
+  await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { primaryColor: "#111111" } });
+  try {
+    await page.goto("/s/demo-salon");
+    const take = page.getByRole("button", { name: "Take a selfie" });
+    await expect(take).toBeVisible();
+    expect(await buttonContrast(take)).toBeGreaterThanOrEqual(4.5);
+    expect(await buttonContrast(page.getByRole("button", { name: "Upload photo" }))).toBeGreaterThanOrEqual(4.5);
+  } finally {
+    await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { primaryColor: before.primaryColor } });
+    await prisma.$disconnect();
+  }
 });
 
 test("denied camera offers an upload fallback", async ({ page }) => {

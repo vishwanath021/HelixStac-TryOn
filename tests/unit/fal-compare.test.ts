@@ -145,7 +145,16 @@ describe("fal and shutdown catalogue", () => {
         referenceUrl: "https://cdn.example/reference.jpg",
         size: "1024x1536",
       });
-      expect(Object.keys(body ?? {}).sort()).toEqual(id === "openai/gpt-image-2/edit" ? ["image_urls", "prompt", "quality"] : ["image_urls", "prompt"]);
+      const keys: Record<string, string[]> = {
+        "blackforestlabs/flux-3/edit-image": ["aspect_ratio", "image_urls", "prompt"],
+        "fal-ai/nano-banana-pro/edit": ["aspect_ratio", "image_urls", "prompt"],
+        "fal-ai/nano-banana-2/edit": ["aspect_ratio", "image_urls", "prompt"],
+        "bytedance/seedream/v5/lite/edit": ["image_size", "image_urls", "prompt"],
+        "openai/gpt-image-2/edit": ["image_size", "image_urls", "prompt", "quality"],
+      };
+      expect(Object.keys(body ?? {}).sort()).toEqual(keys[id]);
+      if (body && "aspect_ratio" in body) expect(body.aspect_ratio).toBe("2:3");
+      if (body && "image_size" in body) expect(body.image_size).toEqual({ width: 1024, height: 1536 });
       expect(body?.image_urls).toEqual(["https://cdn.example/selfie.png", "https://cdn.example/reference.jpg"]);
       expect(body?.prompt).toBe(FAL_NUMBERED_IMAGE_PROMPT);
       expect(body?.quality).toBe(id === "openai/gpt-image-2/edit" ? "medium" : undefined);
@@ -233,8 +242,9 @@ describe("fal and shutdown catalogue", () => {
         submits += 1;
         return json({ request_id: "req-black" });
       }
-      if (href.endsWith("/status")) return json({ status: "COMPLETED" });
-      if (href.includes("/requests/req-black") && !href.endsWith("/status")) {
+      const path = href.split("?")[0] || href;
+      if (path.endsWith("/status")) return json({ status: "COMPLETED" });
+      if (href.includes("/requests/req-black") && !path.endsWith("/status")) {
         return json({ images: [{ url: "https://v3.fal.media/files/black.png" }], has_nsfw_concepts: [false] });
       }
       if (href.startsWith("https://v3.fal.media/")) return new Response(new Uint8Array(black), { status: 200 });
@@ -325,6 +335,113 @@ describe("fal and shutdown catalogue", () => {
       fetchImpl,
       deadlineMs: 0,
     })).rejects.toBeInstanceOf(UncertainBillingError);
+    expect(submits).toBe(1);
+  });
+
+  it("polls the status_url fal returned when it differs from the full endpoint path", async () => {
+    const seen: string[] = [];
+    const logs: unknown[][] = [];
+    const info = console.info;
+    console.info = (...args: unknown[]) => {
+      logs.push(args);
+    };
+    const color = await sharp({ create: { width: 12, height: 18, channels: 3, background: "#886655" } }).png().toBuffer();
+    let tick = 0;
+    const now = () => {
+      tick += 500;
+      return tick;
+    };
+    let polls = 0;
+    let posted: { aspect_ratio?: string } = {};
+    const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      seen.push(href);
+      if (href.includes("/storage/upload/initiate")) {
+        return json({ upload_url: "https://upload.example/put", file_url: "https://v3.fal.media/files/in.png" });
+      }
+      if (href.startsWith("https://upload.example")) return new Response(null, { status: 200 });
+      if (href.startsWith("https://queue.fal.run/") && !href.includes("/requests/") && init?.method === "POST") {
+        posted = JSON.parse(String(init.body)) as { aspect_ratio?: string };
+        return json({
+          request_id: "req-nested",
+          status_url: "https://queue.fal.run/blackforestlabs/flux-3/requests/req-nested/status",
+          response_url: "https://queue.fal.run/blackforestlabs/flux-3/requests/req-nested/response",
+        });
+      }
+      if (href.startsWith("https://queue.fal.run/blackforestlabs/flux-3/requests/req-nested/status")) {
+        polls += 1;
+        if (polls === 1) return json({ status: "IN_QUEUE", queue_position: 1 });
+        if (polls === 2) return json({ status: "IN_PROGRESS", logs: [{ message: "editing" }] });
+        return json({
+          status: "COMPLETED",
+          response_url: "https://queue.fal.run/blackforestlabs/flux-3/requests/req-nested/response",
+        });
+      }
+      if (href === "https://queue.fal.run/blackforestlabs/flux-3/requests/req-nested/response") {
+        return json({ images: [{ url: "https://v3.fal.media/files/out.png", width: 12, height: 18 }] });
+      }
+      if (href.startsWith("https://v3.fal.media/")) return new Response(new Uint8Array(color), { status: 200 });
+      throw new Error(`unexpected ${href}`);
+    }) as typeof fetch;
+    try {
+      const result = await postFalReferenceEdit({
+        apiKey: "fal-test-key-123456",
+        endpointId: "blackforestlabs/flux-3/edit-image",
+        prompt: FAL_NUMBERED_IMAGE_PROMPT,
+        selfiePng: color,
+        referenceJpeg: color,
+        size: "1024x1536",
+        estimateUsd: 0.05,
+      fetchImpl,
+      now,
+      deadlineMs: 30_000,
+      sleep: async () => undefined,
+    });
+      expect(posted.aspect_ratio).toBe("2:3");
+      expect(result.requestId).toBe("req-nested");
+      expect(result.outputSize).toBe("12x18");
+      expect(polls).toBe(3);
+      expect(seen.some((href) => href.includes("/edit-image/requests/"))).toBe(false);
+      expect(seen.some((href) => href.startsWith("https://queue.fal.run/blackforestlabs/flux-3/requests/req-nested/status?logs=1"))).toBe(true);
+      expect(logs.some((args) => args[0] === "fal queue submit" && (args[1] as { requestId?: string }).requestId === "req-nested")).toBe(true);
+    } finally {
+      console.info = info;
+    }
+
+    let submits = 0;
+    let errorTick = 0;
+    const failing = (async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      if (href.includes("/storage/upload/initiate")) return json({ upload_url: "https://upload.example/put", file_url: "https://v3.fal.media/files/in.png" });
+      if (href.startsWith("https://upload.example")) return new Response(null, { status: 200 });
+      if (href.startsWith("https://queue.fal.run/") && !href.includes("/requests/") && init?.method === "POST") {
+        submits += 1;
+        return json({
+          request_id: "req-err",
+          status_url: "https://queue.fal.run/blackforestlabs/flux-3/requests/req-err/status",
+        });
+      }
+      if (href.includes("/requests/req-err/status")) {
+        return json({ status: "COMPLETED", error: "content checker rejected the frame", error_type: "content_policy_violation", logs: [{ message: "blocked" }] });
+      }
+      throw new Error(`unexpected ${href}`);
+    }) as typeof fetch;
+    await expect(postFalReferenceEdit({
+      apiKey: "fal-test-key-123456",
+      endpointId: "blackforestlabs/flux-3/edit-image",
+      prompt: "edit",
+      selfiePng: color,
+      referenceJpeg: color,
+      size: "1024x1536",
+      estimateUsd: 0.05,
+      fetchImpl: failing,
+      now: () => {
+        errorTick += 500;
+        return errorTick;
+      },
+      deadlineMs: 30_000,
+      sleep: async () => undefined,
+    })).rejects.toThrow(/content checker rejected the frame/);
     expect(submits).toBe(1);
   });
 });
