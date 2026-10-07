@@ -30,15 +30,38 @@ describe("hairstyle suitability tags", () => {
     for (const style of STYLES) {
       expect(style.density.length).toBeGreaterThan(0);
       expect(style.texture.length).toBeGreaterThan(0);
+      expect(style.density.length).toBeLessThanOrEqual(2);
+      expect(style.texture.length).toBeLessThanOrEqual(2);
       expect(style.density.every((item) => ["thin", "medium", "thick"].includes(item))).toBe(true);
       expect(style.texture.every((item) => ["straight", "wavy", "curly"].includes(item))).toBe(true);
     }
-    expect(styleById("butterfly-layers")?.density).toEqual(["thick"]);
-    expect(styleById("butterfly-layers")?.texture).toEqual(["straight", "wavy"]);
+    expect(styleById("buzz-cut")?.density).toEqual(["thin"]);
+    expect(styleById("crew-cut")?.density).toEqual(["thin"]);
+    expect(styleById("textured-crop")?.density).toEqual(["medium", "thick"]);
+    expect(styleById("curtain-bangs")?.density).toEqual(["medium", "thick"]);
+    expect(styleById("soft-curls")?.texture).toEqual(["curly"]);
+    expect(styleById("soft-bob")?.texture).toEqual(["straight", "wavy"]);
     expect(styleById("pixie")?.density).toEqual(["thin"]);
-    expect(styleById("pixie")?.texture).toEqual(["straight", "wavy", "curly"]);
-    expect(styleById("soft-bob")?.density).toEqual(["thin", "medium", "thick"]);
-    expect(styleById("curtain-bangs")?.density).toEqual(["thick"]);
+    expect(styleById("sleek-straight")?.texture).toEqual(["straight"]);
+  });
+
+  it("gives women and men a distinct set of 3–8 photos for every density and texture", () => {
+    const densities = ["thin", "medium", "thick"];
+    const textures = ["straight", "wavy", "curly"];
+    for (const gender of ["women", "men"] as const) {
+      const menu = STYLES.filter((style) => style.gender === gender);
+      const seen = new Set<string>();
+      for (const density of densities) {
+        for (const texture of textures) {
+          const names = orderStylesForPicker(menu, { density, texture }, false).map((style) => style.name);
+          expect(names.length, `${gender} ${density} ${texture}`).toBeGreaterThanOrEqual(3);
+          expect(names.length, `${gender} ${density} ${texture}`).toBeLessThanOrEqual(8);
+          const key = names.slice().sort().join("|");
+          expect(seen.has(key), `${gender} ${density} ${texture} repeats ${key}`).toBe(false);
+          seen.add(key);
+        }
+      }
+    }
   });
 
   it("filters the menu to matching photos and can show the rest after them", () => {

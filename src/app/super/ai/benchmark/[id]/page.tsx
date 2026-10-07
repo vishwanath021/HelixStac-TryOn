@@ -15,7 +15,6 @@ const EXTRA = ["restored-output.png", "provider-input.png", "provider-reference.
 const COMPOSITE_STAGES: { file: string; caption: string }[] = [
   { file: "aligned-output.png", caption: "Aligned generated frame. This is not the raw provider output." },
   { file: "mask-overlay.png", caption: "Original hair in blue, generated hair in magenta, protected face in gold." },
-  { file: "hair-composite.png", caption: "Hair-only composite. Optional fallback. This is not the raw provider output and it is not the download." },
   { file: "face-check.png", caption: "Eyes, brows, nose and mouth. Green is the selfie. Red is the generated face after alignment. A warning only. This does not accept or reject the image." },
 ];
 
@@ -43,7 +42,6 @@ export default async function BenchmarkReviewPage({ params }: { params: Promise<
       <p className="mt-2 text-sm leading-6">
         Hairstyle benchmark for {run.styleId}. Model {run.model}, quality {run.quality}, size {run.size}. Status {run.status}. Source {run.source === "tryon" ? "salon try-on" : "benchmark form"}.
         The right-hand photograph is the raw provider body, before any crop. Nothing here was accepted as a finished haircut.
-        {compositeStages.some((stage) => stage.file === "hair-composite.png") && " A hair-only composite, when present below, is a separate image and is not the raw provider output."}
       </p>
       <p className="mt-3 rounded-xl border border-line bg-white p-3 text-sm leading-6">
         Real family photos are personal data. This run sent them only to OpenAI. The files stay on this server under var/benchmarks

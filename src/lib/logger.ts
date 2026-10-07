@@ -24,6 +24,27 @@ export function logInfo(message: string, meta?: unknown) {
   console.info(message, meta ? redact(meta) : "");
 }
 
+/** One line per provider HTTP call. Never pass images, prompts, or keys. */
+export function logProviderCall(entry: {
+  provider: string;
+  model: string;
+  salonId: string;
+  status: string;
+  latencyMs: number;
+  costUsd?: number;
+  requestId?: string;
+}) {
+  logInfo("provider call", {
+    provider: entry.provider,
+    model: entry.model,
+    salonId: entry.salonId,
+    status: entry.status,
+    latencyMs: entry.latencyMs,
+    costUsd: entry.costUsd ?? 0,
+    requestId: (entry.requestId || "").slice(0, 128),
+  });
+}
+
 export function logError(message: string, meta?: unknown) {
   console.error(message, meta ? redact(meta) : "");
 }

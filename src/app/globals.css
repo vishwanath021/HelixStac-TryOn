@@ -3,17 +3,17 @@
 @tailwind utilities;
 
 :root {
-  --brand: #c4622d;
-  --brand-btn: #c86c3a;
-  --on-brand: #241c16;
-  --accent: #241c16;
-  --bg: #f3ece3;
-  --card: #fffdfb;
-  --line: #e4d5c6;
-  --muted: #7a6a5c;
-  --ink: #241c16;
-  --good: #2a6b4a;
-  --bad: #8d2f2f;
+  --brand: #0e7c74;
+  --brand-btn: #0e7c74;
+  --on-brand: #ffffff;
+  --accent: #e9897a;
+  --bg: #f4fbf9;
+  --card: #ffffff;
+  --line: #d3e5e1;
+  --muted: #3e615c;
+  --ink: #12312e;
+  --good: #1f7a4d;
+  --bad: #9b3d3d;
 }
 
 * { box-sizing: border-box; }
@@ -21,12 +21,16 @@ html, body { min-height: 100%; }
 body {
   margin: 0;
   background:
-    radial-gradient(1200px 500px at 10% -10%, rgba(196, 98, 45, 0.16), transparent 50%),
+    radial-gradient(900px 420px at 100% -10%, rgba(233, 137, 122, 0.16), transparent 55%),
+    radial-gradient(800px 380px at -10% -20%, rgba(14, 124, 116, 0.12), transparent 50%),
     var(--bg);
   color: var(--ink);
   font-family: var(--font-sans), var(--font-deva), var(--font-knda), var(--font-taml), var(--font-telu), system-ui, sans-serif;
 }
-h1, h2, h3, .font-serif { font-family: var(--font-serif), Georgia, serif; }
+h1, h2, h3, .font-serif {
+  font-family: var(--font-sans), var(--font-deva), var(--font-knda), var(--font-taml), var(--font-telu), system-ui, sans-serif;
+  letter-spacing: -0.03em;
+}
 a { color: inherit; }
 button, input, select, textarea { font: inherit; }
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
@@ -34,40 +38,50 @@ button, input, select, textarea { font: inherit; }
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 20px;
-  box-shadow: 0 16px 40px rgba(60, 36, 16, 0.06);
+  border-radius: 22px;
+  box-shadow: 0 10px 30px rgba(18, 49, 46, 0.06);
 }
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  border-radius: 999px;
-  padding: 0.75rem 1.1rem;
+  border-radius: 14px;
+  padding: 0.75rem 1.15rem;
   border: 1px solid transparent;
   background: var(--brand-btn, var(--brand));
-  color: var(--on-brand, #fffaf6);
+  color: var(--on-brand, #ffffff);
   font-weight: 600;
+  letter-spacing: -0.01em;
+  box-shadow: 0 8px 18px rgba(14, 124, 116, 0.16);
   cursor: pointer;
 }
-.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
 .btn.secondary {
-  background: transparent;
-  color: var(--ink);
-  border-color: var(--line);
+  background: #ffffff;
+  color: var(--brand);
+  border-color: var(--brand);
+  box-shadow: none;
 }
 .btn.on-photo {
-  background: #fffaf6;
-  color: #241c16;
-  border-color: transparent;
+  background: #ffffff;
+  color: var(--ink);
+  border-color: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 8px 20px rgba(18, 49, 46, 0.18);
 }
-.btn.ghost { background: transparent; color: var(--ink); }
+.btn.ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: transparent;
+  box-shadow: none;
+}
 .field {
   width: 100%;
   border: 1px solid var(--line);
   background: #fff;
-  border-radius: 12px;
-  padding: 0.7rem 0.8rem;
+  border-radius: 14px;
+  padding: 0.75rem 0.85rem;
+  color: var(--ink);
 }
 .swatch {
   width: 2.4rem;

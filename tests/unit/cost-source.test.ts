@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { actualHeading, capPaise, costSourceLabel, falPriceListUsd, matchFalBillingEvents } from "@/lib/ai/cost-source";
 import { syncFalBillingCosts } from "@/lib/ai/fal-billing";
-import { beginPaidCall, correctActualCost, finalizePaidCall, spendSummary } from "@/lib/ai/spend";
+import { beginPaidCall, finalizePaidCall, spendSummary } from "@/lib/ai/spend";
 import { exactInr } from "@/lib/ai/tiers";
 import { prisma } from "@/lib/prisma";
 
@@ -68,7 +68,7 @@ describe("cost source", () => {
     expect(pairs).toEqual([{ rowId: "row-seed", requestId: "req-seed", usd: 0.03 }]);
   });
 
-  it("keeps the reserved estimate, syncs cost_total, and lets a manual correction replace a timeout", async () => {
+  it("keeps the reserved estimate and syncs cost_total from fal billing", async () => {
     process.env.AI_SPEND_CAP_INR = "40";
     const reserved = await beginPaidCall({
       provider: "fal",
@@ -117,21 +117,9 @@ describe("cost source", () => {
     expect(billed?.costInrPaise).toBe(Math.round(exactInr(0.024) * 100));
     const summary = await spendSummary();
     expect(summary.spentInr).toBeCloseTo(exactInr(0.024), 2);
-
-    const corrected = await correctActualCost({
-      id: reserved.id,
-      actorId: "super-1",
-      actualUsd: 0.024,
-      note: "fal dashboard showed $0.024 for this flux-3 timeout",
-    });
-    expect(corrected.ok).toBe(true);
     const row = await prisma.aiCall.findUnique({ where: { id: reserved.id } });
     expect(row?.estimatePaise).toBe(790);
-    expect(row?.costSource).toBe("manual");
-    expect(row?.costNote).toContain("$0.024");
-    const audit = await prisma.auditLog.findFirst({ where: { action: "correct_actual", target: reserved.id } });
-    expect(audit?.meta).toContain("fal dashboard");
-    expect(audit?.meta).not.toContain("fal-test-key");
+    expect(row?.costSource).toBe("billing");
   });
 
   it("does not change the ledger when fal refuses an API-scoped key", async () => {

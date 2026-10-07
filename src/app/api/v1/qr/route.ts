@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   if (!tenant) return NextResponse.json({ error: "TENANT" }, { status: 404 });
   const target = `${appBaseUrl()}/s/${tenant.slug}?src=qr`;
   if (format === "svg") {
-    const svg = await QRCode.toString(target, { type: "svg", margin: 1, color: { dark: "#241c16", light: "#fffdfb" } });
+    const svg = await QRCode.toString(target, { type: "svg", margin: 1, color: { dark: "#12312e", light: "#ffffff" } });
     return new NextResponse(svg, {
       headers: {
         "content-type": "image/svg+xml",
@@ -19,7 +19,7 @@ export async function GET(req: Request) {
       },
     });
   }
-  const png = await QRCode.toBuffer(target, { type: "png", width: 640, margin: 1, color: { dark: "#241c16", light: "#fffdfb" } });
+  const png = await QRCode.toBuffer(target, { type: "png", width: 640, margin: 1, color: { dark: "#12312e", light: "#ffffff" } });
   return new NextResponse(new Uint8Array(png), {
     headers: {
       "content-type": "image/png",

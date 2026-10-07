@@ -6,7 +6,7 @@ export function StyleCard({ id, name, folder = "styles" }: { id: string; name: s
   const [missing, setMissing] = useState(false);
   if (missing) {
     return (
-      <div className="grid aspect-square place-items-center bg-[#f4f1ec] px-3 text-center text-sm text-[#3a342e]" role="img" aria-label={`${name} style reference`}>
+      <div className="grid aspect-square place-items-center bg-sand px-3 text-center text-sm text-ink" role="img" aria-label={`${name} style reference`}>
         {name}
       </div>
     );

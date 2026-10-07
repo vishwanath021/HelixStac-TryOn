@@ -107,44 +107,6 @@ export async function finalizePaidCall(
   });
 }
 
-/** Super-admin correction. The reserved estimate is left as it was. */
-export async function correctActualCost(args: { id: string; actorId: string; actualUsd: number; note: string }) {
-  const row = await prisma.aiCall.findUnique({ where: { id: args.id } });
-  if (!row) return { ok: false as const, message: "That ledger row was not found." };
-  const note = args.note.trim();
-  if (!note) return { ok: false as const, message: "An audit note is required." };
-  if (!Number.isFinite(args.actualUsd) || args.actualUsd < 0 || args.actualUsd > 1000) {
-    return { ok: false as const, message: "Enter the billed amount in US dollars." };
-  }
-  const inr = exactInr(args.actualUsd);
-  await prisma.aiCall.update({
-    where: { id: row.id },
-    data: {
-      costUsdMicros: Math.round(args.actualUsd * 1_000_000),
-      costInrPaise: Math.round(inr * 100),
-      costSource: "manual",
-      costNote: note.slice(0, 500),
-      billed: true,
-      charged: true,
-    },
-  });
-  await prisma.auditLog.create({
-    data: {
-      actorId: args.actorId,
-      action: "correct_actual",
-      target: row.id,
-      meta: JSON.stringify({
-        note: note.slice(0, 500),
-        previousSource: row.costSource,
-        previousUsdMicros: row.costUsdMicros,
-        nextUsdMicros: Math.round(args.actualUsd * 1_000_000),
-        model: row.model,
-      }),
-    },
-  });
-  return { ok: true as const, message: `Actual set to $${args.actualUsd.toFixed(3)} (₹${inr.toFixed(2)}).` };
-}
-
 export function spendCapWhere() {
   return { status: { in: [...SPEND_CAP_STATUSES] } };
 }

@@ -26,7 +26,7 @@ export function BeforeAfter({
   return (
     <div
       ref={box}
-      className="relative aspect-[3/4] touch-none overflow-hidden bg-[#14110e]"
+      className="relative aspect-[3/4] touch-none overflow-hidden bg-[#eef7f5]"
       onPointerDown={(event) => {
         box.current?.setPointerCapture(event.pointerId);
         setFromClientX(event.clientX);
@@ -46,7 +46,7 @@ export function BeforeAfter({
       />
       <div className="pointer-events-none absolute inset-y-0 z-10" style={{ left: `${pos}%` }}>
         <div className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-white" />
-        <div className="absolute left-1/2 top-1/2 grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-[#241c16] bg-white text-[10px] font-semibold tracking-wide text-[#241c16]">
+        <div className="absolute left-1/2 top-1/2 grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-ink bg-white text-[10px] font-semibold tracking-wide text-ink">
           ↔
         </div>
       </div>

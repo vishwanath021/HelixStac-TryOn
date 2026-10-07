@@ -6,11 +6,12 @@ import type { FaceShape, HairDensity, HairTexture, PublicStyle } from "@/data/st
 
 type Tags = { density: HairDensity[]; texture: HairTexture[]; faceShapes: FaceShape[] };
 
-function toggleValue<T extends string>(list: T[], value: T, keepLast: boolean) {
+function toggleValue<T extends string>(list: T[], value: T, keepLast: boolean, max = Number.POSITIVE_INFINITY) {
   if (list.includes(value)) {
     if (keepLast && list.length === 1) return list;
     return list.filter((item) => item !== value);
   }
+  if (list.length >= max) return list;
   return [...list, value];
 }
 
@@ -69,8 +70,8 @@ export function CatalogueEditor({
           function setTag(key: "density" | "texture" | "faceShapes", value: string) {
             setTags((prev) => {
               const row = prev[style.id] || current;
-              if (key === "density") return { ...prev, [style.id]: { ...row, density: toggleValue(row.density, value as HairDensity, true) } };
-              if (key === "texture") return { ...prev, [style.id]: { ...row, texture: toggleValue(row.texture, value as HairTexture, true) } };
+              if (key === "density") return { ...prev, [style.id]: { ...row, density: toggleValue(row.density, value as HairDensity, true, 2) } };
+              if (key === "texture") return { ...prev, [style.id]: { ...row, texture: toggleValue(row.texture, value as HairTexture, true, 2) } };
               return { ...prev, [style.id]: { ...row, faceShapes: toggleValue(row.faceShapes, value as FaceShape, false) } };
             });
           }

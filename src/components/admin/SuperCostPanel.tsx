@@ -42,7 +42,6 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
   const [images, setImages] = useState(initial.imagesPerMonth);
   const [since, setSince] = useState("");
   const [notice, setNotice] = useState("");
-  const [drafts, setDrafts] = useState<Record<string, { usd: string; note: string }>>({});
 
   async function load(sessionStart: string, count: number) {
     const params = new URLSearchParams({ imagesPerMonth: String(count) });
@@ -69,20 +68,6 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
     const res = await fetch("/api/v1/super/ai/costs/sync-fal", { method: "POST" });
     const data = (await res.json().catch(() => ({}))) as { message?: string };
     setNotice(data.message || "fal billing sync did not finish.");
-    if (res.ok && since) await load(since, images);
-  }
-
-  async function correct(id: string) {
-    const draft = drafts[id] || { usd: "", note: "" };
-    const actualUsd = Number(draft.usd);
-    setNotice("Saving the corrected actual…");
-    const res = await fetch("/api/v1/super/ai/costs/correct", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, actualUsd, note: draft.note }),
-    });
-    const data = (await res.json().catch(() => ({}))) as { message?: string };
-    setNotice(data.message || "The correction was not saved.");
     if (res.ok && since) await load(since, images);
   }
 
@@ -144,49 +129,22 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
             </tr>
           </thead>
           <tbody>
-            {report.calls.map((row) => {
-              const draft = drafts[row.id] || { usd: "", note: "" };
-              return (
-                <tr key={row.id} className="border-t border-black/10 align-top">
-                  <td className="py-1 pr-2">{row.at.slice(0, 16).replace("T", " ")}</td>
-                  <td className="py-1 pr-2">
-                    {row.model}
-                    {row.providerRequestId ? <span className="block text-muted">{row.providerRequestId}</span> : null}
-                  </td>
-                  <td className="py-1 pr-2">{row.imageSize}</td>
-                  <td className="py-1 pr-2">₹{row.estimateInr.toFixed(2)}</td>
-                  <td className="py-1 pr-2">{row.actualKnown ? `$${row.costUsd.toFixed(3)} (₹${row.costInr.toFixed(2)})` : "—"}</td>
-                  <td className="py-1">
-                    <div>{row.sourceLabel}</div>
-                    {row.costNote ? <div className="text-muted">{row.costNote}</div> : null}
-                    <form
-                      className="mt-1 flex flex-wrap gap-1"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void correct(row.id);
-                      }}
-                    >
-                      <input
-                        className="field w-20"
-                        aria-label={`Correct actual dollars for ${row.model || row.id}`}
-                        inputMode="decimal"
-                        placeholder="USD"
-                        value={draft.usd}
-                        onChange={(event) => setDrafts((current) => ({ ...current, [row.id]: { ...draft, usd: event.target.value } }))}
-                      />
-                      <input
-                        className="field w-40"
-                        aria-label={`Audit note for ${row.model || row.id}`}
-                        placeholder="Audit note"
-                        value={draft.note}
-                        onChange={(event) => setDrafts((current) => ({ ...current, [row.id]: { ...draft, note: event.target.value } }))}
-                      />
-                      <button className="underline" type="submit">Correct actual</button>
-                    </form>
-                  </td>
-                </tr>
-              );
-            })}
+            {report.calls.map((row) => (
+              <tr key={row.id} className="border-t border-black/10 align-top">
+                <td className="py-1 pr-2">{row.at.slice(0, 16).replace("T", " ")}</td>
+                <td className="py-1 pr-2">
+                  {row.model}
+                  {row.providerRequestId ? <span className="block text-muted">{row.providerRequestId}</span> : null}
+                </td>
+                <td className="py-1 pr-2">{row.imageSize}</td>
+                <td className="py-1 pr-2">₹{row.estimateInr.toFixed(2)}</td>
+                <td className="py-1 pr-2">{row.actualKnown ? `$${row.costUsd.toFixed(3)} (₹${row.costInr.toFixed(2)})` : "—"}</td>
+                <td className="py-1">
+                  <div>{row.sourceLabel}</div>
+                  {row.costNote ? <div className="text-muted">{row.costNote}</div> : null}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

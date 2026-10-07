@@ -11,6 +11,7 @@ import { styleById } from "@/data/styles";
 import { runLockedEdit } from "@/lib/face/pipeline";
 import { hairExtentForStyle, preflightPhoto, type RegionTool } from "@/lib/face/region";
 import { aiProviderName } from "@/lib/env";
+import { logProviderCall } from "@/lib/logger";
 
 export type ProviderChoice = {
   name: string;
@@ -108,6 +109,15 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
           latencyMs: output.latencyMs,
           imageSize: output.imageSize || imageSize,
         });
+        logProviderCall({
+          provider: primary.name,
+          model: output.model || model,
+          salonId: input.tenantId,
+          status: "ok",
+          latencyMs: output.latencyMs,
+          costUsd: output.providerCostUsd,
+          requestId: gate.id,
+        });
         return { ...output, callId: gate.id, estimateInr: gate.estimateInr };
       } catch (error) {
         if (error instanceof UncertainBillingError) {
@@ -120,9 +130,25 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
             imageSize,
             costSource: "timeout",
           });
+          logProviderCall({
+            provider: primary.name,
+            model,
+            salonId: input.tenantId,
+            status: "uncertain",
+            latencyMs: 0,
+            requestId: gate.id,
+          });
           await releasePaidCall(gate.id, "UNCERTAIN");
           throw error;
         }
+        logProviderCall({
+          provider: primary.name,
+          model,
+          salonId: input.tenantId,
+          status: "failed",
+          latencyMs: 0,
+          requestId: gate.id,
+        });
         await settleFailure(gate.id, error, model, gate.estimateInr, imageSize);
         throw error;
       }

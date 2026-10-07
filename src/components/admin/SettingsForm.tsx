@@ -76,7 +76,7 @@ export function SettingsForm({
   return (
     <div className="space-y-4">
       <form className="card grid gap-3 p-4" onSubmit={save}>
-        <label className="text-sm">Name<input className="field mt-1" value={form.name} onChange={(event) => set("name", event.target.value)} /></label>
+        <label className="text-sm">Salon name<input className="field mt-1" aria-label="Salon name" value={form.name} onChange={(event) => set("name", event.target.value)} /></label>
         <div className="grid grid-cols-2 gap-3">
           <label className="text-sm">Primary<input className="mt-1 h-10 w-full" type="color" value={form.primaryColor} onChange={(event) => set("primaryColor", event.target.value)} /></label>
           <label className="text-sm">Accent<input className="mt-1 h-10 w-full" type="color" value={form.accentColor} onChange={(event) => set("accentColor", event.target.value)} /></label>

@@ -33,7 +33,7 @@ export default async function QrAdminPage() {
           {plan.embed ? (
             <>
               <p className="mt-2 text-sm">Paste this on the salon website. It adds a button and an iframe. The iframe posts <code>tryon:booked</code> to the parent window. No photo is included.</p>
-              <pre className="mt-3 overflow-x-auto rounded-xl bg-[#241c16] p-3 text-xs text-[#f3ece3]">{snippet}</pre>
+              <pre className="mt-3 overflow-x-auto rounded-xl bg-[#12312e] p-3 text-xs text-[#f4fbf9]">{snippet}</pre>
               <p className="mt-3 text-sm">Or iframe <code>{base}/embed/{tenant.slug}</code> with <code>allow=&quot;camera&quot;</code>.</p>
             </>
           ) : (

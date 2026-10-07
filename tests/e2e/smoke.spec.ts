@@ -291,6 +291,45 @@ test("a near-black salon brand still has readable primary button text", async ({
   }
 });
 
+test("a renamed salon shows on the guest header and title", async ({ page }) => {
+  const prisma = await salonDb();
+  const before = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo-salon" }, select: { name: true, id: true } });
+  try {
+    await page.goto("/login");
+    await page.getByLabel("Email").fill("owner@demo.helixstac.app");
+    await page.getByLabel("Password").fill("DemoSalon#2026");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto("/admin/settings");
+    await page.getByLabel("Salon name").fill("Indiranagar Studio");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText("Settings saved.")).toBeVisible();
+    await page.goto("/s/demo-salon");
+    await expect(page.getByRole("heading", { level: 1, name: "Indiranagar Studio" })).toBeVisible();
+    await expect(page).toHaveTitle(/Indiranagar Studio/);
+    await page.goto("/admin");
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.waitForURL("/");
+
+    await page.goto("/login");
+    await page.getByLabel("Email").fill("super@helixstac.app");
+    await page.getByLabel("Password").fill("SuperAdmin#2026");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto("/super");
+    const superName = page.getByLabel("Salon name for demo-salon");
+    await superName.fill("Studio Indiranagar");
+    await superName.locator("xpath=ancestor::form").getByRole("button", { name: "Save name" }).click();
+    await expect(page.getByText("Updated.")).toBeVisible();
+    await page.goto("/s/demo-salon");
+    await expect(page.getByRole("heading", { level: 1, name: "Studio Indiranagar" })).toBeVisible();
+    await expect(page).toHaveTitle(/Studio Indiranagar/);
+    await page.goto("/s/demo-salon/qr");
+    await expect(page.getByRole("heading", { level: 1, name: "Studio Indiranagar" })).toBeVisible();
+  } finally {
+    await prisma.tenant.update({ where: { id: before.id }, data: { name: before.name } });
+    await prisma.$disconnect();
+  }
+});
+
 test("denied camera offers an upload fallback", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "mediaDevices", {

@@ -226,9 +226,9 @@ The generate route then uses the same reference edit as the benchmark: `gpt-imag
 
 ## Hair-only composite
 
-A second checkbox, **Hair-only composite**, appears only while Reference mode is on. It is off by default. Guests never see it. The benchmark form on `/super/ai` does not use it.
+The cut-out-and-paste option is gone. Guest and reference results are the raw provider image. The face-check warning still runs. `npm run replay:composite` can still build a local composite for an offline review and is not part of a request.
 
-The paid request is unchanged: one reference edit, the same quote, confirmation, request-id dedup, ₹500 ledger and ₹30 run cap. `hairComposite=yes` is ignored unless reference mode is already active. The fingerprint mode is `reference-hair`, or `reference-hair-curly` / `reference-hair-wavy` / `reference-hair-straight` when Hair texture is set, so it does not replay a different texture. The vision models and Python mediapipe are checked before `beginPaidCall`. A missing file returns 400 and does not call the provider.
+The paid request is unchanged: one reference edit, the same quote, confirmation, request-id dedup, ₹500 ledger and ₹30 run cap. The fingerprint mode is `reference`, or `reference-curly` / `reference-wavy` / `reference-straight` when Hair texture is set. A request no longer checks Python or MediaPipe before the provider call.
 
 After the provider PNG returns, the letterbox is cropped with the recorded frame transform, then a landmark similarity maps that frame onto the sanitized selfie. Hair comes from MediaPipe's hair segmenter on both images. Clothes and accessories come from the selfie multiclass model (categories 4 and 5). The protected zone is built from Face Landmarker points: eyes, brows, nose, mouth, the beard and moustache, ears only where the old hair does not cover them, and face-oval skin that is not already hair. The skin-colour blob is not a hair mask.
 

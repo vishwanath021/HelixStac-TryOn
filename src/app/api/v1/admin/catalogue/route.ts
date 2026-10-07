@@ -13,8 +13,8 @@ const schema = z.object({
     enabled: z.boolean(),
     customName: z.string().max(80).optional().nullable(),
     suitability: z.object({
-      density: z.array(z.enum(["thin", "medium", "thick"])).min(1).max(3),
-      texture: z.array(z.enum(["straight", "wavy", "curly"])).min(1).max(3),
+      density: z.array(z.enum(["thin", "medium", "thick"])).min(1).max(2),
+      texture: z.array(z.enum(["straight", "wavy", "curly"])).min(1).max(2),
       faceShapes: z.array(z.enum(["oval", "round", "square", "heart", "oblong", "diamond"])).max(6).optional(),
     }).optional(),
   })),

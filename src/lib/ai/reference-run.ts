@@ -5,8 +5,7 @@ import sharp from "sharp";
 import { benchmarkDir, prepareBenchmark, restoredFromProvider, writeBenchmarkStages } from "@/lib/ai/benchmark";
 import { prepareComparison } from "@/lib/ai/compare-models";
 import type { AskedTexture } from "@/lib/ai/reference-texture";
-import { composeHairOnly, reviewProviderFace } from "@/lib/face/compose-hair";
-import { assertVisionReady } from "@/lib/face/vision-assets";
+import { reviewProviderFace } from "@/lib/face/compose-hair";
 import type { DriftReport } from "@/lib/face/hair-composite";
 import { assessClothing } from "@/lib/ai/clothing-check";
 import { resolveFalKey, resolveGeminiKey, resolveOpenAIKey, resolveOpenRouterKey } from "@/lib/ai/credentials";
@@ -22,6 +21,7 @@ import { actualHeading, costSourceLabel, falPriceListUsd } from "@/lib/ai/cost-s
 import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
 import { costUsdFromUsage, exactInr, type UsageNumbers } from "@/lib/ai/tiers";
 import { numberEnv } from "@/lib/env";
+import { logProviderCall } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 
 function usageFrom(payload: {
@@ -69,11 +69,8 @@ export type ReferenceSuccess = {
   usage: UsageNumbers | null;
   clothingWarning: string;
   imagePng: Buffer;
-  compositePng: Buffer | null;
-  compositeError: string;
   rawFaceDrift: boolean;
   faceScore: number | null;
-  hairComposite: boolean;
   message: string;
   costSource: string;
   actualKnown: boolean;
@@ -100,18 +97,9 @@ export async function executeReferenceEdit(args: {
   tenantId: string;
   source: "benchmark" | "tryon";
   tool: string;
-  hairComposite?: boolean;
   hairTexture?: AskedTexture;
   modelId?: string;
 }): Promise<ReferenceSuccess | ReferenceFailure> {
-  if (args.hairComposite) {
-    try {
-      await assertVisionReady();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Hair-only composite is unavailable.";
-      return { ok: false, httpStatus: 400, error: "VISION", message, outcome: "quote" };
-    }
-  }
   await purgeOldBenchmarks().catch(() => undefined);
   const requestedModel = args.modelId?.trim() || "";
   const prepared = requestedModel
@@ -222,7 +210,7 @@ export async function executeReferenceEdit(args: {
     outputFormat: "png",
     referencePixels: { width: prepared.referenceWidth, height: prepared.referenceHeight },
     note: "The skin-colour face blob was not used. Alignment is not a haircut score. No original face was pasted back.",
-    hairCompositeRequested: Boolean(args.hairComposite),
+    hairCompositeRequested: false,
     hairTexture: prepared.texture,
     referenceTexture: prepared.referenceTexture,
     textureWarning: prepared.textureWarning,
@@ -256,8 +244,8 @@ export async function executeReferenceEdit(args: {
   let providerRequestId = "";
   let openRouterCostReport: "usage.cost" | "generation" | "none" | "" = "";
   let falComputedUsd: number | null = null;
+  const started = Date.now();
   try {
-    const started = Date.now();
     let usage: ReturnType<typeof usageFrom>;
     let providerResponse: Buffer;
     if (provider === "gemini") {
@@ -343,38 +331,17 @@ export async function executeReferenceEdit(args: {
       accepted: false,
       detail: "clothing check failed. The run is not accepted.",
     }));
-    let compositePng: Buffer | null = null;
-    let compositeError = "";
     let faceCheckError = "";
     let rawDrift: DriftReport | null = null;
-    let compositeDrift: DriftReport | null = null;
     let aligned: Buffer | undefined;
-    let maskOverlayPng: Buffer | undefined;
     let faceCheckPng: Buffer | undefined;
-    let compositeLandmarksDetected = false;
-    if (args.hairComposite) {
-      try {
-        const composed = await composeHairOnly(args.jpeg, restored);
-        compositePng = composed.compositePng;
-        aligned = composed.alignedPng;
-        maskOverlayPng = composed.overlayPng;
-        faceCheckPng = composed.faceCheckPng;
-        rawDrift = composed.rawDrift;
-        compositeDrift = composed.compositeDrift;
-        compositeLandmarksDetected = composed.compositeLandmarksDetected;
-      } catch (error) {
-        compositeError = error instanceof Error ? error.message : "Hair-only composite failed.";
-      }
-    }
-    if (!rawDrift) {
-      try {
-        const review = await reviewProviderFace(args.jpeg, restored);
-        rawDrift = review.rawDrift;
-        aligned = aligned || review.alignedPng;
-        faceCheckPng = faceCheckPng || review.faceCheckPng;
-      } catch (error) {
-        faceCheckError = error instanceof Error ? error.message : "The face check did not run.";
-      }
+    try {
+      const review = await reviewProviderFace(args.jpeg, restored);
+      rawDrift = review.rawDrift;
+      aligned = review.alignedPng;
+      faceCheckPng = review.faceCheckPng;
+    } catch (error) {
+      faceCheckError = error instanceof Error ? error.message : "The face check did not run.";
     }
     await writeBenchmarkStages(dir, {
       original: args.original,
@@ -391,23 +358,17 @@ export async function executeReferenceEdit(args: {
         accepted: false,
         latencyMs,
         usage: usage || null,
-        compositeApplied: Boolean(compositePng),
-        compositeError,
+        compositeApplied: false,
         faceCheckError,
-        compositeLandmarksDetected,
         rawFaceDrift: rawDrift,
-        compositeFaceDrift: compositeDrift,
         faceCheck: "Eyes, brows, nose and mouth after similarity alignment. flagged is a warning, not a rejection.",
         stages: {
           rawProviderResponse: "provider-response.png",
-          hairComposite: compositePng ? "hair-composite.png" : "",
           faceCheck: faceCheckPng ? "face-check.png" : "",
         },
       },
       transform,
       aligned,
-      maskOverlay: maskOverlayPng,
-      hairComposite: compositePng || undefined,
       faceCheck: faceCheckPng,
     });
     const reported = costUsdFromUsage(quote.model, usage);
@@ -430,6 +391,15 @@ export async function executeReferenceEdit(args: {
       costSource,
       providerRequestId,
     });
+    logProviderCall({
+      provider,
+      model: quote.model,
+      salonId: args.tenantId,
+      status: "ok",
+      latencyMs,
+      costUsd: actualKnown ? usd : 0,
+      requestId: providerRequestId,
+    });
     const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
     let message = `Unvalidated model output. The raw provider image is the result. One provider call. No mask, no face paste, no retry.${clothingNote}`;
     if (provider === "fal" && costSource === "price_list") message += " The shown cost is computed from the fal price list. It is not fal's invoice.";
@@ -438,11 +408,6 @@ export async function executeReferenceEdit(args: {
     if (provider === "openrouter" && openRouterCostReport === "generation") message += " The shown cost is total_cost from OpenRouter generation stats.";
     if (provider === "openrouter" && openRouterCostReport === "none") message += " OpenRouter did not return usage.cost or generation total_cost. The reserved estimate is still the cap until an actual is known.";
     if (rawDrift?.flagged) message += " Face may differ from your photo.";
-    if (args.hairComposite && compositePng) {
-      message += " Hair-only composite saved separately as an optional fallback. It is not the download.";
-    } else if (args.hairComposite) {
-      message += ` Hair-only composite failed: ${compositeError} The paid call was not retried.`;
-    }
     if (faceCheckError) message += ` Face check did not run: ${faceCheckError}`;
     await prisma.benchmarkRun.update({
       where: { id },
@@ -478,11 +443,8 @@ export async function executeReferenceEdit(args: {
       usage: usage || null,
       clothingWarning: clothing.warning || "",
       imagePng: providerResponse,
-      compositePng,
-      compositeError,
       rawFaceDrift: Boolean(rawDrift?.flagged),
       faceScore: rawDrift ? rawDrift.landmarkError : null,
-      hairComposite: Boolean(args.hairComposite),
       message,
     };
   } catch (error) {
@@ -517,6 +479,15 @@ export async function executeReferenceEdit(args: {
       await finalizePaidCall(gate.id, { model: quote.model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize: quote.size });
       await releasePaidCall(gate.id, "REFUNDED");
     }
+    logProviderCall({
+      provider,
+      model: quote.model,
+      salonId: args.tenantId,
+      status: uncertain ? "uncertain" : "failed",
+      latencyMs: Date.now() - started,
+      costUsd: error instanceof BilledProviderError ? error.costUsd : 0,
+      requestId: failedRequestId,
+    });
     const message = error instanceof Error ? error.message : "The reference edit did not finish.";
     await prisma.benchmarkRun.update({ where: { id }, data: { status: uncertain ? "UNCERTAIN" : "FAILED", message } });
     const httpStatus = uncertain ? 504 : unknown || error instanceof UnbilledProviderError ? 422 : 502;
@@ -545,12 +516,9 @@ export function tryOnReferencePayload(run: ReferenceSuccess, revealCost: boolean
     showCost: revealCost,
     clothingWarning: run.clothingWarning,
     message: run.message,
-    hairComposite: run.hairComposite,
-    compositeError: run.compositeError,
     rawFaceDrift: run.rawFaceDrift,
     provider: run.provider,
   };
-  if (run.compositePng) body.compositeBase64 = run.compositePng.toString("base64");
   if (revealCost) {
     body.rupees = run.estimateInr;
     body.dollars = run.estimateUsd;
@@ -578,7 +546,6 @@ export async function runTryOnReference(args: {
   jobId: string;
   requestId: string;
   revealCost: boolean;
-  hairComposite?: boolean;
   hairTexture?: AskedTexture;
   modelId?: string;
 }) {
@@ -589,7 +556,6 @@ export async function runTryOnReference(args: {
     tenantId: args.tenantId,
     source: "tryon",
     tool: "reference",
-    hairComposite: args.hairComposite,
     hairTexture: args.hairTexture,
     modelId: args.modelId,
   });

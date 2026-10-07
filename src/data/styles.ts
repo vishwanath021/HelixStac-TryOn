@@ -24,9 +24,9 @@ export type StyleDef = {
   tags: string[];
   faceShapes: FaceShape[];
   hairTypes: HairType[];
-  /** Hair amounts this cut is suitable for. Seeded from hairTypes. */
+  /** Hair amounts this cut is suitable for. At most two. */
   density: HairDensity[];
-  /** Curl patterns this cut is suitable for. Seeded from hairTypes, else the reference photo. */
+  /** Curl patterns this cut is suitable for. At most two. */
   texture: HairTexture[];
   serviceKeys: string[];
 };
@@ -49,28 +49,84 @@ export function lengthCategoryFor(style: { id?: string; category?: string; lengt
   return "long";
 }
 
-const DENSITY: HairDensity[] = ["thin", "medium", "thick"];
-const TEXTURE: HairTexture[] = ["straight", "wavy", "curly"];
+/**
+ * Barber suitability. Each cut is at most two densities and two textures.
+ * hairTypes stays the guide-quiz list. The picker and AI suggestions read this map.
+ */
+const SUITABILITY: Record<string, { density: HairDensity[]; texture: HairTexture[] }> = {
+  "wispy-bangs": { density: ["thin"], texture: ["straight"] },
+  pixie: { density: ["thin"], texture: ["straight", "curly"] },
+  "sleek-straight": { density: ["thin", "medium"], texture: ["straight"] },
+  "french-bob": { density: ["thin"], texture: ["wavy", "curly"] },
+  "feathered-layers": { density: ["thin"], texture: ["wavy"] },
+  "collarbone-cut": { density: ["thin", "medium"], texture: ["wavy"] },
+  "shoulder-layers": { density: ["thin", "medium"], texture: ["curly"] },
+  "soft-bob": { density: ["medium"], texture: ["straight", "wavy"] },
+  "blunt-bob": { density: ["medium"], texture: ["straight"] },
+  "korean-soft-layers": { density: ["medium"], texture: ["straight"] },
+  "classic-layers": { density: ["medium"], texture: ["straight", "wavy"] },
+  lob: { density: ["medium"], texture: ["wavy"] },
+  "soft-waves": { density: ["medium"], texture: ["wavy"] },
+  "italian-bob": { density: ["medium"], texture: ["wavy", "curly"] },
+  "face-framing-layers": { density: ["medium", "thick"], texture: ["straight"] },
+  "curtain-bangs": { density: ["medium", "thick"], texture: ["straight"] },
+  "butterfly-layers": { density: ["medium", "thick"], texture: ["wavy"] },
+  "beach-waves": { density: ["medium", "thick"], texture: ["wavy"] },
+  shag: { density: ["medium", "thick"], texture: ["curly"] },
+  "hime-cut": { density: ["thick"], texture: ["straight"] },
+  "curtain-wolf": { density: ["thick"], texture: ["straight", "wavy"] },
+  "long-layers": { density: ["thick"], texture: ["straight"] },
+  "voluminous-blowout": { density: ["thick"], texture: ["straight"] },
+  "textured-lob": { density: ["thick"], texture: ["wavy"] },
+  "wolf-cut": { density: ["thick"], texture: ["wavy", "curly"] },
+  "soft-curls": { density: ["thick"], texture: ["curly"] },
+  "buzz-cut": { density: ["thin"], texture: ["straight", "curly"] },
+  "crew-cut": { density: ["thin"], texture: ["straight", "wavy"] },
+  caesar: { density: ["thin"], texture: ["straight"] },
+  "comb-over": { density: ["thin"], texture: ["straight", "wavy"] },
+  "ivy-league": { density: ["thin"], texture: ["wavy"] },
+  "side-part": { density: ["thin", "medium"], texture: ["straight"] },
+  "short-back-sides": { density: ["thin", "medium"], texture: ["straight"] },
+  "classic-taper": { density: ["thin"], texture: ["curly"] },
+  "low-fade": { density: ["thin", "medium"], texture: ["curly"] },
+  "french-crop": { density: ["medium"], texture: ["straight"] },
+  "korean-two-block": { density: ["medium"], texture: ["straight"] },
+  "old-money": { density: ["medium"], texture: ["straight"] },
+  "high-fade": { density: ["medium"], texture: ["straight"] },
+  "textured-fringe": { density: ["medium", "thick"], texture: ["straight"] },
+  "mid-fade": { density: ["medium", "thick"], texture: ["straight"] },
+  "textured-crop": { density: ["medium", "thick"], texture: ["wavy"] },
+  quiff: { density: ["medium"], texture: ["wavy"] },
+  "messy-texture": { density: ["medium"], texture: ["wavy"] },
+  "taper-fade": { density: ["medium", "thick"], texture: ["wavy"] },
+  undercut: { density: ["thick"], texture: ["straight"] },
+  pompadour: { density: ["thick"], texture: ["straight", "wavy"] },
+  "slick-back": { density: ["thick"], texture: ["straight"] },
+  "spiky-texture": { density: ["thick"], texture: ["straight"] },
+  "bro-flow": { density: ["thick"], texture: ["wavy"] },
+  "modern-mullet": { density: ["thick"], texture: ["wavy", "curly"] },
+  "scissor-cut": { density: ["thick"], texture: ["wavy", "curly"] },
+  "curly-top-fade": { density: ["medium", "thick"], texture: ["curly"] },
+  "drop-fade": { density: ["medium"], texture: ["curly"] },
+  "burst-fade": { density: ["thick"], texture: ["curly"] },
+  "kids-soft-bob": { density: ["medium"], texture: ["straight", "wavy"] },
+  "kids-bowl": { density: ["thin", "medium"], texture: ["straight"] },
+  "kids-curly-crop": { density: ["medium", "thick"], texture: ["curly"] },
+  "kids-pixie": { density: ["thin"], texture: ["straight", "wavy"] },
+};
 
-/** Sensible seed: thick and thin come from hairTypes; both means the cut is flexible; neither means medium. */
-export function densityFor(hairTypes: readonly string[]): HairDensity[] {
-  const thin = hairTypes.includes("thin");
-  const thick = hairTypes.includes("thick");
-  if (thin && thick) return [...DENSITY];
-  if (thin) return ["thin"];
-  if (thick) return ["thick"];
-  return ["medium"];
-}
-
-/** Sensible seed: keep every texture named on the style. Otherwise use the reference photo's texture. */
-export function textureFor(hairTypes: readonly string[], reference: ReferenceTexture): HairTexture[] {
-  const named = TEXTURE.filter((item) => hairTypes.includes(item));
-  return named.length ? named : [reference];
+function suitabilityFor(id: string) {
+  const row = SUITABILITY[id];
+  if (!row || row.density.length < 1 || row.density.length > 2 || row.texture.length < 1 || row.texture.length > 2) {
+    throw new Error(`Hairstyle ${id} needs 1–2 densities and 1–2 textures`);
+  }
+  return row;
 }
 
 function s(draft: Draft): StyleDef {
   const hairTypes = draft.hairTypes ?? ["straight", "wavy", "thick"];
   const referenceTexture = draft.referenceTexture ?? referenceTextureFor(draft);
+  const suitability = suitabilityFor(draft.id);
   return {
     ...draft,
     lengthCategory: draft.lengthCategory ?? lengthCategoryFor(draft),
@@ -78,8 +134,8 @@ function s(draft: Draft): StyleDef {
     tags: draft.tags ?? [draft.category],
     faceShapes: draft.faceShapes ?? ["oval"],
     hairTypes,
-    density: densityFor(hairTypes),
-    texture: textureFor(hairTypes, referenceTexture),
+    density: suitability.density,
+    texture: suitability.texture,
     serviceKeys: draft.serviceKeys ?? ["haircut", "styling"],
   };
 }

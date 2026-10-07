@@ -30,8 +30,6 @@ type Look = {
   showCost?: boolean;
   detail?: string;
   clothingWarning?: string;
-  composite?: string;
-  compositeError?: string;
   rawFaceDrift?: boolean;
   faceScore?: number | null;
   modelLabel?: string;
@@ -102,7 +100,6 @@ export function TryOnApp({
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
   const [busy, setBusy] = useState(false);
   const [referenceMode, setReferenceMode] = useState(false);
-  const [hairComposite, setHairComposite] = useState(false);
   const [hairTexture, setHairTexture] = useState<AskedTexture>("natural");
   const [pickedDensity, setPickedDensity] = useState("");
   const [pickedTexture, setPickedTexture] = useState("");
@@ -446,7 +443,6 @@ export function TryOnApp({
       if (!look) continue;
       remember(look.before);
       remember(look.after);
-      remember(look.composite);
     }
     for (const url of blobs) URL.revokeObjectURL(url);
     setFaceShot(null);
@@ -561,10 +557,9 @@ export function TryOnApp({
       body.set("consentId", consent);
       body.set("sessionId", sid || sessionId());
       body.set("requestId", crypto.randomUUID());
-      if (referenceConfirm) {
+        if (referenceConfirm) {
         body.set("referenceMode", "yes");
         body.set("confirm", "yes");
-        if (hairComposite) body.set("hairComposite", "yes");
         if (hairTexture !== "natural") body.set("hairTexture", hairTexture);
         if (compareModel) body.set("compareModel", compareModel);
       } else if (chosen.tool === "style" && shadeId) {
@@ -606,8 +601,6 @@ export function TryOnApp({
           shadeName: null,
           before: shot.url,
           after: pngUrl(String(data.imageBase64)),
-          composite: data.compositeBase64 ? pngUrl(String(data.compositeBase64)) : "",
-          compositeError: String(data.compositeError || ""),
           rawFaceDrift: Boolean(data.rawFaceDrift),
           faceScore: data.faceScore == null ? null : Number(data.faceScore),
           modelLabel: String(data.model || data.provider || ""),
@@ -736,7 +729,7 @@ export function TryOnApp({
         {tools.filter((item) => item.on).map((item) => (
           <button
             key={item.id}
-            className={`rounded-full px-3 py-1.5 text-sm font-medium ${tool === item.id ? "bg-[#241c16] text-white" : "bg-white text-[#241c16] ring-1 ring-[#e4ddd4]"}`}
+            className={`rounded-full px-3 py-1.5 text-sm font-medium ${tool === item.id ? "bg-[var(--brand-btn)] text-[var(--on-brand)]" : "bg-white text-ink ring-1 ring-line"}`}
             type="button"
             role="tab"
             aria-selected={tool === item.id}
@@ -747,31 +740,25 @@ export function TryOnApp({
         ))}
       </div>
 
-      <section ref={frameRef} className="mt-4 overflow-hidden rounded-[28px] bg-[#14110e] shadow-lg" aria-label="Photo">
+      <section ref={frameRef} className="mt-5 overflow-hidden rounded-[28px] border border-line bg-[#eef7f5] shadow-lift" aria-label="Photo">
         {showResult && active?.unvalidated ? (
           <div className="p-3">
-            <p className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-white">Experimental, unvalidated</p>
+            <p className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-ink">Experimental, unvalidated</p>
             <div className="grid grid-cols-2 gap-2">
               <figure>
-                <figcaption className="mb-1 text-center text-[11px] text-white">Original</figcaption>
+                <figcaption className="mb-1 text-center text-[11px] text-muted">Original</figcaption>
                 <img src={active.before} alt="Original selfie" className="max-h-96 w-full object-contain" />
               </figure>
               <figure>
-                <figcaption className="mb-1 text-center text-[11px] text-white">Raw provider image</figcaption>
+                <figcaption className="mb-1 text-center text-[11px] text-muted">Raw provider image</figcaption>
                 <img src={active.after} alt="Raw provider image, experimental and unvalidated" className="max-h-96 w-full object-contain" />
               </figure>
             </div>
-            {active.composite && (
-              <figure className="mx-auto mt-3 max-w-[46%]">
-                <figcaption className="mb-1 text-center text-[11px] text-white">Hair-only composite, optional</figcaption>
-                <img src={active.composite} alt="Optional hair-only composite" className="max-h-40 w-full object-contain" />
-              </figure>
-            )}
           </div>
         ) : showResult && active ? (
           <div>
             <BeforeAfter before={active.before} after={active.after} beforeLabel={t(lang, "before")} afterLabel={t(lang, "after")} />
-            {active.demo && <p className="bg-[#241c16] px-4 py-3 text-center text-sm leading-6 text-white" role="status">{t(lang, active.tool === "nails" ? "demoNailBanner" : "demoStyleBanner")}</p>}
+            {active.demo && <p className="bg-[var(--brand-btn)] px-4 py-3 text-center text-sm leading-6 text-[var(--on-brand)]" role="status">{t(lang, active.tool === "nails" ? "demoNailBanner" : "demoStyleBanner")}</p>}
           </div>
         ) : (
           <div className="relative aspect-[3/4]">
@@ -799,10 +786,10 @@ export function TryOnApp({
             )}
             {!cameraOn && !activeShot && (
               <div className="absolute inset-0 grid content-center justify-items-center gap-3 px-6">
-                {tool === "nails" && <p className="text-center text-lg text-white">{t(lang, "uploadHand")}</p>}
+                {tool === "nails" && <p className="text-center text-lg text-ink">{t(lang, "uploadHand")}</p>}
                 <button className="btn min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "takeSelfie")}</button>
                 <button className="btn on-photo min-w-44" type="button" onClick={() => fileRef.current?.click()}>{tool === "nails" ? t(lang, "uploadHand") : t(lang, "uploadPhoto")}</button>
-                {cameraError && <p className="text-center text-sm text-[#f0c7b0]" role="alert">{cameraError}</p>}
+                {cameraError && <p className="text-center text-sm text-[var(--bad)]" role="alert">{cameraError}</p>}
               </div>
             )}
             {cameraOn && (
@@ -825,7 +812,7 @@ export function TryOnApp({
             )}
             {activeShot && !cameraOn && (
               <div className="absolute inset-x-0 bottom-4 z-10 flex justify-center gap-2">
-                <button className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#241c16]" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "retake")}</button>
+                <button className="btn on-photo px-4 py-2 text-sm" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "retake")}</button>
               </div>
             )}
             {busy && (
@@ -880,8 +867,6 @@ export function TryOnApp({
             <div className="rounded-xl border border-line bg-white p-3 text-sm leading-6">
               <p>Experimental, unvalidated. The large image is the raw provider output. It was not accepted. The download is that raw image.</p>
               {active.modelLabel && <p className="mt-2">Model {active.modelLabel}.</p>}
-              {active.composite && <p className="mt-2">The smaller image is the optional hair-only composite. It is not the download.</p>}
-              {active.compositeError && <p className="mt-2">Hair-only composite failed: {active.compositeError} The paid call was not retried.</p>}
               {active.rawFaceDrift && (
                 <p className="mt-2">
                   Face may differ from your photo.
@@ -936,10 +921,7 @@ export function TryOnApp({
                     checked={referenceMode}
                     onChange={(event) => {
                       setReferenceMode(event.target.checked);
-                      if (!event.target.checked) {
-                        setHairComposite(false);
-                        setHairTexture("natural");
-                      }
+                      if (!event.target.checked) setHairTexture("natural");
                       setReferenceAck(false);
                       setReferenceQuote(null);
                       setReferenceChoice(null);
@@ -979,25 +961,6 @@ export function TryOnApp({
                 {referenceMode && comparisonModels.length > 0 && (
                   <p className="mt-2 text-muted">
                     Each model is its own estimate, confirmation, and one call. Nothing runs until you confirm that model. There is no retry and no automatic substitution.
-                  </p>
-                )}
-                {referenceMode && (
-                  <label className="mt-3 flex items-start gap-2 font-medium">
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      checked={hairComposite}
-                      onChange={(event) => {
-                        setHairComposite(event.target.checked);
-                        setReferenceAck(false);
-                      }}
-                    />
-                    <span>Hair-only composite</span>
-                  </label>
-                )}
-                {referenceMode && (
-                  <p className="mt-2 text-muted">
-                    Optional fallback, off by default. When it is on, a smaller second image keeps this selfie outside the hair. The large result and the download stay the raw provider image. This step does not make another provider call. If it fails, the raw image is still shown and the call is not sent again.
                   </p>
                 )}
                 {referenceMode && (
@@ -1049,10 +1012,10 @@ export function TryOnApp({
                 )}
               </div>
             )}
-            <div className="mb-3 inline-flex flex-wrap gap-1 rounded-full bg-[#241c16] p-1" role="group" aria-label="Style audience">
-              {config.showWomen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "women" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "women"} onClick={() => chooseGender("women")}>{t(lang, "women")}</button>}
-              {config.showMen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "men" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
-              {config.showKids && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "kids" ? "bg-white text-[#241c16]" : "text-white"}`} type="button" aria-pressed={gender === "kids"} onClick={() => chooseGender("kids")}>{t(lang, "kids")}</button>}
+            <div className="mb-4 inline-flex flex-wrap gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-line" role="group" aria-label="Style audience">
+              {config.showWomen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "women" ? "bg-[var(--brand-btn)] text-[var(--on-brand)]" : "text-ink"}`} type="button" aria-pressed={gender === "women"} onClick={() => chooseGender("women")}>{t(lang, "women")}</button>}
+              {config.showMen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "men" ? "bg-[var(--brand-btn)] text-[var(--on-brand)]" : "text-ink"}`} type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
+              {config.showKids && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "kids" ? "bg-[var(--brand-btn)] text-[var(--on-brand)]" : "text-ink"}`} type="button" aria-pressed={gender === "kids"} onClick={() => chooseGender("kids")}>{t(lang, "kids")}</button>}
             </div>
             <HairTypePicker
               pickerOn={config.hairPickerOn}
@@ -1075,13 +1038,13 @@ export function TryOnApp({
             {config.hairPickerOn && (pickedDensity || pickedTexture) && visibleStyles.length === 0 && (
               <p className="mb-2 text-sm">No style photos for that hair type. Turn on Show all.</p>
             )}
-            <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
+            <div className="grid grid-cols-3 gap-3 max-[340px]:grid-cols-2">
               {visibleStyles.map((style) => (
                 <button
                   key={style.id}
                   type="button"
                   aria-pressed={style.id === styleId}
-                  className={`overflow-hidden rounded-2xl border bg-white text-left ${style.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
+                  className={`overflow-hidden rounded-2xl border bg-white text-left shadow-sm ${style.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
                   disabled={busy} onClick={() => void preview({ id: style.id, name: style.name, serviceKeys: style.serviceKeys, tool: "style" })}
                 >
                   <StyleCard id={style.id} name={style.name} />

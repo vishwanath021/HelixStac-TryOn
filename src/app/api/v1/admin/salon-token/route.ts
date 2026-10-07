@@ -26,6 +26,6 @@ export async function POST() {
   const nonce = newSalonNonce();
   await prisma.tenant.update({ where: { id: access.tenant.id }, data: { salonNonce: nonce } });
   const url = salonUrl(access.tenant.slug, access.tenant.id, nonce);
-  const png = await QRCode.toBuffer(url, { type: "png", width: 480, margin: 1, color: { dark: "#241c16", light: "#fffdfb" } });
+  const png = await QRCode.toBuffer(url, { type: "png", width: 480, margin: 1, color: { dark: "#12312e", light: "#ffffff" } });
   return NextResponse.json({ url, qr: `data:image/png;base64,${png.toString("base64")}` });
 }

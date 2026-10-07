@@ -14,6 +14,22 @@ export type SuperRow = {
   cogsInr: number;
 };
 
+function SalonNameField({ id, slug, initial, onSave }: { id: string; slug: string; initial: string; onSave: (id: string, body: Record<string, unknown>) => Promise<void> }) {
+  const [name, setName] = useState(initial);
+  return (
+    <form
+      className="mt-2 flex flex-wrap items-center gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onSave(id, { name });
+      }}
+    >
+      <input className="field max-w-[16rem]" aria-label={`Salon name for ${slug}`} value={name} onChange={(event) => setName(event.target.value)} />
+      <button className="btn secondary" type="submit">Save name</button>
+    </form>
+  );
+}
+
 export function SuperPanel({
   rows,
   mrr,
@@ -59,7 +75,11 @@ export function SuperPanel({
           <tbody>
             {rows.map((row) => (
               <tr key={row.id} className="border-t border-line">
-                <td className="py-2">{row.name}<span className="block text-xs text-muted">{row.slug} · {row.leads} leads</span></td>
+                <td className="py-2">
+                  {row.name}
+                  <span className="block text-xs text-muted">{row.slug} · {row.leads} leads</span>
+                  <SalonNameField id={row.id} slug={row.slug} initial={row.name} onSave={update} />
+                </td>
                 <td>{row.plan}</td>
                 <td>{row.status}</td>
                 <td>{row.credits}</td>

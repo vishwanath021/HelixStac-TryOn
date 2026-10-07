@@ -15,7 +15,7 @@ function Chip({ pressed, label, onClick }: { pressed: boolean; label: string; on
     <button
       type="button"
       aria-pressed={pressed}
-      className={`rounded-full px-3 py-1 text-sm font-medium ${pressed ? "bg-[var(--brand-btn)] text-[var(--on-brand)]" : "border border-line bg-white text-[#241c16]"}`}
+      className={`rounded-full px-3 py-1 text-sm font-medium ${pressed ? "bg-[var(--brand-btn)] text-[var(--on-brand)]" : "border border-line bg-white text-ink"}`}
       onClick={onClick}
     >
       {label}

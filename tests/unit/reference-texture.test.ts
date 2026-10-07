@@ -73,12 +73,11 @@ describe("reference texture", () => {
     expect(parseAskedTexture("curly")).toBe("curly");
     expect(parseAskedTexture("")).toBe("natural");
     expect(parseAskedTexture("coily")).toBe("natural");
-    expect(referenceFingerprintMode(false, "natural")).toBe("reference");
-    expect(referenceFingerprintMode(true, "natural")).toBe("reference-hair");
-    expect(referenceFingerprintMode(true, "curly")).toBe("reference-hair-curly");
-    expect(referenceFingerprintMode(false, "wavy")).toBe("reference-wavy");
-    expect(referenceFingerprintMode(false, "natural", "gpt-image-2")).toBe("reference:gpt-image-2");
-    expect(referenceFingerprintMode(true, "curly", "gemini-3.1-flash-image")).toBe("reference-hair-curly:gemini-3.1-flash-image");
+    expect(referenceFingerprintMode("natural")).toBe("reference");
+    expect(referenceFingerprintMode("curly")).toBe("reference-curly");
+    expect(referenceFingerprintMode("wavy")).toBe("reference-wavy");
+    expect(referenceFingerprintMode("natural", "gpt-image-2")).toBe("reference:gpt-image-2");
+    expect(referenceFingerprintMode("curly", "gemini-3.1-flash-image")).toBe("reference-curly:gemini-3.1-flash-image");
 
     const warning = renderToStaticMarkup(createElement(ReferenceTextureWarning, {
       styleId: "messy-texture",

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { requireSuper } from "@/lib/session";
 
 const schema = z.object({
+  name: z.string().trim().min(2).max(80).optional(),
   status: z.enum(["TRIAL", "ACTIVE", "SUSPENDED"]).optional(),
   plan: z.string().optional(),
   creditDelta: z.number().int().min(-100000).max(100000).optional(),
@@ -25,6 +26,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   await prisma.tenant.update({
     where: { id },
     data: {
+      name: parsed.data.name,
       status: parsed.data.status,
       plan: parsed.data.plan,
     },

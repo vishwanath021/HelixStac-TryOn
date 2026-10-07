@@ -257,9 +257,9 @@ export function GuestHub({
         </form>
       ) : (
         <>
-          <div className="mb-4 flex flex-wrap gap-1 rounded-full bg-[#241c16] p-1" role="tablist" aria-label={t(lang, "hubTitle")}>
+          <div className="mb-4 flex flex-wrap gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-line" role="tablist" aria-label={t(lang, "hubTitle")}>
             {(["home", "try", "bookings", "profile"] as const).map((item) => (
-              <button key={item} className={`rounded-full px-3 py-2 text-xs font-semibold ${tab === item ? "bg-white text-[#241c16]" : "text-white"}`} type="button" role="tab" aria-selected={tab === item} onClick={() => setTab(item)}>{t(lang, `tab_${item}`)}</button>
+              <button key={item} className={`rounded-full px-3 py-2 text-xs font-semibold ${tab === item ? "bg-[var(--brand-btn)] text-[var(--on-brand)]" : "text-ink"}`} type="button" role="tab" aria-selected={tab === item} onClick={() => setTab(item)}>{t(lang, `tab_${item}`)}</button>
             ))}
           </div>
           {tab === "home" && (

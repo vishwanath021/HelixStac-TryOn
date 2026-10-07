@@ -7,10 +7,9 @@ export function parseAskedTexture(value: string): AskedTexture {
   return "natural";
 }
 
-/** Dedup mode. Natural stays `reference` or `reference-hair`. A set texture, then the exact model id, is appended. */
-export function referenceFingerprintMode(hairComposite: boolean, asked: AskedTexture, modelId = "") {
-  const base = hairComposite ? "reference-hair" : "reference";
-  const tagged = asked === "natural" ? base : `${base}-${asked}`;
+/** Dedup mode. Natural stays `reference`. A set texture, then the exact model id, is appended. */
+export function referenceFingerprintMode(asked: AskedTexture, modelId = "") {
+  const tagged = asked === "natural" ? "reference" : `reference-${asked}`;
   const id = modelId.trim();
   return id ? `${tagged}:${id}` : tagged;
 }

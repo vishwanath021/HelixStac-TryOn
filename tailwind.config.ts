@@ -5,19 +5,20 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        cream: "#f3ece3",
-        sand: "#e7d9c8",
-        card: "#fffdfb",
-        ink: "#241c16",
-        muted: "#7a6a5c",
-        line: "#e4d5c6",
+        cream: "#f4fbf9",
+        sand: "#e7f4f1",
+        card: "#ffffff",
+        ink: "#12312e",
+        muted: "#3e615c",
+        line: "#d3e5e1",
+        accent: "#e9897a",
       },
       fontFamily: {
-        serif: ["var(--font-serif)", "Georgia", "serif"],
+        serif: ["var(--font-sans)", "system-ui", "sans-serif"],
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
       },
       boxShadow: {
-        lift: "0 16px 40px rgba(60, 36, 16, 0.08)",
+        lift: "0 12px 28px rgba(18, 49, 46, 0.08)",
       },
     },
   },

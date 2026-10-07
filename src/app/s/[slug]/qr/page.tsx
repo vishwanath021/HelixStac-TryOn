@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PrintButton } from "@/components/PrintButton";
 import { brandStyle } from "@/lib/contrast";
@@ -7,6 +8,14 @@ import { appBaseUrl } from "@/lib/env";
 import { loadTenantBySlug } from "@/lib/salon";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const tenant = await loadTenantBySlug(slug);
+  const name = tenant?.name || "HelixStac TryOn";
+  return { title: `${name} QR` };
+}
 
 export default async function QrStandee({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;

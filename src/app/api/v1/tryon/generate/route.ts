@@ -6,7 +6,7 @@ import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
 import { shadeById } from "@/data/shades";
 import { resolveProviderChoice } from "@/lib/ai/credentials";
 import { claimGenerationJob, completeGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
-import { hairCompositeRequested, referenceModeActive } from "@/lib/ai/reference-mode";
+import { referenceModeActive } from "@/lib/ai/reference-mode";
 import { parseAskedTexture, referenceFingerprintMode } from "@/lib/ai/reference-texture";
 import { runTryOnReference } from "@/lib/ai/reference-run";
 import { salonOutcome, guestPreviewHeaders } from "@/lib/ai/guest-response";
@@ -139,7 +139,6 @@ export async function POST(req: Request) {
     requested: String(form.get("referenceMode") || "") === "yes",
     tool,
   });
-  const wantHair = hairCompositeRequested(wantReference, String(form.get("hairComposite") || "") === "yes");
   const askedTexture = wantReference ? parseAskedTexture(String(form.get("hairTexture") || "")) : "natural";
   const compareModel = wantReference ? String(form.get("compareModel") || "").trim() : "";
   if (wantReference && String(form.get("confirm") || "") !== "yes") {
@@ -152,7 +151,7 @@ export async function POST(req: Request) {
     const claim = await claimGenerationJob({
       tenantId: tenant.id,
       requestId,
-      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: wantReference ? "" : shadeId || "", mode: wantReference ? referenceFingerprintMode(wantHair, askedTexture, compareModel) : "production" }),
+      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: wantReference ? "" : shadeId || "", mode: wantReference ? referenceFingerprintMode(askedTexture, compareModel) : "production" }),
     });
     if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
     if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
@@ -184,7 +183,6 @@ export async function POST(req: Request) {
       jobId,
       requestId,
       revealCost: await isSuperSession(),
-      hairComposite: wantHair,
       hairTexture: askedTexture,
       modelId: compareModel,
     });

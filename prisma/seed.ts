@@ -16,7 +16,6 @@ async function main() {
   const tenant = await prisma.tenant.upsert({
     where: { slug: "demo-salon" },
     update: {
-      name: "Demo Salon – Bengaluru",
       creditBalance: PLANS.PRO.credits,
       status: "TRIAL",
       plan: "PRO",
@@ -34,8 +33,8 @@ async function main() {
       slug: "demo-salon",
       name: "Demo Salon – Bengaluru",
       logoUrl: "/brand/demo-mark.svg",
-      primaryColor: "#C4622D",
-      accentColor: "#241C16",
+      primaryColor: "#0E7C74",
+      accentColor: "#E9897A",
       languages: JSON.stringify(["en", "hi", "kn", "ta", "te", "mr"]),
       defaultLang: "en",
       whatsapp: "919800011122",
@@ -62,6 +61,16 @@ async function main() {
       requireLoginToBook: false,
     },
   });
+
+  if (tenant.primaryColor.toUpperCase() === "#C4622D") {
+    await prisma.tenant.update({
+      where: { id: tenant.id },
+      data: {
+        primaryColor: "#0E7C74",
+        accentColor: tenant.accentColor.toUpperCase() === "#241C16" ? "#E9897A" : tenant.accentColor,
+      },
+    });
+  }
 
   const services = [
     { key: "haircut", name: "Haircut", priceInr: 499, durationMin: 45 },
@@ -153,7 +162,7 @@ async function main() {
     });
   }
 
-  console.log("Seeded Demo Salon – Bengaluru");
+  console.log(`Seeded ${tenant.name}`);
   console.log("  Public:  /s/demo-salon");
   console.log(`  Owner:   owner@demo.helixstac.app  /  ${DEMO_PASSWORD}`);
   console.log(`  Staff:   staff@demo.helixstac.app  /  ${STAFF_PASSWORD}`);

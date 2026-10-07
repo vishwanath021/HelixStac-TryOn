@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source: "/s/:path*",
+        headers: [{ key: "Cache-Control", value: "private, no-store" }],
+      },
+      {
         source: "/embed/:path*",
         headers: [
           { key: "Content-Security-Policy", value: "frame-ancestors *" },

@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { STANDARD_CREDIT_COST } from "@/data/plans";
 import { CreditError, reserveCredits, settleCredits } from "@/lib/credits";
 import { hairReadingSchema, suggestStyles, type HairReading, type TaggedStyle } from "@/lib/hair-suitability";
-import { logError } from "@/lib/logger";
+import { logError, logProviderCall } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { suggestEstimateUsd, type SuggestModelId } from "@/lib/ai/suggest-models";
 import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
@@ -252,6 +252,15 @@ export async function runHairSuggest(args: {
       costSource: usd != null ? "usage" : "estimate",
       providerRequestId: vision.requestId,
     });
+    logProviderCall({
+      provider: "openai",
+      model: args.model,
+      salonId: args.tenantId,
+      status: "ok",
+      latencyMs: vision.latencyMs,
+      costUsd: usd ?? 0,
+      requestId: vision.requestId,
+    });
     if (creditRef) await settleCredits(args.tenantId, creditRef, "COMMIT");
     await prisma.hairSuggest.update({
       where: { id: placeholder.id },
@@ -283,6 +292,16 @@ export async function runHairSuggest(args: {
     }
     if (creditRef) await settleCredits(args.tenantId, creditRef, "REFUND");
     await prisma.hairSuggest.delete({ where: { id: placeholder.id } }).catch(() => undefined);
+    const failedUsd = failed.usage ? costUsdFromUsage(args.model, failed.usage) : null;
+    logProviderCall({
+      provider: "openai",
+      model: args.model,
+      salonId: args.tenantId,
+      status: "failed",
+      latencyMs: 0,
+      costUsd: failedUsd ?? 0,
+      requestId: failed.requestId,
+    });
     logError("hair suggest failed", { code: failed.usage ? "unusable" : "unread" });
     return { ok: false, status: 502, error: "VISION", message: "The hair reading did not complete. It was not sent again." };
   }

@@ -20,8 +20,8 @@ export const hairReadingSchema = z.object({
 export type HairReading = z.infer<typeof hairReadingSchema>;
 
 const overrideSchema = z.object({
-  density: z.array(densitySchema).min(1).max(3),
-  texture: z.array(textureSchema).min(1).max(3),
+  density: z.array(densitySchema).min(1).max(2),
+  texture: z.array(textureSchema).min(1).max(2),
   faceShapes: z.array(faceSchema).max(6).optional(),
 });
 

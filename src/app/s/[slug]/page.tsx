@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { TryOnApp } from "@/components/tryon/TryOnApp";
 import { comparisonChoices } from "@/lib/ai/compare-models";
@@ -9,6 +10,16 @@ import { loadTenantByHost, loadTenantBySlug, toSalonConfig } from "@/lib/salon";
 import { isSuperSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const headerList = await headers();
+  const host = headerList.get("x-tenant-host") || headerList.get("host") || "";
+  const tenant = slug === "by-host" ? await loadTenantByHost(host.split(":")[0] || "") : await loadTenantBySlug(slug);
+  const name = tenant?.name || "HelixStac TryOn";
+  return { title: name, description: `${name}. See a haircut on your own photo.` };
+}
 
 export default async function SalonPage({
   params,
