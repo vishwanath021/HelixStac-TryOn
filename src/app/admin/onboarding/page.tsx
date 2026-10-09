@@ -10,7 +10,7 @@ export default async function OnboardingPage() {
   const services = await prisma.service.findMany({ where: { tenantId: tenant.id, active: true } });
   return (
     <main>
-      <h1 className="mb-4 font-serif text-4xl">Onboarding</h1>
+      <h1 className="mb-4 page-title">Onboarding</h1>
       <OnboardingWizard
         initial={{
           name: tenant.name,

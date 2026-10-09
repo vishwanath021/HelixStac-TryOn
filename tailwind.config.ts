@@ -5,20 +5,21 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        cream: "#f4fbf9",
-        sand: "#e7f4f1",
+        cream: "#f3f0f8",
+        sand: "#e9e0f0",
         card: "#ffffff",
-        ink: "#12312e",
-        muted: "#3e615c",
-        line: "#d3e5e1",
-        accent: "#e9897a",
+        ink: "#292330",
+        muted: "#686171",
+        line: "#dfd8e7",
+        accent: "#b6a0c9",
+        aubergine: "#3e304b",
       },
       fontFamily: {
-        serif: ["var(--font-sans)", "system-ui", "sans-serif"],
-        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        serif: ["var(--font-display)", "Georgia", "serif"],
+        sans: ["var(--font-sans)", "Segoe UI", "sans-serif"],
       },
       boxShadow: {
-        lift: "0 12px 28px rgba(18, 49, 46, 0.08)",
+        lift: "0 8px 20px rgba(62, 48, 75, 0.06)",
       },
     },
   },

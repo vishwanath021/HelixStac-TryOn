@@ -15,7 +15,7 @@ function Chip({ pressed, label, onClick }: { pressed: boolean; label: string; on
     <button
       type="button"
       aria-pressed={pressed}
-      className={`rounded-full px-3 py-1 text-sm font-medium ${pressed ? "bg-[var(--brand-btn)] text-[var(--on-brand)]" : "border border-line bg-white text-ink"}`}
+      className="chip"
       onClick={onClick}
     >
       {label}
@@ -97,9 +97,10 @@ export function HairTypePicker({
                 key={card.id}
                 type="button"
                 aria-pressed={card.id === selectedId}
-                className={`overflow-hidden rounded-2xl border bg-white text-left ${card.id === selectedId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
+                className={`relative overflow-hidden rounded-[14px] border bg-white text-left shadow-sm ${card.id === selectedId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
                 onClick={() => onPick(card)}
               >
+                {card.id === selectedId && <span className="check" aria-hidden="true">✓</span>}
                 <StyleCard id={card.id} name={card.name} />
                 <span className="block px-2 pt-2 text-center text-sm font-medium">{card.name}</span>
                 <span className="block px-2 pb-2 text-center text-xs text-muted">{card.reason}</span>

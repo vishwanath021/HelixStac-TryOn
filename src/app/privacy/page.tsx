@@ -5,7 +5,7 @@ export default function PrivacyPage() {
   return (
     <main className="mx-auto max-w-2xl px-5 py-10">
       <p className="text-sm text-muted"><Link href="/">HelixStac TryOn</Link></p>
-      <h1 className="mt-3 font-serif text-4xl">Privacy</h1>
+      <h1 className="mt-3 page-title">Privacy</h1>
       <p className="mt-2 text-sm text-muted">Template for the platform and for each salon. Have a lawyer review it before you rely on it. Version 2026-10-03.</p>
       <div className="mt-6 space-y-4 text-sm leading-7">
         <p>The salon is the data fiduciary for its guests. HelixStac is the processor for the try-on software. Face photos are personal data.</p>

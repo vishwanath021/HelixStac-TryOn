@@ -7,7 +7,7 @@ function normalize(hex: string) {
     return `#${raw.split("").map((char) => char + char).join("").toLowerCase()}`;
   }
   if (/^[0-9a-fA-F]{6}$/.test(raw)) return `#${raw.toLowerCase()}`;
-  return "#0e7c74";
+  return "#69517d";
 }
 
 function channel(hex: string, index: number) {
@@ -70,8 +70,9 @@ export function brandStyle(primary: string, accent?: string) {
   const button = brandButtonColors(primary);
   return {
     ["--brand" as string]: normalize(primary),
-    ["--accent" as string]: accent ? normalize(accent) : "#e9897a",
+    ["--accent" as string]: accent ? normalize(accent) : "#b6a0c9",
     ["--brand-btn" as string]: button.background,
+    ["--brand-btn-hover" as string]: mix(button.background, "#000000", 0.16),
     ["--on-brand" as string]: button.color,
   };
 }

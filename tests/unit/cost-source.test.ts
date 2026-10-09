@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { actualHeading, capPaise, costSourceLabel, falPriceListUsd, matchFalBillingEvents } from "@/lib/ai/cost-source";
 import { syncFalBillingCosts } from "@/lib/ai/fal-billing";
 import { beginPaidCall, finalizePaidCall, spendSummary } from "@/lib/ai/spend";
+import { costReport } from "@/lib/ai/cost-report";
 import { exactInr } from "@/lib/ai/tiers";
 import { prisma } from "@/lib/prisma";
 
@@ -149,5 +150,37 @@ describe("cost source", () => {
     const row = await prisma.aiCall.findUnique({ where: { id: reserved.id } });
     expect(row?.costSource).toBe("timeout");
     expect(row?.estimatePaise).toBe(790);
+  });
+
+  it("pages twenty image rows newest first and totals estimate against actual", async () => {
+    const rows = Array.from({ length: 25 }, (_, index) => ({
+      provider: index % 2 === 0 ? "fal" : "openai",
+      quality: "edit",
+      model: index % 2 === 0 ? "flux-edit" : "other-model",
+      estimatePaise: 100,
+      costInrPaise: index % 2 === 0 ? 80 : 0,
+      costSource: index % 2 === 0 ? "billing" : "estimate",
+      status: "SUCCEEDED",
+      createdAt: new Date(Date.UTC(2026, 9, 1, 0, index)),
+    }));
+    await prisma.aiCall.createMany({ data: rows });
+    const first = await costReport({ page: 1, pageSize: 20, from: new Date("2026-10-01T00:00:00.000Z"), to: new Date("2026-10-01T23:59:59.999Z") });
+    expect(first.pageSize).toBe(20);
+    expect(first.calls).toHaveLength(20);
+    expect(first.totalCount).toBe(25);
+    expect(first.pageCount).toBe(2);
+    expect(new Date(first.calls[0].at).getTime()).toBeGreaterThan(new Date(first.calls[19].at).getTime());
+    expect(first.totals).toEqual({ estimateInr: 25, actualInr: 10.4, actualCount: 13 });
+    const second = await costReport({ page: 2, pageSize: 20, from: new Date("2026-10-01T00:00:00.000Z"), to: new Date("2026-10-01T23:59:59.999Z") });
+    expect(second.calls).toHaveLength(5);
+    const filtered = await costReport({
+      filterProvider: "openai",
+      filterModel: "other",
+      from: new Date("2026-10-01T00:00:00.000Z"),
+      to: new Date("2026-10-01T23:59:59.999Z"),
+    });
+    expect(filtered.totalCount).toBe(12);
+    expect(filtered.calls.every((row) => row.provider === "openai" && row.model.includes("other"))).toBe(true);
+    expect(filtered.totals.actualCount).toBe(0);
   });
 });

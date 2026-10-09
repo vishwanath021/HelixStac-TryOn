@@ -7,11 +7,11 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   const { tenant, membership } = await pageTenant();
   if (membership.role !== "OWNER") {
-    return <main><h1 className="font-serif text-4xl">Settings</h1><p className="mt-2">Staff can edit the catalogue and leads. Brand and billing stay with the owner.</p></main>;
+    return <main><h1 className="page-title">Settings</h1><p className="mt-2">Staff can edit the catalogue and leads. Brand and billing stay with the owner.</p></main>;
   }
   return (
     <main>
-      <h1 className="mb-4 font-serif text-4xl">Settings</h1>
+      <h1 className="mb-4 page-title">Settings</h1>
       <SettingsForm
         canRemoveBranding={planById(tenant.plan).removeBranding}
         initial={{

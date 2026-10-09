@@ -4,7 +4,7 @@ export default function TermsPage() {
   return (
     <main className="mx-auto max-w-2xl px-5 py-10 text-sm leading-7">
       <p className="text-muted"><Link href="/">HelixStac TryOn</Link></p>
-      <h1 className="mt-3 font-serif text-4xl">Terms</h1>
+      <h1 className="mt-3 page-title">Terms</h1>
       <p className="mt-4">These terms are a template for a salon subscription to HelixStac TryOn. They are not a substitute for a contract reviewed for your entity.</p>
       <h2 className="mt-6 font-serif text-2xl">The service</h2>
       <p>We host a branded try-on page, QR, and (on eligible plans) an embed. Live colour is included. AI previews spend credits. When credits run out, colour keeps working and new previews stop with a plain message.</p>

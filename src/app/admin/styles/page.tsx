@@ -15,7 +15,7 @@ export default async function StylesPage() {
   ]);
   return (
     <main>
-      <h1 className="mb-2 font-serif text-4xl">Styles and shades</h1>
+      <h1 className="mb-2 page-title">Styles and shades</h1>
       <p className="mb-4 text-sm text-muted">Prompts stay on the server. Guests see the style photo. Density and texture tags decide which photos the hair-type picker shows.</p>
       <CatalogueEditor
         styles={STYLES.map((style) => applySuitability(toPublicStyle(style), styleRows.find((row) => row.styleId === style.id)?.suitabilityJson || ""))}

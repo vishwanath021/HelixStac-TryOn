@@ -15,7 +15,7 @@ export default async function BookingsPage() {
   });
   return (
     <main>
-      <h1 className="font-serif text-4xl">Bookings</h1>
+      <h1 className="page-title">Bookings</h1>
       <p className="mt-1 text-sm text-muted">Requests from logged-in guests. Confirming opens WhatsApp so you can send the note yourself. This is not a live calendar.</p>
       {bookings.length === 0 && <p className="card mt-4 p-4 text-sm">No booking requests yet.</p>}
       <div className="mt-4 overflow-x-auto">

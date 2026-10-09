@@ -37,7 +37,7 @@ export function GuideScreen({ config }: { config: SalonConfig }) {
       <header className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.16em] text-muted">{config.name}</p>
-          <h1 className="font-serif text-3xl">{t(lang, "guideTitle")}</h1>
+          <h1 className="page-title">{t(lang, "guideTitle")}</h1>
         </div>
         <select className="field py-1" aria-label={t(lang, "language")} value={lang} onChange={(event) => setLang(event.target.value as Locale)}>
           {config.languages.filter(isLocale).map((code) => <option key={code} value={code}>{LOCALE_LABELS[code]}</option>)}

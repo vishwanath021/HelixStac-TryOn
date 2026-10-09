@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { SuperPanel } from "@/components/admin/SuperPanel";
 import { spendSummary } from "@/lib/ai/spend";
 import { numberEnv } from "@/lib/env";
@@ -6,7 +5,6 @@ import { PLANS } from "@/data/plans";
 import { previewCogsInr } from "@/lib/pricing";
 import { prisma } from "@/lib/prisma";
 import { pageSuper } from "@/lib/session";
-import { SignOutButton } from "@/components/admin/SignOutButton";
 
 export const dynamic = "force-dynamic";
 
@@ -39,13 +37,8 @@ export default async function SuperPage() {
   const assumption = `COGS is an assumption: ₹${standardInr} per standard preview and ₹${hdInr} per HD preview (about ₹3.5 Lite and ₹7 Flash at ₹96/USD, including 8% retries). The spend cap uses the same kind of estimate. Neither number is a bill from the provider.`;
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="font-serif text-4xl">HelixStac</h1>
-          <Link className="text-sm underline" href="/super/ai">AI settings</Link>
-        </div>
-        <SignOutButton />
-      </div>
+      <h1 className="page-title">HelixStac</h1>
+      <p className="mt-2 max-w-xl text-base text-muted">Salons, plans, and the assumed cost of previews.</p>
       <SuperPanel rows={rows} mrr={mrr} assumption={assumption} spend={spend} />
     </main>
   );

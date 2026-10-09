@@ -26,7 +26,7 @@ export function BeforeAfter({
   return (
     <div
       ref={box}
-      className="relative aspect-[3/4] touch-none overflow-hidden bg-[#eef7f5]"
+      className="relative aspect-[3/4] touch-none overflow-hidden bg-[#F3F0F8]"
       onPointerDown={(event) => {
         box.current?.setPointerCapture(event.pointerId);
         setFromClientX(event.clientX);
@@ -36,11 +36,11 @@ export function BeforeAfter({
         setFromClientX(event.clientX);
       }}
     >
-      <img src={after} alt={afterLabel} className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+      <img src={after} alt={afterLabel} className="absolute inset-0 h-full w-full object-contain" draggable={false} />
       <img
         src={before}
         alt={beforeLabel}
-        className="absolute inset-0 h-full w-full object-cover"
+        className="absolute inset-0 h-full w-full object-contain"
         draggable={false}
         style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }}
       />
@@ -50,10 +50,10 @@ export function BeforeAfter({
           ↔
         </div>
       </div>
-      <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white">{beforeLabel}</div>
-      <div className="pointer-events-none absolute right-3 top-3 z-10 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white">{afterLabel}</div>
+      <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#3E304B] px-3 py-1 text-sm font-semibold text-white">{beforeLabel}</div>
+      <div className="pointer-events-none absolute right-3 top-3 z-10 rounded-full bg-[#3E304B] px-3 py-1 text-sm font-semibold text-white">{afterLabel}</div>
       <input
-        className="absolute inset-x-6 bottom-4 z-20"
+        className="absolute inset-x-6 bottom-4 z-20 h-11"
         type="range"
         min={2}
         max={98}

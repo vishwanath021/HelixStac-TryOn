@@ -1,5 +1,5 @@
 import { PLANS } from "@/data/plans";
-import { actualIsKnown, capPaise, costSourceLabel } from "@/lib/ai/cost-source";
+import { actualIsKnown, capPaise, costSourceLabel, KNOWN_ACTUAL_SOURCES } from "@/lib/ai/cost-source";
 import { spendCapInr, sumCapPaise } from "@/lib/ai/spend";
 import { parseTier, projectSalonMonth, tierRequest, type ImageProviderName } from "@/lib/ai/tiers";
 import { prisma } from "@/lib/prisma";
@@ -49,18 +49,52 @@ async function chargedSince(from: Date) {
   return inr(paise);
 }
 
-export async function costReport(args: { since?: Date; imagesPerMonth?: number; provider?: ImageProviderName; tier?: string } = {}) {
+function callWhere(args: { filterProvider?: string; filterModel?: string; from?: Date; to?: Date }) {
+  const createdAt = args.from || args.to ? { gte: args.from, lte: args.to } : undefined;
+  return {
+    ...(args.filterProvider ? { provider: args.filterProvider } : {}),
+    ...(args.filterModel ? { model: { contains: args.filterModel } } : {}),
+    ...(createdAt ? { createdAt } : {}),
+  };
+}
+
+export async function costReport(args: {
+  since?: Date;
+  imagesPerMonth?: number;
+  provider?: ImageProviderName;
+  tier?: string;
+  page?: number;
+  pageSize?: number;
+  filterProvider?: string;
+  filterModel?: string;
+  from?: Date;
+  to?: Date;
+} = {}) {
   const now = new Date();
   const imagesPerMonth = Math.max(0, Math.round(args.imagesPerMonth ?? 100));
   const since = args.since && !Number.isNaN(args.since.getTime()) ? args.since : startOfDay(now);
-  const [recent, billed, sessionInr, dayInr, monthInr, capSpend] = await Promise.all([
-    prisma.aiCall.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
+  const pageSize = Math.min(50, Math.max(1, Math.round(args.pageSize ?? 20)));
+  const where = callWhere(args);
+  const [totalCount, billed, sessionInr, dayInr, monthInr, capSpend, estimateSum, actualSum, providerRows] = await Promise.all([
+    prisma.aiCall.count({ where }),
     prisma.aiCall.findMany({ where: { billed: true }, select: { tool: true, tier: true, costInrPaise: true } }),
     chargedSince(since),
     chargedSince(startOfDay(now)),
     chargedSince(startOfMonth(now)),
     sumCapPaise(prisma.aiCall.findMany.bind(prisma.aiCall)),
+    prisma.aiCall.aggregate({ where, _sum: { estimatePaise: true } }),
+    prisma.aiCall.aggregate({ where: { ...where, costSource: { in: [...KNOWN_ACTUAL_SOURCES] } }, _sum: { costInrPaise: true }, _count: true }),
+    prisma.aiCall.findMany({ distinct: ["provider"], select: { provider: true }, orderBy: { provider: "asc" } }),
   ]);
+  const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+  const page = Math.min(pageCount, Math.max(1, Math.round(args.page ?? 1)));
+  const recent = await prisma.aiCall.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  });
+  const newest = page === 1 ? recent[0] : await prisma.aiCall.findFirst({ where, orderBy: { createdAt: "desc" } });
   const ids = [...new Set(recent.map((row) => row.tenantId).filter((id) => id.length > 8))];
   const tenants = ids.length
     ? await prisma.tenant.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
@@ -85,7 +119,7 @@ export async function costReport(args: { since?: Date; imagesPerMonth?: number; 
   const tier = parseTier(args.tier);
   const fallback = tierRequest(provider, tier).estimateInr;
   const avgInr = billedAvg == null ? fallback : Math.round(billedAvg * 100) / 100;
-  const calls: CostCallRow[] = recent.map((row) => ({
+  const mapCall = (row: NonNullable<typeof newest>): CostCallRow => ({
     id: row.id,
     at: row.createdAt.toISOString(),
     tenantId: row.tenantId,
@@ -111,7 +145,8 @@ export async function costReport(args: { since?: Date; imagesPerMonth?: number; 
     billed: row.billed,
     status: row.status,
     costSource: row.costSource,
-  }));
+  });
+  const calls = recent.map(mapCall);
   return {
     capInr: spendCapInr(),
     spentInr: inr(capSpend),
@@ -120,9 +155,19 @@ export async function costReport(args: { since?: Date; imagesPerMonth?: number; 
     monthInr,
     usingEstimate: billedAvg == null,
     averageInr: avgInr,
-    last: calls[0] || null,
+    last: newest ? mapCall(newest) : null,
     averages,
     calls,
+    page,
+    pageSize,
+    totalCount,
+    pageCount,
+    providers: providerRows.map((row) => row.provider).filter((provider) => provider.length > 0),
+    totals: {
+      estimateInr: inr(estimateSum._sum.estimatePaise || 0),
+      actualInr: inr(actualSum._sum.costInrPaise || 0),
+      actualCount: actualSum._count,
+    },
     imagesPerMonth,
     plans: projectSalonMonth(avgInr, imagesPerMonth).map((plan) => ({
       ...plan,

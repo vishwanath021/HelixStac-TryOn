@@ -15,6 +15,15 @@ import { parseAskedTexture, type AskedTexture } from "@/lib/ai/reference-texture
 import type { SalonConfig } from "@/lib/salon";
 import { normalizeWhatsAppPhone } from "@/lib/whatsapp";
 
+function pickClass(selected: boolean) {
+  return `relative overflow-hidden rounded-[14px] border bg-white text-left shadow-sm ${selected ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`;
+}
+
+function PickMark({ on }: { on: boolean }) {
+  if (!on) return null;
+  return <span className="check" aria-hidden="true">✓</span>;
+}
+
 type Look = {
   id: string;
   styleId: string;
@@ -114,7 +123,6 @@ export function TryOnApp({
   const [comparisons, setComparisons] = useState<Look[]>([]);
   const [referenceChoice, setReferenceChoice] = useState<{ id: string; name: string; serviceKeys: string[]; tool: Look["tool"] } | null>(null);
   const previewLock = useRef(false);
-  const [progress, setProgress] = useState(0);
   const [pendingName, setPendingName] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -123,6 +131,7 @@ export function TryOnApp({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const captureRef = useRef<HTMLInputElement>(null);
   const frameRef = useRef<HTMLElement>(null);
   const gridRef = useRef<HTMLElement>(null);
   const consentRef = useRef("");
@@ -154,17 +163,6 @@ export function TryOnApp({
       || config.nails.some((item) => item.id === initialStyleId);
     if (known) setStyleId(initialStyleId);
   }, [initialStyleId, config.styles, config.brows, config.beards, config.nails]);
-
-  useEffect(() => {
-    if (!busy) return;
-    setProgress(8);
-    const started = Date.now();
-    const timer = window.setInterval(() => {
-      const elapsed = Date.now() - started;
-      setProgress(Math.min(92, 8 + Math.round((elapsed / 10000) * 84)));
-    }, 200);
-    return () => window.clearInterval(timer);
-  }, [busy]);
 
   useEffect(() => {
     return () => {
@@ -326,19 +324,46 @@ export function TryOnApp({
     track("photo_captured", {});
   }
 
-  async function loadFile(file: Blob) {
-    const bitmap = await createImageBitmap(file);
+  async function jpegFromBitmap(bitmap: ImageBitmap) {
     const scale = Math.min(1, 1024 / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) {
+      bitmap.close();
+      return null;
+    }
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     bitmap.close();
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
-    if (!blob) return;
-    await applyBlob(blob);
+    return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  }
+
+  async function loadFile(file: Blob) {
+    setError("");
+    try {
+      const bitmap = await createImageBitmap(file);
+      const blob = await jpegFromBitmap(bitmap);
+      if (blob) await applyBlob(blob);
+      return;
+    } catch {
+      /* Phone HEIC often cannot be decoded in the browser. The server tries next. */
+    }
+    const body = new FormData();
+    body.set("photo", file);
+    const res = await fetch("/api/v1/tryon/prepare-photo", { method: "POST", body });
+    if (!res.ok) {
+      setError(t(lang, "photoFormat"));
+      return;
+    }
+    try {
+      const bitmap = await createImageBitmap(await res.blob());
+      const blob = await jpegFromBitmap(bitmap);
+      if (blob) await applyBlob(blob);
+      else setError(t(lang, "photoFormat"));
+    } catch {
+      setError(t(lang, "photoFormat"));
+    }
   }
 
   async function shutter() {
@@ -463,7 +488,6 @@ export function TryOnApp({
     setError("");
     setNotice("");
     setPendingName("");
-    setProgress(0);
     stopCamera();
     frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -569,7 +593,6 @@ export function TryOnApp({
       const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
       if (!res.ok) {
         const data = await res.json().catch(() => ({ message: t(lang, "creditsEmpty") }));
-        setProgress(0);
         setError(data.message || t(lang, "creditsEmpty"));
         track("generate_failed", { styleId: chosen.id });
         return;
@@ -615,7 +638,6 @@ export function TryOnApp({
         setActive(look);
         setComparisons((current) => [...current.filter((item) => item.modelLabel !== look.modelLabel), look]);
         setReferenceAck(false);
-        setProgress(100);
         setStylePhase("result");
         frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
@@ -635,7 +657,6 @@ export function TryOnApp({
         tool: chosen.tool,
         demo: sample,
       });
-      setProgress(100);
       setStylePhase("result");
       frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       track("generate_succeeded", { styleId: chosen.id });
@@ -703,33 +724,40 @@ export function TryOnApp({
   ];
 
   return (
-    <div style={brandStyle(config.primaryColor, config.accentColor) as CSSProperties} className={embed ? "" : "mx-auto max-w-lg px-4 pb-16 pt-4"}>
-      <header className="mb-4 flex items-center gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+    <div style={brandStyle(config.primaryColor, config.accentColor) as CSSProperties} className={embed ? "" : "mx-auto max-w-6xl px-4 pb-16 pt-4"}>
+      <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {config.logoUrl ? (
-            <img src={config.logoUrl} alt="" className="h-11 w-11 shrink-0 rounded-2xl border border-line bg-white object-cover" />
+            <img src={config.logoUrl} alt="" className="h-12 w-12 shrink-0 rounded-[14px] border border-line bg-white object-cover" />
           ) : (
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[var(--brand-btn)] font-serif text-lg text-[var(--on-brand)]">{config.name.slice(0, 1)}</div>
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] bg-[var(--brand-btn)] font-serif text-lg text-[var(--on-brand)]">{config.name.slice(0, 1)}</div>
           )}
-          <h1 className="min-w-0 text-balance font-serif text-[15px] leading-snug sm:text-xl">{config.name}</h1>
+          <h1 className="min-w-0 text-balance font-serif text-xl leading-snug sm:text-2xl">{config.name}</h1>
         </div>
-        <div className="flex shrink-0 gap-1.5">
-          <a className="btn whitespace-nowrap px-2.5 py-2 text-xs sm:px-3 sm:text-sm" href={bookHref || undefined} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
-          <a className="btn secondary whitespace-nowrap px-2.5 py-2 text-xs sm:px-3 sm:text-sm" href={chatHref || undefined} target="_blank" rel="noreferrer">{t(lang, "whatsappBtn")}</a>
+        <div className="flex gap-2">
+          <a className="btn flex-1 whitespace-nowrap sm:flex-none" href={bookHref || undefined} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
+          <a className="btn secondary flex-1 whitespace-nowrap sm:flex-none" href={chatHref || undefined} target="_blank" rel="noreferrer">{t(lang, "whatsappBtn")}</a>
         </div>
       </header>
 
-      {demoMode && <p className="mb-2 text-center text-xs text-muted" role="status">{t(lang, "demoNote")}</p>}
-      {salonMode && <p className="mb-2 text-center text-xs" role="status">{t(lang, "salonModeOn")}</p>}
+      {demoMode && <p className="mb-2 text-sm text-muted" role="status">{t(lang, "demoNote")}</p>}
+      {salonMode && <p className="mb-2 text-sm" role="status">{t(lang, "salonModeOn")}</p>}
 
-      <h2 className="text-center font-serif text-3xl">{t(lang, "pageTitle")}</h2>
-      <p className="mt-1 text-center text-sm text-muted">{t(lang, "pageSubtitle")}</p>
+      <h2 className="page-title">{t(lang, "pageTitle")}</h2>
+      <p className="mt-2 max-w-xl text-base text-muted">{t(lang, "pageSubtitle")}</p>
+      <ol className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
+        <li>1. Upload photo</li>
+        <li>2. {t(lang, "chooseStyle")}</li>
+        <li>3. Generate preview</li>
+        <li>4. Compare</li>
+        <li>5. {t(lang, "saveLookHint")}</li>
+      </ol>
 
-      <div className="mt-4 flex flex-wrap justify-center gap-2" role="tablist" aria-label={t(lang, "toolsLabel")}>
+      <div className="mt-4 flex flex-wrap gap-1 border-b border-line" role="tablist" aria-label={t(lang, "toolsLabel")}>
         {tools.filter((item) => item.on).map((item) => (
           <button
             key={item.id}
-            className={`rounded-full px-3 py-1.5 text-sm font-medium ${tool === item.id ? "bg-[var(--brand-btn)] text-[var(--on-brand)]" : "bg-white text-ink ring-1 ring-line"}`}
+            className="tab"
             type="button"
             role="tab"
             aria-selected={tool === item.id}
@@ -740,7 +768,9 @@ export function TryOnApp({
         ))}
       </div>
 
-      <section ref={frameRef} className="mt-5 overflow-hidden rounded-[28px] border border-line bg-[#eef7f5] shadow-lift" aria-label="Photo">
+      <div className="mt-6 grid items-start gap-8 lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
+      <div>
+      <section ref={frameRef} className="overflow-hidden rounded-[14px] border border-line bg-white shadow-lift" aria-label="Photo">
         {showResult && active?.unvalidated ? (
           <div className="p-3">
             <p className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-ink">Experimental, unvalidated</p>
@@ -771,7 +801,7 @@ export function TryOnApp({
               className={cameraOn ? "absolute inset-0 h-full w-full object-cover" : "hidden"}
               style={facing === "user" ? { transform: "scaleX(-1)" } : undefined}
             />
-            {activeShot && !cameraOn && <img src={activeShot.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
+            {activeShot && !cameraOn && <img src={activeShot.url} alt="" className="absolute inset-0 h-full w-full object-contain" />}
             {tool === "colour" && (cameraOn || faceShot) && modelStatus !== "error" && (
               <div className="absolute inset-0">
                 <ColourStage
@@ -789,11 +819,16 @@ export function TryOnApp({
                 {tool === "nails" && <p className="text-center text-lg text-ink">{t(lang, "uploadHand")}</p>}
                 <button className="btn min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "takeSelfie")}</button>
                 <button className="btn on-photo min-w-44" type="button" onClick={() => fileRef.current?.click()}>{tool === "nails" ? t(lang, "uploadHand") : t(lang, "uploadPhoto")}</button>
-                {cameraError && <p className="text-center text-sm text-[var(--bad)]" role="alert">{cameraError}</p>}
+                {cameraError && (
+                  <>
+                    <p className="text-center text-sm text-[var(--bad)]" role="alert">{cameraError}</p>
+                    <button className="btn on-photo min-w-44" type="button" onClick={() => captureRef.current?.click()}>Use the phone camera</button>
+                  </>
+                )}
               </div>
             )}
             {cameraOn && (
-              <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-3 bg-gradient-to-t from-black/70 to-transparent px-4 pb-4 pt-16">
+              <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-3 bg-[#3E304B]/85 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
                 <button className="h-[4.5rem] w-[4.5rem] rounded-full border-[5px] border-white/50 bg-white disabled:opacity-50" type="button" aria-label={t(lang, "takePhoto")} disabled={!cameraReady} onClick={() => void shutter()} />
                 <div className="flex flex-wrap justify-center gap-2">
                   <button
@@ -816,13 +851,10 @@ export function TryOnApp({
               </div>
             )}
             {busy && (
-              <div className="absolute inset-0 z-20 grid place-items-center bg-black/60 px-6 text-center text-white" role="status">
+              <div className="absolute inset-0 z-20 grid place-items-center bg-[#3E304B]/80 px-6 text-center text-white" role="status">
                 <div className="w-full max-w-xs">
                   <p className="font-serif text-3xl">{t(lang, "styling")}</p>
                   <p className="mt-1 text-sm">{pendingName}</p>
-                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/25">
-                    <div className="h-full bg-white" style={{ width: `${progress}%` }} />
-                  </div>
                 </div>
               </div>
             )}
@@ -830,8 +862,8 @@ export function TryOnApp({
         )}
       </section>
 
-      <label className="mt-3 flex items-start gap-2 text-sm">
-        <input type="checkbox" className="mt-1" checked={accepted} onChange={(event) => void acceptPrivacy(event.target.checked)} />
+      <label className="mt-3 flex min-h-11 items-center gap-3 text-sm">
+        <input type="checkbox" className="h-5 w-5 shrink-0" checked={accepted} onChange={(event) => void acceptPrivacy(event.target.checked)} />
         <span>{t(lang, "privacyLine")}</span>
       </label>
 
@@ -839,8 +871,23 @@ export function TryOnApp({
         ref={fileRef}
         className="sr-only"
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/*"
+        data-photo="gallery"
         aria-label="Choose a selfie file"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) void loadFile(file);
+        }}
+      />
+      <input
+        ref={captureRef}
+        className="sr-only"
+        type="file"
+        accept="image/*"
+        capture="user"
+        data-photo="camera"
+        aria-label="Take a photo with the camera"
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
@@ -903,13 +950,15 @@ export function TryOnApp({
             </div>
           )}
           <p className="text-center text-sm text-muted">{t(lang, active.tool === "brows" ? "browDisclaimer" : active.tool === "beard" ? "beardDisclaimer" : active.tool === "nails" ? "nailDisclaimer" : "disclaimer")}</p>
+          <p className="text-center text-sm font-semibold">{t(lang, "saveLookHint")}</p>
           <button className="btn" type="button" onClick={() => void downloadLook()}>{t(lang, "downloadLook")}</button>
           <button className="btn" type="button" onClick={() => void book()}>{t(lang, "bookLook")}</button>
           <button className="btn secondary" type="button" onClick={() => resetForAnotherPhoto()}>{t(lang, "tryAnotherShort")}</button>
         </div>
       )}
+      </div>
 
-      <section ref={gridRef} className="mt-6" aria-label={tool === "style" ? t(lang, "styles") : tool === "colour" ? t(lang, "shades") : tool === "brows" ? t(lang, "brows") : tool === "beard" ? t(lang, "beards") : t(lang, "nails")}>
+      <section ref={gridRef} aria-label={tool === "style" ? t(lang, "styles") : tool === "colour" ? t(lang, "shades") : tool === "brows" ? t(lang, "brows") : tool === "beard" ? t(lang, "beards") : t(lang, "nails")}>
         {tool === "style" && (
           <>
             {referenceModeAvailable && (
@@ -1012,10 +1061,11 @@ export function TryOnApp({
                 )}
               </div>
             )}
-            <div className="mb-4 inline-flex flex-wrap gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-line" role="group" aria-label="Style audience">
-              {config.showWomen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "women" ? "bg-[var(--brand-btn)] text-[var(--on-brand)]" : "text-ink"}`} type="button" aria-pressed={gender === "women"} onClick={() => chooseGender("women")}>{t(lang, "women")}</button>}
-              {config.showMen && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "men" ? "bg-[var(--brand-btn)] text-[var(--on-brand)]" : "text-ink"}`} type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
-              {config.showKids && <button className={`rounded-full px-4 py-2 text-sm font-semibold ${gender === "kids" ? "bg-[var(--brand-btn)] text-[var(--on-brand)]" : "text-ink"}`} type="button" aria-pressed={gender === "kids"} onClick={() => chooseGender("kids")}>{t(lang, "kids")}</button>}
+            <h3 className="section-title mb-3">{t(lang, "chooseStyle")}</h3>
+            <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Style audience">
+              {config.showWomen && <button className="chip" type="button" aria-pressed={gender === "women"} onClick={() => chooseGender("women")}>{t(lang, "women")}</button>}
+              {config.showMen && <button className="chip" type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
+              {config.showKids && <button className="chip" type="button" aria-pressed={gender === "kids"} onClick={() => chooseGender("kids")}>{t(lang, "kids")}</button>}
             </div>
             <HairTypePicker
               pickerOn={config.hairPickerOn}
@@ -1044,9 +1094,10 @@ export function TryOnApp({
                   key={style.id}
                   type="button"
                   aria-pressed={style.id === styleId}
-                  className={`overflow-hidden rounded-2xl border bg-white text-left shadow-sm ${style.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
+                  className={pickClass(style.id === styleId)}
                   disabled={busy} onClick={() => void preview({ id: style.id, name: style.name, serviceKeys: style.serviceKeys, tool: "style" })}
                 >
+                  <PickMark on={style.id === styleId} />
                   <StyleCard id={style.id} name={style.name} />
                   <span className="block px-2 py-2 text-center text-sm font-medium">{style.name}</span>
                 </button>
@@ -1062,9 +1113,10 @@ export function TryOnApp({
                 key={item.id}
                 type="button"
                 aria-pressed={item.id === shadeId}
-                className={`rounded-2xl border bg-white p-2 text-center text-sm ${item.id === shadeId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`}
+                className={`${pickClass(item.id === shadeId)} p-2 text-center text-sm`}
                 onClick={() => pickShade(item.id)}
               >
+                <PickMark on={item.id === shadeId} />
                 <span className="mx-auto mb-2 block h-16 w-full rounded-xl" style={{ background: item.hex }} />
                 {item.name}
               </button>
@@ -1075,7 +1127,8 @@ export function TryOnApp({
         {tool === "brows" && (
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
             {config.brows.map((brow) => (
-              <button key={brow.id} type="button" aria-pressed={brow.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${brow.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} disabled={busy} onClick={() => void preview({ id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" })}>
+              <button key={brow.id} type="button" aria-pressed={brow.id === styleId} className={pickClass(brow.id === styleId)} disabled={busy} onClick={() => void preview({ id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" })}>
+                <PickMark on={brow.id === styleId} />
                 <StyleCard id={brow.id} name={brow.name} folder="brows" />
                 <span className="block px-2 py-2 text-center text-sm font-medium">{brow.name}</span>
               </button>
@@ -1086,7 +1139,8 @@ export function TryOnApp({
         {tool === "beard" && (
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
             {config.beards.map((beard) => (
-              <button key={beard.id} type="button" aria-pressed={beard.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${beard.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} disabled={busy} onClick={() => void preview({ id: beard.id, name: beard.name, serviceKeys: beard.serviceKeys, tool: "beard" })}>
+              <button key={beard.id} type="button" aria-pressed={beard.id === styleId} className={pickClass(beard.id === styleId)} disabled={busy} onClick={() => void preview({ id: beard.id, name: beard.name, serviceKeys: beard.serviceKeys, tool: "beard" })}>
+                <PickMark on={beard.id === styleId} />
                 <StyleCard id={beard.id} name={beard.name} folder="beards" />
                 <span className="block px-2 py-2 text-center text-sm font-medium">{beard.name}</span>
               </button>
@@ -1097,7 +1151,8 @@ export function TryOnApp({
         {tool === "nails" && (
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
             {config.nails.map((nail) => (
-              <button key={nail.id} type="button" aria-pressed={nail.id === styleId} className={`overflow-hidden rounded-2xl border bg-white text-left ${nail.id === styleId ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} disabled={busy} onClick={() => void preview({ id: nail.id, name: nail.name, serviceKeys: nail.serviceKeys, tool: "nails" })}>
+              <button key={nail.id} type="button" aria-pressed={nail.id === styleId} className={pickClass(nail.id === styleId)} disabled={busy} onClick={() => void preview({ id: nail.id, name: nail.name, serviceKeys: nail.serviceKeys, tool: "nails" })}>
+                <PickMark on={nail.id === styleId} />
                 <StyleCard id={nail.id} name={nail.name} folder="nails" />
                 <span className="block px-2 py-2 text-center text-sm font-medium">{nail.name}</span>
               </button>
@@ -1105,6 +1160,7 @@ export function TryOnApp({
           </div>
         )}
       </section>
+      </div>
     </div>
   );
 }

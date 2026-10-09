@@ -1,8 +1,6 @@
-import Link from "next/link";
 import { BenchmarkPanel } from "@/components/admin/BenchmarkPanel";
 import { SuperAiForm } from "@/components/admin/SuperAiForm";
 import { SuperCostPanel } from "@/components/admin/SuperCostPanel";
-import { SignOutButton } from "@/components/admin/SignOutButton";
 import { costReport } from "@/lib/ai/cost-report";
 import { platformAiView } from "@/lib/ai/settings-store";
 import { STYLES } from "@/data/styles";
@@ -19,17 +17,8 @@ export default async function SuperAiPage() {
   const styles = STYLES.map((style) => ({ id: style.id, name: style.name, lengthCategory: style.lengthCategory }));
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.16em] text-muted">Super admin</p>
-          <h1 className="font-serif text-4xl">AI settings</h1>
-        </div>
-        <SignOutButton />
-      </div>
-      <p className="mb-4 text-sm">
-        <Link className="underline" href="/super">Back to salons</Link>
-      </p>
-      <p className="mb-4 max-w-xl text-sm leading-6">
+      <h1 className="page-title">AI settings</h1>
+      <p className="mt-2 mb-4 max-w-xl text-base leading-6 text-muted">
         Test is the default for a new key and for every calibration run. Medium turns on only after you approve it. High stays off until you enable it. Guests use Test until a salon or this page selects a higher tier that is allowed.
         Guest Test and Medium still send gpt-image-1-mini, which shuts down on 1 Dec 2026. Guest High still sends gpt-image-1, which shuts down on 23 Oct 2026. Those prices and requests are unchanged. Move a tier only in a later change that updates the estimate and the request together, after the comparison dropdown has been checked. The proposed replacement for new edits is gpt-image-2.5-sunburst, with gpt-image-2.5-flare as the faster check. OpenRouter comparisons use their own key on this page. OpenRouter does not proxy fal.ai.
       </p>

@@ -31,7 +31,7 @@ export default async function AdminHome() {
   const conversion = styleCount ? Math.round((whatsapp / styleCount) * 100) : 0;
   return (
     <main>
-      <h1 className="font-serif text-4xl">This month</h1>
+      <h1 className="page-title">This month</h1>
       <p className="mt-1 text-sm text-muted">Counts from the last 30 days. Photos are not in these numbers.</p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[

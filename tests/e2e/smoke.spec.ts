@@ -54,7 +54,7 @@ test.afterAll(async () => {
 test("customer can consent, use the camera, preview a cut, and an owner can open the dashboard", async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Virtual Try-On" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Find your next look" })).toBeVisible();
   const salonName = page.getByRole("heading", { level: 1, name: "Demo Salon – Bengaluru" });
   await expect(salonName).toBeVisible();
   await expect(salonName).toHaveText("Demo Salon – Bengaluru");
@@ -133,7 +133,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await gallery.getByRole("button", { name: "Kids", exact: true }).click();
   await expect(gallery.locator("img")).toHaveCount(4);
 
-  await page.locator('input[type="file"]').setInputFiles("public/samples/portrait.jpg");
+  await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await page.getByRole("tab", { name: "Brows" }).click();
   const brows = page.getByRole("region", { name: "Brows" });
@@ -235,11 +235,11 @@ test("brows, beard, and nails use photo cards and the same demo result", async (
   await expect(page.getByText("Upload your hand photo").first()).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/20-nails-grid.png", fullPage: true });
 
-  await page.locator('input[type="file"]').setInputFiles("tests/fixtures/faces/frontal.jpg");
+  await page.locator('input[data-photo="gallery"]').setInputFiles("tests/fixtures/faces/frontal.jpg");
   await expect(page.getByText("That looks like a face. Upload a photo of your hand.")).toBeVisible();
 
   await page.getByRole("tab", { name: "Brows" }).click();
-  await page.locator('input[type="file"]').setInputFiles("tests/fixtures/faces/frontal.jpg");
+  await page.locator('input[data-photo="gallery"]').setInputFiles("tests/fixtures/faces/frontal.jpg");
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await acceptPhotoUse(page);
   await page.getByRole("region", { name: "Brows" }).getByRole("button", { name: "Soft Arch" }).click();
@@ -256,7 +256,7 @@ test("brows, beard, and nails use photo cards and the same demo result", async (
 
   await page.getByRole("tab", { name: "Nails" }).click();
   await expect(page.getByText("Upload your hand photo").first()).toBeVisible();
-  await page.locator('input[type="file"]').setInputFiles("tests/fixtures/hand.jpg");
+  await page.locator('input[data-photo="gallery"]').setInputFiles("tests/fixtures/hand.jpg");
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await page.getByRole("region", { name: "Nails" }).getByRole("button", { name: "Classic French" }).click();
   await expect(page.getByText("Demo mode: connect an AI key to see this style on your own hand")).toBeVisible({ timeout: 20_000 });
@@ -377,7 +377,7 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
     await page.goto("/s/demo-salon");
     await expect(page.getByLabel("Password")).toHaveCount(0);
     await acceptPhotoUse(page);
-    await page.locator('input[type="file"]').setInputFiles("public/samples/portrait.jpg");
+    await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
     await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" }).click();
     await expect(page.getByText(/today's previews used up/i)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("heading", { name: "Phone code" })).toHaveCount(0);
@@ -389,7 +389,7 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
     await page.goto(`/s/demo-salon?salon=${encodeURIComponent(token)}&tool=style`);
     await expect(page.getByText(/Salon mode/i)).toBeVisible();
     await acceptPhotoUse(page);
-    await page.locator('input[type="file"]').setInputFiles("public/samples/portrait.jpg");
+    await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
     await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" }).click();
     await expect(page.getByText("AI preview — actual results vary by hair type. Consult your stylist.")).toBeVisible({ timeout: 20_000 });
   } finally {
@@ -454,7 +454,7 @@ test("style gallery uses portraits and the demo result is not a flat placeholder
   const womenPhoto = gallery.locator("img").first();
   await expect(womenPhoto).toHaveAttribute("src", /\/styles\/.+\.jpg/);
   await expect(womenPhoto).toHaveAttribute("alt", /style reference/);
-  await page.locator('input[type="file"]').setInputFiles("public/samples/portrait.jpg");
+  await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
   await acceptPhotoUse(page);
@@ -504,7 +504,7 @@ test("reference mode quotes a style and does not call the provider", async ({ pa
   await expect(page.getByText("Hair texture")).toHaveCount(0);
   await page.getByRole("checkbox", { name: "Reference mode (test)" }).check();
   await expect(page.getByLabel("Hair texture")).toBeVisible();
-  await page.locator('input[type="file"]').setInputFiles("public/samples/portrait.jpg");
+  await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await acceptPhotoUse(page);
   await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Soft Bob" }).click();
@@ -520,9 +520,16 @@ test("super admin sees assumed COGS", async ({ page }) => {
   await expect(page.getByText(/assumption/i)).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/09-super.png", fullPage: true });
   await page.goto("/super/ai");
-  await expect(page.getByRole("columnheader", { name: "Estimate (reserved)" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Actual", exact: true })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Source" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Image costs" })).toBeVisible();
+  await expect(page.getByText("Estimate", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Actual", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Previous" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next" })).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) >= 768) {
+    await expect(page.getByRole("columnheader", { name: "Estimate (reserved)" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Actual", exact: true })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Source" })).toBeVisible();
+  }
   const sync = page.getByRole("button", { name: "Sync real cost from fal" });
   await expect(sync).toBeVisible();
   await sync.click();

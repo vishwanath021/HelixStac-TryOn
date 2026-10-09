@@ -40,7 +40,7 @@ export function LoginForm() {
 
   return (
     <div className="card mx-auto max-w-md p-6">
-      <h1 className="font-serif text-3xl">Salon login</h1>
+      <h1 className="page-title">Salon login</h1>
       <p className="mt-2 text-sm text-muted">Owners and staff use email and password. Magic link works when email is configured. In local dev the link can appear here.</p>
       <form className="mt-4 space-y-3" onSubmit={onPassword}>
         <label className="block text-sm">Email

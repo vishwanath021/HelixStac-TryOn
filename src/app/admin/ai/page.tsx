@@ -9,7 +9,7 @@ export default async function AdminAiPage() {
   if (membership.role !== "OWNER") {
     return (
       <main>
-        <h1 className="font-serif text-4xl">AI settings</h1>
+        <h1 className="page-title">AI settings</h1>
         <p className="mt-2">Only the salon owner can change guest preview quality.</p>
       </main>
     );
@@ -17,7 +17,7 @@ export default async function AdminAiPage() {
   const initial = await salonAiView(tenant.id);
   return (
     <main>
-      <h1 className="mb-2 font-serif text-4xl">AI settings</h1>
+      <h1 className="mb-2 page-title">AI settings</h1>
       <p className="mb-4 max-w-xl text-sm leading-6">
         Guests use Test until you select Medium or High. Medium and High stay unavailable until HelixStac turns them on.
       </p>

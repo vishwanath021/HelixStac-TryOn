@@ -11,8 +11,8 @@ export default async function LeadsPage() {
   const canExport = planById(tenant.plan).leadExport || tenant.status === "TRIAL";
   return (
     <main>
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="font-serif text-4xl">Leads</h1>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="page-title">Leads</h1>
         {canExport ? (
           // File download, not a client navigation.
           // eslint-disable-next-line @next/next/no-html-link-for-pages

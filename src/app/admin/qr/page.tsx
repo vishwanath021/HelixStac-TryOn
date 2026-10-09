@@ -16,7 +16,7 @@ export default async function QrAdminPage() {
   const snippet = `<script src="${base}/embed.js" data-salon="${tenant.slug}" data-lang="${tenant.defaultLang}" defer></script>`;
   return (
     <main>
-      <h1 className="font-serif text-4xl">QR and embed</h1>
+      <h1 className="page-title">QR and embed</h1>
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <article className="card p-4">
           <h2 className="font-serif text-2xl">Standee</h2>

@@ -8,6 +8,13 @@ export class ImageError extends Error {
   }
 }
 
+const HEIC_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "heif", "mif1", "msf1"]);
+
+export function isHeic(buf: Buffer) {
+  if (buf.length < 12 || buf.toString("ascii", 4, 8) !== "ftyp") return false;
+  return HEIC_BRANDS.has(buf.toString("ascii", 8, 12));
+}
+
 export function sniffImage(buf: Buffer): "image/jpeg" | "image/png" | "image/webp" | null {
   if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
   if (buf.length >= 8 && buf[0] === 0x89 && buf.toString("ascii", 1, 4) === "PNG") return "image/png";
@@ -29,6 +36,22 @@ export async function sanitizeSelfie(input: Buffer) {
       .jpeg({ quality: 85, mozjpeg: true })
       .toBuffer();
     return jpeg;
+  } catch (error) {
+    if (error instanceof ImageError) throw error;
+    throw new ImageError("DECODE");
+  }
+}
+
+/** JPEG for the preview canvas. Accepts a phone HEIC when this server's decoder can read it. */
+export async function previewJpeg(input: Buffer) {
+  if (input.length > 12 * 1024 * 1024) throw new ImageError("SIZE");
+  if (!sniffImage(input) && !isHeic(input)) throw new ImageError("TYPE");
+  try {
+    const pipeline = sharp(input, { failOn: "none", animated: false }).rotate();
+    const meta = await pipeline.metadata();
+    if (!meta.width || !meta.height) throw new ImageError("DECODE");
+    if (meta.width < 64 || meta.height < 64 || meta.width > 8000 || meta.height > 8000) throw new ImageError("DIMENSIONS");
+    return await pipeline.resize({ width: 1024, height: 1024, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85, mozjpeg: true }).toBuffer();
   } catch (error) {
     if (error instanceof ImageError) throw error;
     throw new ImageError("DECODE");

@@ -33,8 +33,8 @@ async function main() {
       slug: "demo-salon",
       name: "Demo Salon – Bengaluru",
       logoUrl: "/brand/demo-mark.svg",
-      primaryColor: "#0E7C74",
-      accentColor: "#E9897A",
+      primaryColor: "#69517D",
+      accentColor: "#B6A0C9",
       languages: JSON.stringify(["en", "hi", "kn", "ta", "te", "mr"]),
       defaultLang: "en",
       whatsapp: "919800011122",
@@ -62,12 +62,14 @@ async function main() {
     },
   });
 
-  if (tenant.primaryColor.toUpperCase() === "#C4622D") {
+  const previousBrand = tenant.primaryColor.toUpperCase();
+  if (previousBrand === "#C4622D" || previousBrand === "#0E7C74") {
+    const previousAccent = tenant.accentColor.toUpperCase();
     await prisma.tenant.update({
       where: { id: tenant.id },
       data: {
-        primaryColor: "#0E7C74",
-        accentColor: tenant.accentColor.toUpperCase() === "#241C16" ? "#E9897A" : tenant.accentColor,
+        primaryColor: "#69517D",
+        accentColor: previousAccent === "#241C16" || previousAccent === "#E9897A" ? "#B6A0C9" : tenant.accentColor,
       },
     });
   }
