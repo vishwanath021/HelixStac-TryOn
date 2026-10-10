@@ -35,9 +35,30 @@ Colour, Brows, Nails, and Beard are back on the guest tab row and in owner setti
 | Brows | A normal front-facing selfie, including the sample portrait with glasses and bangs, was refused with “Try another photo. We couldn't place this look safely on this picture.” A warm wall was read as skin and swallowed the face, and a wide close-up was treated as tilted. | Fixed. A swallowed background is measured again with a stricter skin check, a wide close-up can be a face, and a slight roll (about 20°) passes. A 28° roll is still “Face too tilted.” Brows covered by hair are “Brows hidden by hair.” A turned face is “Face too turned.” |
 | Beard | Choosing a beard could stop with “Too many previews from this connection. Live colour is still free.” Every tool shared one connection bucket, and the bucket moved before a preview was actually generated. The sentence named live colour. | Fixed. Only a generate counts, and each tool has its own hour, day, and minute bucket. Guests stay at 6 an hour and 20 a day per tool. Staff stay at 240 an hour, 1000 a day, and 120 a minute, separate from guests. A beard limit says “Too many beard previews from this connection.” |
 
+Checked with mocks only. No paid call.
+
+| Check | Result |
+| --- | --- |
+| Lint and typecheck | Passed |
+| Unit tests | 18 files, 130 tests passed, including brow landmark fixtures and per-tool rate limits |
+| Playwright | 61 tests. 53 passed, 7 skipped, 1 failed in 5.2 minutes. The failure was the owner settings locator matching both the Live colour checkbox and the sentence “Live colour stays free.” That test was re-run on desktop and passed. Skips are the phone projects for tests that set their own width or run only on desktop. |
+
+Five-tool mock flow, on Pixel 5, iPhone 13, a 768×1024 tablet, and desktop 1280×800:
+
+| Tool | Select | Preview | Generate | Slider | Try another |
+| --- | --- | --- | --- | --- | --- |
+| Style | Soft Bob stays selected and does not call generate | Mock preview | One generate | Before/after moved to 28 | Opens the camera |
+| Colour | Cherry Red, then Honey Blonde | On-device canvas, labelled with the shade | No generate request | Intensity moved to 40 | A second shade replaces the first. Colour has no result step |
+| Brows | Soft Arch does not call generate | Mock preview | One generate | Before/after moved to 28 | Opens the camera |
+| Beard | Short Boxed does not call generate and does not show a connection limit | Mock preview | One generate | Before/after moved to 28 | Opens the camera |
+| Nails | Classic French on a hand photo does not call generate | Mock preview | One generate | Before/after moved to 28 | Opens the camera |
+
+The four generate tools made 4 preview requests in total on each screen. Layout projects still passed on WebKit iPhone 13 and 15, Pixel 7, iPad Mini and iPad Pro portrait and landscape, Galaxy Tab S4 portrait and landscape, and desktops 1280, 1440, and 1920.
+
 ## Cases executed
 
 - Guest header, Book Now, WhatsApp, Demo label, and “See your next look.” on phone and desktop.
+- Style, colour, brows, beard, and nails: select, preview, generate or on-device colour, slider, and try another, on phone, tablet, and desktop. Mock only.
 - Tool pill height and single row at 320, 360, 390, 430, 768, 1024, and 1280.
 - Camera, shutter, retake, try another, upload instead, back, and denied camera.
 - Consent, style, brows, beard, and nails previews on the mock. Result slider and JPEG save.
