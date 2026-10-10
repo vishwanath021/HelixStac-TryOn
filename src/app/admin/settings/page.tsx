@@ -1,6 +1,7 @@
 import { SettingsForm } from "@/components/admin/SettingsForm";
 import { planById } from "@/data/plans";
 import { pageTenant } from "@/lib/session";
+import { enabledTools } from "@/lib/tools";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ export default async function SettingsPage() {
       <h1 className="mb-4 page-title">Settings</h1>
       <SettingsForm
         canRemoveBranding={planById(tenant.plan).removeBranding}
+        enabledTools={[...enabledTools()]}
         initial={{
           name: tenant.name,
           primaryColor: tenant.primaryColor,

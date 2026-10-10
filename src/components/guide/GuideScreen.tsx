@@ -73,7 +73,7 @@ export function GuideScreen({ config }: { config: SalonConfig }) {
         )}
       </section>
 
-      <section className="card space-y-3 p-4" aria-labelledby="colour-guide">
+      {config.toolColour && <section className="card space-y-3 p-4" aria-labelledby="colour-guide">
         <h2 id="colour-guide" className="font-serif text-2xl">{t(lang, "colourGuide")}</h2>
         <p className="text-xs text-muted">{t(lang, "guideNotPhoto")}</p>
         <label className="flex items-center gap-2 text-sm">
@@ -98,7 +98,7 @@ export function GuideScreen({ config }: { config: SalonConfig }) {
             </div>
           </div>
         )}
-      </section>
+      </section>}
 
       <section className="card space-y-3 p-4" aria-labelledby="quiz-guide">
         <h2 id="quiz-guide" className="font-serif text-2xl">{t(lang, "quizTitle")}</h2>

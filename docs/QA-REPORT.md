@@ -26,6 +26,15 @@ Date: 2026-10-10. No paid provider call. Playwright blanks provider keys. Guest 
 
 No product bug from this pass is still open.
 
+## Deferred
+
+Colour, Brows, Nails, and Beard stay in the code and off the guest and owner screens. `ENABLED_TOOLS` defaults to `hairstyle`. Set it to `all`, or to a comma list, when those tools should come back.
+
+| Tool | What happened | Status |
+| --- | --- | --- |
+| Brows | Try this look returned “Try another photo. We couldn't place this look safely on this picture.” | Deferred. The placement check is unchanged. |
+| Beard | The preview stopped with “Too many previews from this connection. Live colour is still free.” That is the per-connection preview limit, and the sentence mentioned live colour. | Deferred as a tool. While colour is hidden, limit messages no longer mention live colour. A signed-in super-admin or that salon’s owner uses a separate higher limit (`GENERATE_STAFF_PER_IP_HOUR` 240, `GENERATE_STAFF_PER_IP_DAY` 1000, `GENERATE_STAFF_PER_MINUTE` 120) and is not counted against the guest daily cap. |
+
 ## Cases executed
 
 - Guest header, Book Now, WhatsApp, Demo label, and “See your next look.” on phone and desktop.

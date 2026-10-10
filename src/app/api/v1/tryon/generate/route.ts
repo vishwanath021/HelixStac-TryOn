@@ -13,7 +13,8 @@ import { readTierFlags } from "@/lib/ai/settings-store";
 import { resolveGuestTier } from "@/lib/ai/tiers";
 import type { GenerateInput } from "@/lib/ai/types";
 import { CreditError, refundStaleReserves, reserveCredits, settleCredits } from "@/lib/credits";
-import { numberEnv } from "@/lib/env";
+import { auth } from "@/auth";
+import { guestLimitMessage, previewRateLimits, toolEnabled, type ToolId } from "@/lib/tools";
 import { resolveLook } from "@/lib/guidance";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 import { sanitizeSelfie, ImageError } from "@/lib/images";
@@ -30,6 +31,22 @@ import { clientIp, rateLimit } from "@/lib/ratelimit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 3600;
+
+async function signedInOwnerOrSuper(tenantId: string) {
+  try {
+    const session = await auth();
+    const user = session?.user;
+    if (!user?.id) return null;
+    if (user.isSuperAdmin) return user.id;
+    const owner = await prisma.membership.findFirst({
+      where: { userId: user.id, tenantId, role: "OWNER" },
+      select: { userId: true },
+    });
+    return owner?.userId ?? null;
+  } catch {
+    return null;
+  }
+}
 
 function startOfToday() {
   const date = new Date();
@@ -69,23 +86,28 @@ export async function POST(req: Request) {
   }
 
   const ip = clientIp(req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip"));
-  const hour = rateLimit(`gen:ip:h:${ip}`, numberEnv("GENERATE_PER_IP_HOUR", 6), 60 * 60 * 1000);
-  const day = rateLimit(`gen:ip:d:${ip}`, numberEnv("GENERATE_PER_IP_DAY", 20), 24 * 60 * 60 * 1000);
-  const burst = rateLimit(`gen:tenant:m:${tenant.id}`, numberEnv("GENERATE_PER_TENANT_MINUTE", 30), 60 * 1000);
+  const staffId = await signedInOwnerOrSuper(tenant.id);
+  const limits = previewRateLimits(Boolean(staffId));
+  const bucket = staffId ? `staff:${staffId}` : ip;
+  const hour = rateLimit(`gen:ip:h:${bucket}`, limits.hour, 60 * 60 * 1000);
+  const day = rateLimit(`gen:ip:d:${bucket}`, limits.day, 24 * 60 * 60 * 1000);
+  const burst = rateLimit(staffId ? `gen:staff:m:${staffId}` : `gen:tenant:m:${tenant.id}`, limits.minute, 60 * 1000);
   if (!hour.ok || !day.ok || !burst.ok) {
-    return NextResponse.json({ error: "RATE", message: "Too many previews from this connection. Live colour is still free." }, { status: 429 });
+    return NextResponse.json({ error: "RATE", message: guestLimitMessage("rate") }, { status: 429 });
   }
 
   const usedToday = await prisma.tryOn.count({
     where: { tenantId: tenant.id, kind: { in: [...AI_PREVIEW_KINDS] }, status: "SUCCEEDED", createdAt: { gte: startOfToday() } },
   });
   if (usedToday >= tenant.dailyCap) {
-    return NextResponse.json({ error: "DAILY_CAP", message: "This salon has reached today's preview limit. Live colour is still free." }, { status: 429 });
+    return NextResponse.json({ error: "DAILY_CAP", message: guestLimitMessage("daily") }, { status: 429 });
   }
 
   const look = resolveLook(tool, styleId);
+  const platformTool: ToolId = tool === "style" ? "hairstyle" : tool;
   const toolOn =
-    tool === "brows" ? tenant.toolBrows : tool === "beard" ? tenant.toolBeard : tool === "nails" ? tenant.toolNails : tenant.toolStyle;
+    toolEnabled(platformTool) &&
+    (tool === "brows" ? tenant.toolBrows : tool === "beard" ? tenant.toolBeard : tool === "nails" ? tenant.toolNails : tenant.toolStyle);
   if (!toolOn) return NextResponse.json({ error: "TOOL", message: "That try-on is turned off for this salon." }, { status: 403 });
   if (!look) return NextResponse.json({ error: "STYLE", message: "That look is not on this salon's menu." }, { status: 400 });
   if (tool === "style") {
@@ -101,15 +123,13 @@ export async function POST(req: Request) {
   const tier: PreviewTier = salonOk ? "salon" : member ? "member" : "anon";
   const ipHash = hashIp(ip);
   const actorKey = actorKeyFor(tier, ipHash, member?.customerId);
-  const limit = capForTier(tier, tenant.anonDailyCap, tenant.memberDailyCap);
+  const limit = staffId ? null : capForTier(tier, tenant.anonDailyCap, tenant.memberDailyCap);
   if (limit !== null) {
     const personal = await prisma.tryOn.count({
       where: { tenantId: tenant.id, actorKey, status: "SUCCEEDED", kind: { in: [...AI_PREVIEW_KINDS] }, createdAt: { gte: startOfToday() } },
     });
     if (personal >= limit) {
-      const message = tier === "member"
-        ? "You've used today's previews on this account. Live colour is still free. Come back tomorrow, or ask the salon to try it with you."
-        : "That's today's previews used up. Log in for a higher limit, or visit the salon. Live colour is still free.";
+      const message = guestLimitMessage(tier === "member" ? "member" : "anon");
       return NextResponse.json({ error: "CAP", tier, message }, { status: 429 });
     }
   }
@@ -194,9 +214,10 @@ export async function POST(req: Request) {
     await reserveCredits(tenant.id, credits, refId);
   } catch (error) {
     if (error instanceof CreditError && error.code === "INSUFFICIENT") {
-      await failGenerationJob(jobId, { outcome: "credits", message: "This salon has used its preview credits. Live colour is still free. Message them on WhatsApp to book." });
+      const creditsMessage = guestLimitMessage("credits");
+      await failGenerationJob(jobId, { outcome: "credits", message: creditsMessage });
       return NextResponse.json(
-        { error: "CREDITS", message: "This salon has used its preview credits. Live colour is still free. Message them on WhatsApp to book." },
+        { error: "CREDITS", message: creditsMessage },
         { status: 402 },
       );
     }

@@ -4,6 +4,7 @@ import { planById } from "@/data/plans";
 import { isLocale, LOCALES } from "@/data/i18n";
 import { prisma } from "@/lib/prisma";
 import { requireOwner } from "@/lib/session";
+import { toolEnabled, type ToolId } from "@/lib/tools";
 
 const schema = z.object({
   name: z.string().min(2).max(80).optional(),
@@ -61,6 +62,16 @@ export async function PUT(req: Request) {
   }
   const { defaultLang, logoUrl, ...rest } = data;
   delete rest.languages;
+  const gated: Record<string, ToolId> = {
+    toolStyle: "hairstyle",
+    toolColour: "colour",
+    toolBrows: "brows",
+    toolBeard: "beard",
+    toolNails: "nails",
+  };
+  for (const [field, id] of Object.entries(gated)) {
+    if (!toolEnabled(id)) delete rest[field as keyof typeof rest];
+  }
   const tenant = await prisma.tenant.update({
     where: { id: access.tenant.id },
     data: {

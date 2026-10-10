@@ -79,6 +79,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await expect(page.getByLabel("Password")).toHaveCount(0);
   await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/demo mode/i)).toHaveCount(0);
+  await expect(page.getByRole("tab")).toHaveCount(0);
   await artifact(page, "guest-before");
   await expect(page.getByText(/before we use a photo/i)).toHaveCount(0);
   const gallery = page.getByRole("region", { name: "Styles" });
@@ -147,25 +148,6 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
 
   await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
-  await page.getByRole("tab", { name: "Brows" }).click();
-  const brows = page.getByRole("region", { name: "Brows" });
-  await brows.getByRole("button", { name: "Soft Arch" }).click();
-  await page.getByRole("button", { name: "Try this look" }).click();
-  await expect(page.getByRole("heading", { name: "Soft Arch" })).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole("button", { name: "Save" })).toBeVisible();
-  await page.screenshot({ path: "docs/screenshots/04-brows.png", fullPage: true });
-
-  await page.getByRole("tab", { name: "Beard" }).click();
-  await page.getByRole("region", { name: "Beards" }).getByRole("button", { name: "Short Boxed" }).click();
-  await page.getByRole("button", { name: "Try this look" }).click();
-  await expect(page.getByRole("heading", { name: "Short Boxed" })).toBeVisible({ timeout: 20_000 });
-  await page.screenshot({ path: "docs/screenshots/04-beard.png", fullPage: true });
-
-  await page.getByRole("tab", { name: "Nails" }).click();
-  await expect(page.getByRole("button", { name: "Upload" })).toBeVisible();
-  await page.screenshot({ path: "docs/screenshots/04-nails.png", fullPage: true });
-
-  await page.getByRole("tab", { name: "Hair style" }).click();
   await gallery.getByRole("button", { name: "Women", exact: true }).click();
   await gallery.getByRole("button", { name: "Wolf Cut" }).click();
   await page.getByRole("button", { name: "Try this look" }).click();
@@ -179,20 +161,8 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   expect(booking).toContain("Haircut");
   await popup.close();
 
-  await page.getByRole("tab", { name: "Hair colour" }).click();
-  await expect(page.getByRole("button", { name: "Cherry Red" })).toBeVisible();
-  await page.getByRole("button", { name: "Cherry Red" }).click();
-  await page.waitForFunction(() => {
-    const canvas = document.querySelector("canvas");
-    if (!canvas || canvas.width < 10) return false;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return false;
-    const pixel = ctx.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 5), 1, 1).data;
-    return pixel[0] + pixel[1] + pixel[2] > 30;
-  }, undefined, { timeout: 20_000 });
-  await page.screenshot({ path: "docs/screenshots/03-colour.png", fullPage: true });
-
   await page.goto("/s/demo-salon/guide");
+  await expect(page.getByRole("heading", { name: "Hair-colour ideas" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Style ideas" })).toBeVisible();
   await page.getByRole("button", { name: "Show ideas" }).first().click();
   await expect(page.getByText(/not a measurement/i)).toBeVisible();
@@ -219,68 +189,14 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.screenshot({ path: "docs/screenshots/08-qr.png", fullPage: true });
 });
 
-test("brows, beard, and nails use photo cards and the same demo result", async ({ page }) => {
-  test.setTimeout(90_000);
+test("colour, brows, nails, and beard stay off the guest page", async ({ page }) => {
   await page.goto("/s/demo-salon");
-  await expect(page.getByRole("tab", { name: "Hair style" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Brows" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Nails" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Beard" })).toBeVisible();
-
-  async function expectPhotos(region: string, count: number, folder: string) {
-    await page.getByRole("tab", { name: region === "Beards" ? "Beard" : region }).click();
-    const grid = page.getByRole("region", { name: region });
-    const imgs = grid.locator("img");
-    await expect(imgs).toHaveCount(count);
-    await expect(imgs.first()).toHaveAttribute("src", new RegExp(`/${folder}/.+\\.jpg`));
-    await expect.poll(() => imgs.evaluateAll((nodes) => nodes.every((node) => {
-      const img = node as HTMLImageElement;
-      return img.complete && img.naturalWidth > 0;
-    }))).toBe(true);
-    return grid;
-  }
-
-  const brows = await expectPhotos("Brows", 7, "brows");
-  await expect(brows.getByRole("button", { name: "Women", exact: true })).toHaveCount(0);
-  await page.screenshot({ path: "docs/screenshots/18-brows-grid.png", fullPage: true });
-  const beards = await expectPhotos("Beards", 10, "beards");
-  await expect(beards.getByRole("button", { name: "Women", exact: true })).toHaveCount(0);
-  await page.screenshot({ path: "docs/screenshots/19-beard-grid.png", fullPage: true });
-  const nails = await expectPhotos("Nails", 10, "nails");
-  await expect(nails.getByRole("button", { name: "Women", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Upload" })).toBeVisible();
-  await page.screenshot({ path: "docs/screenshots/20-nails-grid.png", fullPage: true });
-
-  await page.locator('input[data-photo="gallery"]').setInputFiles("tests/fixtures/faces/frontal.jpg");
-  await expect(page.getByText("That looks like a face. Upload a photo of your hand.")).toBeVisible();
-
-  await page.getByRole("tab", { name: "Brows" }).click();
-  await page.locator('input[data-photo="gallery"]').setInputFiles("tests/fixtures/faces/frontal.jpg");
-  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
-  await acceptPhotoUse(page);
-  await page.getByRole("region", { name: "Brows" }).getByRole("button", { name: "Soft Arch" }).click();
-  await page.getByRole("button", { name: "Try this look" }).click();
-  await expect(page.getByRole("heading", { name: "Soft Arch" })).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Book this look" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Try another" })).toBeVisible();
-  await page.screenshot({ path: "docs/screenshots/21-brows-result.png", fullPage: true });
-
-  await page.getByRole("tab", { name: "Beard" }).click();
-  await page.getByRole("region", { name: "Beards" }).getByRole("button", { name: "Short Boxed" }).click();
-  await page.getByRole("button", { name: "Try this look" }).click();
-  await expect(page.getByRole("heading", { name: "Short Boxed" })).toBeVisible({ timeout: 20_000 });
-  await page.screenshot({ path: "docs/screenshots/22-beard-result.png", fullPage: true });
-
-  await page.getByRole("tab", { name: "Nails" }).click();
-  await expect(page.getByRole("button", { name: "Upload" })).toBeVisible();
-  await page.locator('input[data-photo="gallery"]').setInputFiles("tests/fixtures/hand.jpg");
-  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
-  await page.getByRole("region", { name: "Nails" }).getByRole("button", { name: "Classic French" }).click();
-  await page.getByRole("button", { name: "Try this look" }).click();
-  await expect(page.getByRole("heading", { name: "Classic French" })).toBeVisible({ timeout: 20_000 });
-  await page.screenshot({ path: "docs/screenshots/23-nails-result.png", fullPage: true });
+  await expect(page.getByRole("region", { name: "Styles" })).toBeVisible();
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Brows" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Beards" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Nails" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Cherry Red" })).toHaveCount(0);
 });
 
 test("camera view can switch to upload without a refresh", async ({ page }) => {

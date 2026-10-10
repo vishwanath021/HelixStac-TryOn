@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { pageTenant } from "@/lib/session";
+import { toolEnabled } from "@/lib/tools";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export default async function AdminHome() {
           </article>
         ))}
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
+      <div className={`mt-4 grid gap-3 ${toolEnabled("colour") ? "md:grid-cols-2" : ""}`}>
         <article className="card p-4">
           <h2 className="font-serif text-2xl">Popular styles</h2>
           {topStyles.length === 0 && <p className="mt-2 text-sm text-muted">No previews yet.</p>}
@@ -59,6 +60,7 @@ export default async function AdminHome() {
             ))}
           </ul>
         </article>
+        {toolEnabled("colour") && (
         <article className="card p-4">
           <h2 className="font-serif text-2xl">Popular colours</h2>
           {shadeCounts.size === 0 && <p className="mt-2 text-sm text-muted">No colour taps yet.</p>}
@@ -68,6 +70,7 @@ export default async function AdminHome() {
             ))}
           </ul>
         </article>
+        )}
       </div>
       <p className="mt-4 text-sm">Credits left: <strong>{tenant.creditBalance}</strong>. Plan {tenant.plan} · {tenant.status}. Daily cap {tenant.dailyCap}.</p>
     </main>

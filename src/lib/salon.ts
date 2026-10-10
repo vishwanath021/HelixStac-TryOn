@@ -7,6 +7,7 @@ import { STYLES, toPublicStyle, type PublicStyle } from "@/data/styles";
 import { applySuitability } from "@/lib/hair-suitability";
 import { parseJson } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
+import { maskToolFlags } from "@/lib/tools";
 
 export type SalonService = {
   id: string;
@@ -105,6 +106,13 @@ export function toSalonConfig(tenant: TenantWithRelations): SalonConfig {
     lift,
     serviceKeys,
   }));
+  const tools = maskToolFlags({
+    toolColour: tenant.toolColour,
+    toolStyle: tenant.toolStyle,
+    toolBrows: tenant.toolBrows,
+    toolBeard: tenant.toolBeard,
+    toolNails: tenant.toolNails,
+  });
   return {
     id: tenant.id,
     slug: tenant.slug,
@@ -125,11 +133,7 @@ export function toSalonConfig(tenant: TenantWithRelations): SalonConfig {
     showMen: tenant.showMen,
     showWomen: tenant.showWomen,
     showKids: tenant.showKids,
-    toolColour: tenant.toolColour,
-    toolStyle: tenant.toolStyle,
-    toolBrows: tenant.toolBrows,
-    toolBeard: tenant.toolBeard,
-    toolNails: tenant.toolNails,
+    ...tools,
     hairPickerOn: tenant.hairPickerOn,
     hairSuggestOn: tenant.hairSuggestOn,
     hairSuggestUsesCredits: tenant.hairSuggestUsesCredits,
@@ -145,10 +149,10 @@ export function toSalonConfig(tenant: TenantWithRelations): SalonConfig {
       durationMin: service.durationMin,
     })),
     styles,
-    brows: tenant.toolBrows ? BROWS.map(toPublicBrow) : [],
-    beards: tenant.toolBeard ? BEARDS.map(toPublicBeard) : [],
-    nails: tenant.toolNails ? NAILS.map(toPublicNail) : [],
-    shades,
+    brows: tools.toolBrows ? BROWS.map(toPublicBrow) : [],
+    beards: tools.toolBeard ? BEARDS.map(toPublicBeard) : [],
+    nails: tools.toolNails ? NAILS.map(toPublicNail) : [],
+    shades: tools.toolColour ? shades : [],
     outlets: tenant.outlets.map((outlet) => ({
       id: outlet.id,
       name: outlet.name,

@@ -74,6 +74,7 @@ export default defineConfig({
           MOCK_DELAY_MS: "200",
           ALLOW_DEV_MAGIC_LINK: "true",
           OTP_PROVIDER: "mock",
+          ENABLED_TOOLS: "hairstyle",
           GENERATE_PER_IP_HOUR: "40",
           GENERATE_PER_IP_DAY: "80",
           GENERATE_PER_TENANT_MINUTE: "200",

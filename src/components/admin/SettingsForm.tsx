@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import type { ToolId } from "@/lib/tools";
 
 export function SettingsForm({
   initial,
   canRemoveBranding,
+  enabledTools = ["hairstyle"],
 }: {
   initial: {
     name: string;
@@ -30,6 +32,7 @@ export function SettingsForm({
     logoUrl: string | null;
   };
   canRemoveBranding: boolean;
+  enabledTools?: ToolId[];
 }) {
   const [form, setForm] = useState(initial);
   const [message, setMessage] = useState("");
@@ -124,11 +127,11 @@ export function SettingsForm({
         <label className="text-sm">GSTIN<input className="field mt-1" value={form.gstin} onChange={(event) => set("gstin", event.target.value)} /></label>
         <fieldset className="grid gap-2 text-sm">
           <legend className="font-medium">Tools on the try-on page</legend>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolColour} onChange={(event) => set("toolColour", event.target.checked)} /> Live colour</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolStyle} onChange={(event) => set("toolStyle", event.target.checked)} /> Hairstyle preview</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolBrows} onChange={(event) => set("toolBrows", event.target.checked)} /> Eyebrow mapping</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolBeard} onChange={(event) => set("toolBeard", event.target.checked)} /> Beard try-on</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolNails} onChange={(event) => set("toolNails", event.target.checked)} /> Nail try-on</label>
+          {enabledTools.includes("colour") && <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolColour} onChange={(event) => set("toolColour", event.target.checked)} /> Live colour</label>}
+          {enabledTools.includes("hairstyle") && <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolStyle} onChange={(event) => set("toolStyle", event.target.checked)} /> Hairstyle preview</label>}
+          {enabledTools.includes("brows") && <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolBrows} onChange={(event) => set("toolBrows", event.target.checked)} /> Eyebrow mapping</label>}
+          {enabledTools.includes("beard") && <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolBeard} onChange={(event) => set("toolBeard", event.target.checked)} /> Beard try-on</label>}
+          {enabledTools.includes("nails") && <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolNails} onChange={(event) => set("toolNails", event.target.checked)} /> Nail try-on</label>}
         </fieldset>
         <fieldset className="grid gap-2 text-sm">
           <legend className="font-medium">Hair suggestions</legend>
@@ -145,7 +148,7 @@ export function SettingsForm({
             <input className="field mt-1" type="number" min={0} max={500} value={form.memberDailyCap} onChange={(event) => set("memberDailyCap", Number(event.target.value))} />
           </label>
         </div>
-        <p className="text-xs text-muted">0 means no AI previews for that group. Salon-mode links are unlimited. Live colour stays free.</p>
+        <p className="text-xs text-muted">0 means no AI previews for that group. Salon-mode links are unlimited.{enabledTools.includes("colour") ? " Live colour stays free." : ""}</p>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.requireLoginToBook} onChange={(event) => set("requireLoginToBook", event.target.checked)} />
           Require a phone login before an online booking request. When this is off, Book opens WhatsApp.

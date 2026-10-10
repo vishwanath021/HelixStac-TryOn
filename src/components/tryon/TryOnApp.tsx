@@ -656,6 +656,7 @@ export function TryOnApp({
     { id: "nails", label: "Nails", name: t(lang, "nails"), on: config.toolNails, icon: "nails" },
     { id: "beard", label: "Beard", name: t(lang, "beardChip"), on: config.toolBeard, icon: "beard" },
   ];
+  const visibleTools = tools.filter((item) => item.on);
 
   const bar = headerBarColor(config.primaryColor);
   const platformLogo = isPlatformLogo(config.logoUrl);
@@ -686,9 +687,10 @@ export function TryOnApp({
 
       <h2 className="page-title">{t(lang, "pageTitle")}</h2>
 
+      {visibleTools.length > 1 && (
       <div className="seg-fade mt-4">
       <div className="seg" role="tablist" aria-label={t(lang, "toolsLabel")}>
-        {tools.filter((item) => item.on).map((item) => (
+        {visibleTools.map((item) => (
           <button
             key={item.id}
             className="seg-btn"
@@ -704,6 +706,7 @@ export function TryOnApp({
         ))}
       </div>
       </div>
+      )}
 
       <div className="mt-6 grid items-start gap-8 lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
       <div>
