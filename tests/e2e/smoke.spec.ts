@@ -79,7 +79,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await expect(page.getByLabel("Password")).toHaveCount(0);
   await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/demo mode/i)).toHaveCount(0);
-  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(page.getByRole("tab")).toHaveCount(5);
   await artifact(page, "guest-before");
   await expect(page.getByText(/before we use a photo/i)).toHaveCount(0);
   const gallery = page.getByRole("region", { name: "Styles" });
@@ -162,7 +162,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await popup.close();
 
   await page.goto("/s/demo-salon/guide");
-  await expect(page.getByRole("heading", { name: "Hair-colour ideas" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Hair-colour ideas" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Style ideas" })).toBeVisible();
   await page.getByRole("button", { name: "Show ideas" }).first().click();
   await expect(page.getByText(/not a measurement/i)).toBeVisible();
@@ -189,14 +189,21 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.screenshot({ path: "docs/screenshots/08-qr.png", fullPage: true });
 });
 
-test("colour, brows, nails, and beard stay off the guest page", async ({ page }) => {
+test("colour, brows, nails, and beard are on the guest page", async ({ page }) => {
   await page.goto("/s/demo-salon");
-  await expect(page.getByRole("region", { name: "Styles" })).toBeVisible();
-  await expect(page.getByRole("tab")).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Brows" })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Beards" })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Nails" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Cherry Red" })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Hair style" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Hair colour" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Brows" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Nails" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Beard" })).toBeVisible();
+  await page.getByRole("tab", { name: "Hair colour" }).click();
+  await expect(page.getByRole("button", { name: "Cherry Red" })).toBeVisible();
+  await page.getByRole("tab", { name: "Brows" }).click();
+  await expect(page.getByRole("region", { name: "Brows" })).toBeVisible();
+  await page.getByRole("tab", { name: "Beard" }).click();
+  await expect(page.getByRole("region", { name: "Beards" })).toBeVisible();
+  await page.getByRole("tab", { name: "Nails" }).click();
+  await expect(page.getByRole("region", { name: "Nails" })).toBeVisible();
 });
 
 test("camera view can switch to upload without a refresh", async ({ page }) => {

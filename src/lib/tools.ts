@@ -1,4 +1,5 @@
 import { numberEnv } from "@/lib/env";
+import { rateLimit } from "@/lib/ratelimit";
 
 export const TOOL_IDS = ["hairstyle", "colour", "brows", "nails", "beard"] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
@@ -18,11 +19,11 @@ const ALIASES: Record<string, ToolId> = {
   beard: "beard",
 };
 
-/** Guest and owner tools. Unset or blank means hairstyle only. `all` turns every tool on. */
+/** Guest and owner tools. Unset or blank means every tool. `hairstyle` hides the rest. */
 export function enabledTools(raw: string | undefined = process.env.ENABLED_TOOLS): Set<ToolId> {
-  const text = (raw ?? "hairstyle").trim().toLowerCase();
-  if (!text || text === "hairstyle" || text === "style") return new Set(["hairstyle"]);
-  if (text === "all" || text === "*") return new Set(TOOL_IDS);
+  const text = (raw ?? "").trim().toLowerCase();
+  if (!text || text === "all" || text === "*") return new Set(TOOL_IDS);
+  if (text === "hairstyle" || text === "style") return new Set(["hairstyle"]);
   const set = new Set<ToolId>();
   for (const part of text.split(/[,+\s]+/)) {
     const id = ALIASES[part];
@@ -55,13 +56,40 @@ export function maskToolFlags<T extends {
 
 const COLOUR_NOTE = " Live colour is still free.";
 
-/** Limit copy. The live-colour sentence stays only while that tool is enabled. */
+export type PreviewTool = "style" | "brows" | "beard" | "nails";
+
+export function previewToolLabel(tool: PreviewTool) {
+  if (tool === "brows") return "brow";
+  if (tool === "nails") return "nail";
+  if (tool === "beard") return "beard";
+  return "hairstyle";
+}
+
+/** The connection limit names the tool that was actually generated. Colour is not a generate. */
+export function previewRateMessage(tool: PreviewTool) {
+  return `Too many ${previewToolLabel(tool)} previews from this connection.`;
+}
+
+/**
+ * Count one generate for this tool. Selection, a rejected photo, and a replay do not call this.
+ * Guest and staff buckets are separate, and each tool has its own hour, day, and minute bucket.
+ */
+export function consumePreviewRate(input: { tool: PreviewTool; staff: boolean; bucket: string; tenantId: string; now?: number }) {
+  const limits = previewRateLimits(input.staff);
+  const hour = rateLimit(`gen:${input.tool}:h:${input.bucket}`, limits.hour, 60 * 60 * 1000, input.now);
+  if (!hour.ok) return { ok: false as const, message: previewRateMessage(input.tool) };
+  const day = rateLimit(`gen:${input.tool}:d:${input.bucket}`, limits.day, 24 * 60 * 60 * 1000, input.now);
+  if (!day.ok) return { ok: false as const, message: previewRateMessage(input.tool) };
+  const minuteKey = input.staff ? `gen:${input.tool}:m:${input.bucket}` : `gen:${input.tool}:m:${input.tenantId}`;
+  const minute = rateLimit(minuteKey, limits.minute, 60 * 1000, input.now);
+  if (!minute.ok) return { ok: false as const, message: previewRateMessage(input.tool) };
+  return { ok: true as const };
+}
+
+/** Salon-wide limit copy. The live-colour sentence stays only while that tool is enabled. */
 export function guestLimitMessage(kind: "rate" | "daily" | "member" | "anon" | "credits", raw?: string) {
   const colour = toolEnabled("colour", raw);
-  if (kind === "rate") {
-    const base = "Too many previews from this connection.";
-    return colour ? `${base}${COLOUR_NOTE}` : base;
-  }
+  if (kind === "rate") return "Too many previews from this connection.";
   if (kind === "daily") {
     const base = "This salon has reached today's preview limit.";
     return colour ? `${base}${COLOUR_NOTE}` : base;

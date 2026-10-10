@@ -45,7 +45,7 @@ async function waitForLiveFrame(page: Page) {
   });
 }
 
-test("hairstyle page has no tool tabs and the brand bar stays readable", async ({ page }, testInfo) => {
+test("tool pill stays one row and the brand bar stays readable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "the test sets its own widths");
   await page.goto("/s/demo-salon");
   const mark = page.locator('header svg[viewBox="0 0 64 64"]');
@@ -53,11 +53,23 @@ test("hairstyle page has no tool tabs and the brand bar stays readable", async (
   await expect(page.locator("header img")).toHaveCount(0);
   await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/demo mode/i)).toHaveCount(0);
-  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(page.getByRole("tab")).toHaveCount(5);
   await expect(page.getByRole("region", { name: "Styles" })).toBeVisible();
+  const icon = await page.locator(".seg-btn svg").first().boundingBox();
+  expect(icon?.width ?? 0).toBeGreaterThanOrEqual(18);
+  expect(icon?.width ?? 0).toBeLessThanOrEqual(22);
   for (const width of [320, 360, 390, 430, 768, 1024, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(page.locator(".seg"), `tabs at ${width}`).toHaveCount(0);
+    const pill = page.locator(".seg");
+    const box = await pill.boundingBox();
+    expect(box, `pill at ${width}`).toBeTruthy();
+    expect(box!.height, `pill height at ${width}`).toBeGreaterThan(48);
+    expect(box!.height, `pill height at ${width}`).toBeLessThan(76);
+    const rows = await pill.evaluate((el) => {
+      const tops = new Set([...el.querySelectorAll(".seg-btn")].map((button) => Math.round(button.getBoundingClientRect().top)));
+      return tops.size;
+    });
+    expect(rows, `rows at ${width}`).toBe(1);
     const header = page.locator("header");
     const layout = await header.evaluate((el) => {
       const paint = (node: Element) => {
@@ -68,6 +80,7 @@ test("hairstyle page has no tool tabs and the brand bar stays readable", async (
       const book = [...el.querySelectorAll("a")].find((link) => link.textContent?.includes("Book Now"));
       const chat = [...el.querySelectorAll("a")].find((link) => link.textContent?.includes("WhatsApp"));
       const nameStyle = name ? getComputedStyle(name) : null;
+      const fade = getComputedStyle(document.querySelector(".seg-fade") as Element, "::before");
       return {
         bar: paint(el).background,
         padTop: parseFloat(getComputedStyle(el).paddingTop),
@@ -77,6 +90,8 @@ test("hairstyle page has no tool tabs and the brand bar stays readable", async (
         overflow: nameStyle?.textOverflow,
         book: book ? paint(book) : null,
         chat: chat ? paint(chat) : null,
+        fadeImage: fade.backgroundImage,
+        fadeOpacity: fade.opacity,
         mark: (el.querySelector("svg")?.getBoundingClientRect().width ?? 0),
       };
     });
@@ -92,6 +107,10 @@ test("hairstyle page has no tool tabs and the brand bar stays readable", async (
     expect(layout.book?.color).toBe("rgb(62, 48, 75)");
     expect(layout.chat?.color).toBe("rgb(255, 255, 255)");
     expect(layout.chat?.border).toBe("rgb(255, 255, 255)");
+    if (width < 768) {
+      expect(layout.fadeImage, `tab fade at ${width}`).toContain("gradient");
+      expect(layout.fadeOpacity, `tab fade at ${width}`).toBe("1");
+    }
     const viewport = page.viewportSize()?.width ?? width;
     for (const label of ["Book Now", "WhatsApp"]) {
       const link = await header.getByRole("link", { name: label }).boundingBox();
@@ -240,10 +259,10 @@ test("an owner can replace the salon logo and restore the Lookuvi mark", async (
     await page.waitForURL(/\/admin/);
     await page.goto("/admin/settings");
     await expect(page.getByText("Hairstyle preview")).toBeVisible();
-    await expect(page.getByText("Live colour")).toHaveCount(0);
-    await expect(page.getByText("Eyebrow mapping")).toHaveCount(0);
-    await expect(page.getByText("Beard try-on")).toHaveCount(0);
-    await expect(page.getByText("Nail try-on")).toHaveCount(0);
+    await expect(page.getByText("Live colour")).toBeVisible();
+    await expect(page.getByText("Eyebrow mapping")).toBeVisible();
+    await expect(page.getByText("Beard try-on")).toBeVisible();
+    await expect(page.getByText("Nail try-on")).toBeVisible();
     await page.getByLabel("Salon logo").setInputFiles("public/brand/lookuvi-app-icon.png");
     await expect(page.locator("form img")).toBeVisible();
     await page.getByRole("button", { name: "Save", exact: true }).click();

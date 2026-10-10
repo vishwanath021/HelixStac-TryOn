@@ -2,15 +2,86 @@ import sharp from "sharp";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 
 export const TRY_ANOTHER_PHOTO = "Try another photo. We couldn't place this look safely on this picture.";
+export const BROWS_HIDDEN = "Brows hidden by hair. Move your fringe aside and try again.";
+export const FACE_TOO_TILTED = "Face too tilted. Hold the phone level and try again.";
+export const FACE_TOO_TURNED = "Face too turned. Look straight at the camera and try again.";
+
+/** A slight head roll still reads as a front-facing selfie. The 28° fixture stays over this. */
+export const BROW_ROLL_LIMIT = 24;
+/** Profile faces in the fixtures sit near 0.79. Partial bangs stay above this. */
+export const BROW_SYMMETRY_MIN = 0.86;
+/** Fringe across part of the brow band is allowed. A band that is mostly hair is not. */
+export const BROW_HAIR_MAX = 0.62;
 
 export type RegionTool = "style" | "colour" | "brows" | "beard" | "nails";
 
 export type FaceBox = { x: number; y: number; w: number; h: number; cx: number; cy: number };
 
+export type BrowSignals = {
+  /** Degrees from upright. 0 is level. */
+  rollDeg: number;
+  /** 1 is a symmetric front view. */
+  symmetry: number;
+  faceHeight: number;
+  /** Share of the brow band that is hair-coloured. */
+  browHair: number;
+  /** Brow mask area divided by the frame. */
+  maskFraction: number;
+  /** The mask center sits in the brow zone. */
+  inBrowZone: boolean;
+};
+
+export type BrowPoint = { x: number; y: number };
+
+/** Brow, eye, nose, and chin points from a fixture. Tests build these without a photo. */
+export type BrowLandmarks = {
+  leftBrow: BrowPoint;
+  rightBrow: BrowPoint;
+  leftEye: BrowPoint;
+  rightEye: BrowPoint;
+  nose: BrowPoint;
+  chin: BrowPoint;
+  /** 0–1 hair coverage of the brow zone. */
+  hairCover: number;
+};
+
+function pointDistance(a: BrowPoint, b: BrowPoint) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+/** Turn landmark positions into the same signals the photo check uses. */
+export function browSignalsFromLandmarks(marks: BrowLandmarks, frame = { width: 768, height: 1024 }): BrowSignals {
+  const dx = marks.rightBrow.x - marks.leftBrow.x;
+  const dy = marks.rightBrow.y - marks.leftBrow.y;
+  const rollDeg = Math.abs((Math.atan2(dy, dx) * 180) / Math.PI);
+  const left = pointDistance(marks.leftBrow, marks.nose);
+  const right = pointDistance(marks.rightBrow, marks.nose);
+  const symmetry = 1 - Math.abs(left - right) / Math.max(left, right, 1);
+  const faceTop = Math.min(marks.leftBrow.y, marks.rightBrow.y, marks.leftEye.y, marks.rightEye.y);
+  const faceHeight = Math.max(0, marks.chin.y - faceTop);
+  const browW = Math.max(1, Math.hypot(dx, dy));
+  const browH = Math.max(8, faceHeight * 0.11);
+  const maskFraction = (browW * browH) / Math.max(1, frame.width * frame.height);
+  const cy = (marks.leftBrow.y + marks.rightBrow.y) / 2;
+  const zoneTop = faceTop - faceHeight * 0.05;
+  const inBrowZone = cy >= zoneTop && cy <= zoneTop + faceHeight * 0.42;
+  return { rollDeg, symmetry, faceHeight, browHair: marks.hairCover, maskFraction, inBrowZone };
+}
+
+export function judgeBrowPlacement(signals: BrowSignals): { ok: true } | { ok: false; reason: NonNullable<RegionReport["reason"]>; message: string } {
+  if (signals.faceHeight < MIN_FACE) return { ok: false, reason: "small", message: TRY_ANOTHER_PHOTO };
+  if (signals.rollDeg > BROW_ROLL_LIMIT) return { ok: false, reason: "tilt", message: FACE_TOO_TILTED };
+  if (signals.symmetry < BROW_SYMMETRY_MIN) return { ok: false, reason: "profile", message: FACE_TOO_TURNED };
+  if (signals.browHair > BROW_HAIR_MAX) return { ok: false, reason: "hair", message: BROWS_HIDDEN };
+  if (signals.maskFraction < 0.002 || signals.maskFraction > 0.14) return { ok: false, reason: "area", message: TRY_ANOTHER_PHOTO };
+  if (!signals.inBrowZone) return { ok: false, reason: "zone", message: TRY_ANOTHER_PHOTO };
+  return { ok: true };
+}
+
 export type RegionReport = {
   ok: boolean;
   message: string;
-  reason?: "none" | "many" | "tilt" | "profile" | "small" | "area" | "zone" | "hand";
+  reason?: "none" | "many" | "tilt" | "profile" | "small" | "area" | "zone" | "hand" | "hair";
   width: number;
   height: number;
   face: FaceBox | null;
@@ -21,8 +92,11 @@ export type RegionReport = {
 
 const MIN_FACE = 72;
 
-function skinPixel(r: number, g: number, b: number) {
-  return r > 90 && g > 40 && b > 20 && r > g && r > b && r - g > 12 && r - b > 12;
+function skinPixel(r: number, g: number, b: number, strict = false) {
+  if (!(r > 90 && g > 40 && b > 20 && r > g && r > b && r - b > 12)) return false;
+  // A beige wall is only a little warmer than grey. Real skin, including a medium
+  // selfie, keeps a wider red-green gap. The loose check stays for blue-backed photos.
+  return r - g > (strict ? 18 : 12);
 }
 
 function empty(width: number, height: number) {
@@ -34,7 +108,7 @@ export async function decodeRgb(input: Buffer) {
   return { data, width: info.width, height: info.height };
 }
 
-function faceBlobs(data: Buffer, width: number, height: number) {
+function faceBlobs(data: Buffer, width: number, height: number, strict = false) {
   const step = Math.max(1, Math.ceil(Math.max(width, height) / 220));
   const sw = Math.ceil(width / step);
   const sh = Math.ceil(height / step);
@@ -44,7 +118,7 @@ function faceBlobs(data: Buffer, width: number, height: number) {
       const sx = Math.min(width - 1, x * step);
       const sy = Math.min(height - 1, y * step);
       const i = (sy * width + sx) * 3;
-      if (skinPixel(data[i], data[i + 1], data[i + 2])) skin[y * sw + x] = 1;
+      if (skinPixel(data[i], data[i + 1], data[i + 2], strict)) skin[y * sw + x] = 1;
     }
   }
   const labels = new Int32Array(sw * sh);
@@ -103,7 +177,11 @@ function faceBlobs(data: Buffer, width: number, height: number) {
         if (mx >= 0 && mx < sw && skin[my * sw + mx]) agree += 1;
       }
       const deg = (0.5 * Math.atan2(2 * mu11, mu20 - mu02) * 180) / Math.PI;
-      const tilt = Math.abs(Math.abs(deg) - 90);
+      // Distance to the nearest upright axis. A wide skin blob (bangs, a close crop)
+      // has a horizontal long axis and is not a rolled head. A real roll stays the
+      // angle of that axis away from vertical.
+      const fromVertical = Math.abs(Math.abs(deg) - 90);
+      const tilt = Math.min(fromVertical, Math.abs(90 - fromVertical));
       const xs = [...blob.xs].sort((a, b) => a - b);
       const ys = [...blob.ys].sort((a, b) => a - b);
       const q = (sorted: number[], p: number) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * p)))];
@@ -124,10 +202,17 @@ function faceBlobs(data: Buffer, width: number, height: number) {
         } satisfies FaceBox,
       };
     })
-    .filter((blob) => blob.fill > 0.32 && blob.bh / blob.bw > 0.7 && blob.bh / blob.bw < 3.6 && blob.count < area * 0.8)
+    .filter((blob) => blob.fill > 0.32 && blob.bh / blob.bw > 0.42 && blob.bh / blob.bw < 3.6 && blob.count < area * 0.8)
     .sort((a, b) => b.count - a.count);
   const biggest = ranked[0]?.count ?? 0;
-  return ranked.filter((blob) => blob.count > biggest * 0.35);
+  const faces = ranked.filter((blob) => blob.count > biggest * 0.35);
+  // A warm wall passes the loose skin check and swallows the face. Try again
+  // with the stricter gap before giving up.
+  if (!strict && faces.length === 0) {
+    const swallowed = blobs.some((blob) => blob.count >= area * 0.8);
+    if (swallowed) return faceBlobs(data, width, height, true);
+  }
+  return faces;
 }
 
 /**
@@ -280,14 +365,42 @@ export function primaryFace(data: Buffer, width: number, height: number): FaceBo
   return blobs[0].box;
 }
 
+/** Tilt and symmetry of the single skin blob. Tests use this to see why a selfie was refused. */
+export function facePose(data: Buffer, width: number, height: number) {
+  const blobs = faceBlobs(data, width, height);
+  return blobs.map((blob) => ({ tilt: blob.tilt, symmetry: blob.symmetry, h: blob.box.h, w: blob.box.w }));
+}
+
+function browRect(face: FaceBox, width: number, height: number) {
+  return {
+    y0: Math.max(0, Math.floor(face.y + face.h * 0.2)),
+    y1: Math.min(height - 1, Math.ceil(face.y + face.h * 0.36)),
+    x0: Math.max(0, Math.floor(face.x + face.w * 0.12)),
+    x1: Math.min(width - 1, Math.ceil(face.x + face.w * 0.88)),
+  };
+}
+
 function browMask(mask: Uint8Array, width: number, height: number, face: FaceBox) {
-  const y0 = Math.floor(face.y + face.h * 0.22);
-  const y1 = Math.ceil(face.y + face.h * 0.33);
-  const x0 = Math.floor(face.x + face.w * 0.14);
-  const x1 = Math.ceil(face.x + face.w * 0.86);
-  for (let y = Math.max(0, y0); y <= Math.min(height - 1, y1); y += 1) {
-    for (let x = Math.max(0, x0); x <= Math.min(width - 1, x1); x += 1) mask[y * width + x] = 255;
+  const { y0, y1, x0, x1 } = browRect(face, width, height);
+  for (let y = y0; y <= y1; y += 1) {
+    for (let x = x0; x <= x1; x += 1) mask[y * width + x] = 255;
   }
+}
+
+/** Hair-coloured pixels inside the brow band. Glasses and a partial fringe stay under the limit. */
+export function browBandHair(data: Buffer, width: number, height: number, face: FaceBox) {
+  const { y0, y1, x0, x1 } = browRect(face, width, height);
+  let hair = 0;
+  let total = 0;
+  for (let y = y0; y <= y1; y += 1) {
+    for (let x = x0; x <= x1; x += 1) {
+      total += 1;
+      const i = (y * width + x) * 3;
+      if (hairLike(data[i], data[i + 1], data[i + 2])) hair += 1;
+    }
+  }
+  if (!total) return 0;
+  return hair / total;
 }
 
 function beardMask(mask: Uint8Array, width: number, height: number, face: FaceBox) {
@@ -432,7 +545,7 @@ function zoneOk(tool: RegionTool, face: FaceBox, box: NonNullable<ReturnType<typ
     return box.minY <= face.y + face.h * 0.08;
   }
   if (tool === "brows") {
-    return box.cy > face.y + face.h * 0.18 && box.cy < face.y + face.h * 0.4 && box.maxX - box.minX < face.w * 1.15;
+    return box.cy > face.y + face.h * 0.14 && box.cy < face.y + face.h * 0.46 && box.maxX - box.minX < face.w * 1.2;
   }
   return box.minY > face.y + face.h * 0.5 && box.cx > face.x - face.w * 0.15 && box.cx < face.x + face.w * 1.15;
 }
@@ -440,13 +553,14 @@ function zoneOk(tool: RegionTool, face: FaceBox, box: NonNullable<ReturnType<typ
 const AREA: Record<RegionTool, [number, number]> = {
   style: [0.015, 0.8],
   colour: [0.015, 0.8],
-  brows: [0.002, 0.09],
+  brows: [0.002, 0.14],
   beard: [0.012, 0.3],
   nails: [0.008, 0.4],
 };
 
-function fail(partial: Omit<RegionReport, "ok" | "message" | "feather"> & { reason: RegionReport["reason"] }): RegionReport {
-  return { ...partial, ok: false, message: TRY_ANOTHER_PHOTO, feather: empty(partial.width, partial.height) };
+function fail(partial: Omit<RegionReport, "ok" | "message" | "feather"> & { reason: RegionReport["reason"]; message?: string }): RegionReport {
+  const message = partial.message || TRY_ANOTHER_PHOTO;
+  return { ...partial, ok: false, message, feather: empty(partial.width, partial.height) };
 }
 
 export function analyzeRegion(data: Buffer, width: number, height: number, tool: RegionTool, options?: RegionOptions): RegionReport {
@@ -471,7 +585,13 @@ export function analyzeRegion(data: Buffer, width: number, height: number, tool:
     const blobs = faceBlobs(data, width, height);
     const skin = skinGrid(data, width, height);
     if (fingertipBoxes(skin, width, height).length >= 3) return fail({ ...base, reason: "hand" });
-    if (blobs.length === 0) return fail({ ...base, reason: "none" });
+    if (blobs.length === 0) {
+      return fail({
+        ...base,
+        reason: "none",
+        message: tool === "brows" ? "We couldn't find a face. Use a front-facing photo and try again." : undefined,
+      });
+    }
     if (blobs.length >= 2) return fail({ ...base, reason: "many" });
     const blob = blobs[0];
     const face = blob.box;
@@ -479,9 +599,23 @@ export function analyzeRegion(data: Buffer, width: number, height: number, tool:
     if (tool === "brows") browMask(mask, width, height, face);
     else if (tool === "beard") beardMask(mask, width, height, face);
     else hairMask(mask, width, height, face, data, options?.hairExtent ?? (tool === "colour" ? "short" : "long"));
-    if (face.h < MIN_FACE) return fail({ ...base, face, reason: "small" });
-    if (blob.tilt > 18) return fail({ ...base, face, reason: "tilt" });
-    if (blob.symmetry < 0.86) return fail({ ...base, face, reason: "profile" });
+    if (tool === "brows") {
+      const box = maskBox(mask, width, height);
+      const fraction = box ? box.count / (width * height) : 0;
+      const judged = judgeBrowPlacement({
+        rollDeg: blob.tilt,
+        symmetry: blob.symmetry,
+        faceHeight: face.h,
+        browHair: browBandHair(data, width, height, face),
+        maskFraction: fraction,
+        inBrowZone: Boolean(box && zoneOk("brows", face, box)),
+      });
+      if (!judged.ok) return fail({ ...base, face, reason: judged.reason, message: judged.message });
+    } else {
+      if (face.h < MIN_FACE) return fail({ ...base, face, reason: "small" });
+      if (blob.tilt > 18) return fail({ ...base, face, reason: "tilt" });
+      if (blob.symmetry < 0.86) return fail({ ...base, face, reason: "profile" });
+    }
   }
   const box = maskBox(mask, width, height);
   const fraction = box ? box.count / (width * height) : 0;

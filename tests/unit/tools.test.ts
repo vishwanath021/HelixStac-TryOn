@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { enabledTools, guestLimitMessage, maskToolFlags, previewRateLimits, toolEnabled } from "@/lib/tools";
+import { resetRateLimits } from "@/lib/ratelimit";
+import { consumePreviewRate, enabledTools, guestLimitMessage, maskToolFlags, previewRateLimits, previewRateMessage, toolEnabled } from "@/lib/tools";
 
 const allOn = {
   toolStyle: true,
@@ -10,12 +12,14 @@ const allOn = {
 };
 
 describe("enabled tools", () => {
-  it("defaults to hairstyle only", () => {
-    expect([...enabledTools(undefined)]).toEqual(["hairstyle"]);
-    expect([...enabledTools("")]).toEqual(["hairstyle"]);
+  it("defaults to every tool", () => {
+    expect([...enabledTools(undefined)].sort()).toEqual(["beard", "brows", "colour", "hairstyle", "nails"]);
+    expect([...enabledTools("")].sort()).toEqual(["beard", "brows", "colour", "hairstyle", "nails"]);
+    expect([...enabledTools("all")].sort()).toEqual(["beard", "brows", "colour", "hairstyle", "nails"]);
+    expect([...enabledTools("hairstyle")]).toEqual(["hairstyle"]);
     expect([...enabledTools("style")]).toEqual(["hairstyle"]);
     expect(toolEnabled("colour", "hairstyle")).toBe(false);
-    expect(toolEnabled("hairstyle", undefined)).toBe(true);
+    expect(toolEnabled("beard", undefined)).toBe(true);
   });
 
   it("accepts a list or all", () => {
@@ -36,14 +40,57 @@ describe("enabled tools", () => {
     expect(maskToolFlags(allOn, "brows,beard")).toMatchObject({ toolBrows: true, toolBeard: true, toolStyle: false, toolColour: false });
   });
 
-  it("drops the live colour sentence while that tool is hidden", () => {
-    expect(guestLimitMessage("rate", "hairstyle")).toBe("Too many previews from this connection.");
-    expect(guestLimitMessage("rate", "hairstyle")).not.toMatch(/colour/i);
+  it("names the tool on a connection limit and keeps live colour off that sentence", () => {
+    expect(previewRateMessage("beard")).toBe("Too many beard previews from this connection.");
+    expect(previewRateMessage("brows")).toBe("Too many brow previews from this connection.");
+    expect(previewRateMessage("nails")).toBe("Too many nail previews from this connection.");
+    expect(previewRateMessage("style")).toBe("Too many hairstyle previews from this connection.");
+    for (const tool of ["beard", "brows", "nails", "style"] as const) {
+      expect(previewRateMessage(tool)).not.toMatch(/colour/i);
+    }
+    expect(guestLimitMessage("rate", "all")).toBe("Too many previews from this connection.");
+    expect(guestLimitMessage("rate", "all")).not.toMatch(/colour/i);
     expect(guestLimitMessage("daily", "hairstyle")).not.toMatch(/colour/i);
-    expect(guestLimitMessage("member", "hairstyle")).not.toMatch(/colour/i);
-    expect(guestLimitMessage("anon", "hairstyle")).not.toMatch(/colour/i);
-    expect(guestLimitMessage("credits", "hairstyle")).not.toMatch(/colour/i);
-    expect(guestLimitMessage("rate", "all")).toBe("Too many previews from this connection. Live colour is still free.");
+    expect(guestLimitMessage("daily", "all")).toMatch(/Live colour is still free/);
+  });
+
+  it("counts a generate per tool and leaves the other tools alone", () => {
+    const keys = ["GENERATE_PER_IP_HOUR", "GENERATE_PER_IP_DAY", "GENERATE_PER_TENANT_MINUTE", "GENERATE_STAFF_PER_IP_HOUR"] as const;
+    const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    for (const key of keys) delete process.env[key];
+    process.env.GENERATE_PER_IP_HOUR = "2";
+    process.env.GENERATE_PER_TENANT_MINUTE = "2";
+    process.env.GENERATE_STAFF_PER_IP_HOUR = "3";
+    resetRateLimits();
+    try {
+      expect(consumePreviewRate({ tool: "beard", staff: false, bucket: "guest-a", tenantId: "salon", now: 1_000 }).ok).toBe(true);
+      expect(consumePreviewRate({ tool: "beard", staff: false, bucket: "guest-a", tenantId: "salon", now: 1_100 }).ok).toBe(true);
+      const blocked = consumePreviewRate({ tool: "beard", staff: false, bucket: "guest-a", tenantId: "salon", now: 1_200 });
+      expect(blocked.ok).toBe(false);
+      if (!blocked.ok) {
+        expect(blocked.message).toBe("Too many beard previews from this connection.");
+        expect(blocked.message).not.toMatch(/colour/i);
+      }
+      expect(consumePreviewRate({ tool: "style", staff: false, bucket: "guest-a", tenantId: "salon", now: 1_300 }).ok).toBe(true);
+      expect(consumePreviewRate({ tool: "brows", staff: false, bucket: "guest-a", tenantId: "salon", now: 1_400 }).ok).toBe(true);
+      const staff = { tool: "beard" as const, staff: true, bucket: "staff:owner", tenantId: "salon" };
+      expect(consumePreviewRate({ ...staff, now: 2_000 }).ok).toBe(true);
+      expect(consumePreviewRate({ ...staff, now: 2_100 }).ok).toBe(true);
+      expect(consumePreviewRate({ ...staff, now: 2_200 }).ok).toBe(true);
+      expect(consumePreviewRate({ ...staff, now: 2_300 }).ok).toBe(false);
+      const route = readFileSync("src/app/api/v1/tryon/generate/route.ts", "utf8");
+      expect(route.indexOf('claim.kind === "replay"')).toBeLessThan(route.indexOf("takePreviewSlot"));
+      expect(route.indexOf("if (!placement.ok)")).toBeLessThan(route.lastIndexOf("takePreviewSlot"));
+      expect(route).not.toContain("gen:ip:h:");
+      expect(route).not.toContain('guestLimitMessage("rate")');
+    } finally {
+      resetRateLimits();
+      for (const key of keys) {
+        const value = previous[key];
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 
   it("gives signed-in salon staff a higher configurable preview limit", () => {

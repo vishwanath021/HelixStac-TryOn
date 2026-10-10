@@ -26,14 +26,14 @@ Date: 2026-10-10. No paid provider call. Playwright blanks provider keys. Guest 
 
 No product bug from this pass is still open.
 
-## Deferred
+## Five tools
 
-Colour, Brows, Nails, and Beard stay in the code and off the guest and owner screens. `ENABLED_TOOLS` defaults to `hairstyle`. Set it to `all`, or to a comma list, when those tools should come back.
+Colour, Brows, Nails, and Beard are back on the guest tab row and in owner settings. `ENABLED_TOOLS` defaults to `all`. Set it to `hairstyle`, or to a comma list, to hide tools. Stored salon flags are unchanged.
 
 | Tool | What happened | Status |
 | --- | --- | --- |
-| Brows | Try this look returned “Try another photo. We couldn't place this look safely on this picture.” | Deferred. The placement check is unchanged. |
-| Beard | The preview stopped with “Too many previews from this connection. Live colour is still free.” That is the per-connection preview limit, and the sentence mentioned live colour. | Deferred as a tool. While colour is hidden, limit messages no longer mention live colour. A signed-in super-admin or that salon’s owner uses a separate higher limit (`GENERATE_STAFF_PER_IP_HOUR` 240, `GENERATE_STAFF_PER_IP_DAY` 1000, `GENERATE_STAFF_PER_MINUTE` 120) and is not counted against the guest daily cap. |
+| Brows | A normal front-facing selfie, including the sample portrait with glasses and bangs, was refused with “Try another photo. We couldn't place this look safely on this picture.” A warm wall was read as skin and swallowed the face, and a wide close-up was treated as tilted. | Fixed. A swallowed background is measured again with a stricter skin check, a wide close-up can be a face, and a slight roll (about 20°) passes. A 28° roll is still “Face too tilted.” Brows covered by hair are “Brows hidden by hair.” A turned face is “Face too turned.” |
+| Beard | Choosing a beard could stop with “Too many previews from this connection. Live colour is still free.” Every tool shared one connection bucket, and the bucket moved before a preview was actually generated. The sentence named live colour. | Fixed. Only a generate counts, and each tool has its own hour, day, and minute bucket. Guests stay at 6 an hour and 20 a day per tool. Staff stay at 240 an hour, 1000 a day, and 120 a minute, separate from guests. A beard limit says “Too many beard previews from this connection.” |
 
 ## Cases executed
 

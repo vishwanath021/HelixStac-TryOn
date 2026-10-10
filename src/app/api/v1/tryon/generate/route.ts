@@ -6,7 +6,7 @@ import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
 import { shadeById } from "@/data/shades";
 import { resolveProviderChoice } from "@/lib/ai/credentials";
 import { claimGenerationJob, completeGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
-import { runGuestHairstyleIfReady } from "@/lib/ai/guest-hairstyle";
+import { guestEngineReady, readGuestEngine, runGuestHairstyleIfReady } from "@/lib/ai/guest-hairstyle";
 import { salonOutcome, guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { generateWithFailover, selectProvider } from "@/lib/ai/router";
 import { readTierFlags } from "@/lib/ai/settings-store";
@@ -14,7 +14,7 @@ import { resolveGuestTier } from "@/lib/ai/tiers";
 import type { GenerateInput } from "@/lib/ai/types";
 import { CreditError, refundStaleReserves, reserveCredits, settleCredits } from "@/lib/credits";
 import { auth } from "@/auth";
-import { guestLimitMessage, previewRateLimits, toolEnabled, type ToolId } from "@/lib/tools";
+import { consumePreviewRate, guestLimitMessage, toolEnabled, type PreviewTool, type ToolId } from "@/lib/tools";
 import { resolveLook } from "@/lib/guidance";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 import { sanitizeSelfie, ImageError } from "@/lib/images";
@@ -27,7 +27,7 @@ import { beardById } from "@/data/beards";
 import { browById } from "@/data/brows";
 import { nailById } from "@/data/nails";
 import { styleById } from "@/data/styles";
-import { clientIp, rateLimit } from "@/lib/ratelimit";
+import { clientIp } from "@/lib/ratelimit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 3600;
@@ -87,14 +87,7 @@ export async function POST(req: Request) {
 
   const ip = clientIp(req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip"));
   const staffId = await signedInOwnerOrSuper(tenant.id);
-  const limits = previewRateLimits(Boolean(staffId));
   const bucket = staffId ? `staff:${staffId}` : ip;
-  const hour = rateLimit(`gen:ip:h:${bucket}`, limits.hour, 60 * 60 * 1000);
-  const day = rateLimit(`gen:ip:d:${bucket}`, limits.day, 24 * 60 * 60 * 1000);
-  const burst = rateLimit(staffId ? `gen:staff:m:${staffId}` : `gen:tenant:m:${tenant.id}`, limits.minute, 60 * 1000);
-  if (!hour.ok || !day.ok || !burst.ok) {
-    return NextResponse.json({ error: "RATE", message: guestLimitMessage("rate") }, { status: 429 });
-  }
 
   const usedToday = await prisma.tryOn.count({
     where: { tenantId: tenant.id, kind: { in: [...AI_PREVIEW_KINDS] }, status: "SUCCEEDED", createdAt: { gte: startOfToday() } },
@@ -177,7 +170,24 @@ export async function POST(req: Request) {
     jobId = claim.id;
   }
 
+  let previewCharged = false;
+  const takePreviewSlot = async () => {
+    if (previewCharged) return null;
+    const limited = consumePreviewRate({ tool: tool as PreviewTool, staff: Boolean(staffId), bucket, tenantId: tenant.id });
+    if (!limited.ok) {
+      await failGenerationJob(jobId, { outcome: "rate", message: limited.message });
+      return NextResponse.json({ error: "RATE", message: limited.message }, { status: 429 });
+    }
+    previewCharged = true;
+    return null;
+  };
+
   if (hairstyle) {
+    const { engine } = await readGuestEngine(tenant.id);
+    if (await guestEngineReady(engine)) {
+      const limited = await takePreviewSlot();
+      if (limited) return limited;
+    }
     const styled = await runGuestHairstyleIfReady({
       jpeg,
       original,
@@ -199,10 +209,14 @@ export async function POST(req: Request) {
   if (selectProvider(choice.name, choice.apiKey).name !== "mock") {
     const placement = await preflightPhoto(jpeg, region, { hairExtent: hairExtentForStyle(lookStyle, region) });
     if (!placement.ok) {
-      await failGenerationJob(jobId, { outcome: "placement", message: TRY_ANOTHER_PHOTO });
-      return NextResponse.json({ error: "PLACEMENT", message: TRY_ANOTHER_PHOTO }, { status: 422 });
+      const message = placement.message || TRY_ANOTHER_PHOTO;
+      await failGenerationJob(jobId, { outcome: "placement", message });
+      return NextResponse.json({ error: "PLACEMENT", message }, { status: 422 });
     }
   }
+
+  const limited = await takePreviewSlot();
+  if (limited) return limited;
 
   const flags = await readTierFlags(tenant.id);
   const modelTier = resolveGuestTier({ ...flags, purpose: "guest" });

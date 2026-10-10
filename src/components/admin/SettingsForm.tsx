@@ -6,7 +6,7 @@ import type { ToolId } from "@/lib/tools";
 export function SettingsForm({
   initial,
   canRemoveBranding,
-  enabledTools = ["hairstyle"],
+  enabledTools = ["hairstyle", "colour", "brows", "nails", "beard"],
 }: {
   initial: {
     name: string;
