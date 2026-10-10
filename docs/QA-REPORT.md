@@ -1,0 +1,81 @@
+# Lookuvi QA report
+
+Date: 2026-10-10. No paid provider call. Playwright blanks provider keys. Guest previews in this run are the mock.
+
+## Result
+
+| Check | Result |
+| --- | --- |
+| Unit tests | 15 files, 119 tests passed |
+| Playwright | 49 passed, 1 failed, 7 skipped in the full run. The failure was an `EIO` while closing a screenshot file on the iPhone project. The same retake test passed on desktop in that run, and passed again on the iPhone project when re-run (1 passed). Responsive layouts passed on iPhone 13, iPhone 15, Pixel 7, iPad Mini, iPad Pro, Galaxy Tab S4, landscape tablets, and 1280/1440/1920. |
+| `npm run build` then `npm start` | Build exit 0. `GET /api/health` returned `ok: true`, `db: true`, `ai: mock`, `billing: mock`. |
+| Docker and Postgres | Image `lookuvi:local` built. Postgres 16 and the app container ran. Seed completed. `GET /api/health` was ok and `/s/demo-salon` returned 200. A container with no `AUTH_SECRET` exited 1. |
+| Production env | `next start` exits 1 in under a second when `AUTH_SECRET`, `AUTH_TRUST_HOST`, or `APP_BASE_URL` is missing, and when `ALLOW_DEV_MAGIC_LINK` or `ALLOW_DEV_OTP` is `true`. |
+
+## Bugs
+
+| Sev | Bug | Status |
+| --- | --- | --- |
+| High | On a phone the tool control wrapped Style, Colour, Brows, Nails, and Beard into a tall rounded blob. | Fixed. Under 768px the pill is one row, scrolls sideways, snaps, and fades at the edges. Checked at 320, 360, 390, 430, 768, 1024, and 1280. Every segment stays on one line. |
+| High | After a selfie, Retake and Try another did not open a fresh capture. The camera video was hidden, so a later `play()` kept the old frame, and the file input kept its value. | Fixed. Retake and Try another show the camera before `getUserMedia`, call `getUserMedia` in the click turn, stop the previous tracks, call `video.load()`, and clear both file inputs. An end-to-end test takes a selfie, retakes, and gets a different colour. Try another does the same. |
+| Medium | The demo salon header and favicon still used the old orange mark and a teal icon. | Fixed. The mark, wordmark lockup, dark lockup, and app icon are SVG. Favicon, apple icon, and 192/512 icons are rasterized from the app icon. The demo seed uses `/brand/lookuvi-mark.svg` and does not replace a logo a salon already uploaded. |
+| Medium | Staff could `PUT /api/v1/admin/settings` even though the settings page says brand stays with the owner. | Fixed. Settings read and write require the owner. A staff session gets 403 and is sent to login from `/super`. |
+| Medium | Owners had no control for the logo the API already stored. | Fixed. Settings accepts a logo file, stores a small JPEG, and can clear it so the guest header falls back to the Lookuvi mark. |
+| Low | A bad production env logged the refusal and left the process running. | Fixed. Startup calls `process.exit(1)`. |
+| High | The Docker image reached Postgres, then the seed crashed: `tsx` could not resolve `@/data/hair-texture` because `tsconfig.json` was not in the image. | Fixed. The runner image copies `tsconfig.json`. |
+
+No product bug from this pass is still open.
+
+## Five tools
+
+Colour, Brows, Nails, and Beard are back on the guest tab row and in owner settings. `ENABLED_TOOLS` defaults to `all`. Set it to `hairstyle`, or to a comma list, to hide tools. Stored salon flags are unchanged.
+
+| Tool | What happened | Status |
+| --- | --- | --- |
+| Brows | A normal front-facing selfie, including the sample portrait with glasses and bangs, was refused with “Try another photo. We couldn't place this look safely on this picture.” A warm wall was read as skin and swallowed the face, and a wide close-up was treated as tilted. | Fixed. A swallowed background is measured again with a stricter skin check, a wide close-up can be a face, and a slight roll (about 20°) passes. A 28° roll is still “Face too tilted.” Brows covered by hair are “Brows hidden by hair.” A turned face is “Face too turned.” |
+| Beard | Choosing a beard could stop with “Too many previews from this connection. Live colour is still free.” Every tool shared one connection bucket, and the bucket moved before a preview was actually generated. The sentence named live colour. | Fixed. Only a generate counts, and each tool has its own hour, day, and minute bucket. Guests stay at 6 an hour and 20 a day per tool. Staff stay at 240 an hour, 1000 a day, and 120 a minute, separate from guests. A beard limit says “Too many beard previews from this connection.” |
+
+Checked with mocks only. No paid call.
+
+| Check | Result |
+| --- | --- |
+| Lint and typecheck | Passed |
+| Unit tests | 18 files, 130 tests passed, including brow landmark fixtures and per-tool rate limits |
+| Playwright | 61 tests. 53 passed, 7 skipped, 1 failed in 5.2 minutes. The failure was the owner settings locator matching both the Live colour checkbox and the sentence “Live colour stays free.” That test was re-run on desktop and passed. Skips are the phone projects for tests that set their own width or run only on desktop. |
+
+Five-tool mock flow, on Pixel 5, iPhone 13, a 768×1024 tablet, and desktop 1280×800:
+
+| Tool | Select | Preview | Generate | Slider | Try another |
+| --- | --- | --- | --- | --- | --- |
+| Style | Soft Bob stays selected and does not call generate | Mock preview | One generate | Before/after moved to 28 | Opens the camera |
+| Colour | Cherry Red, then Honey Blonde | On-device canvas, labelled with the shade | No generate request | Intensity moved to 40 | A second shade replaces the first. Colour has no result step |
+| Brows | Soft Arch does not call generate | Mock preview | One generate | Before/after moved to 28 | Opens the camera |
+| Beard | Short Boxed does not call generate and does not show a connection limit | Mock preview | One generate | Before/after moved to 28 | Opens the camera |
+| Nails | Classic French on a hand photo does not call generate | Mock preview | One generate | Before/after moved to 28 | Opens the camera |
+
+The four generate tools made 4 preview requests in total on each screen. Layout projects still passed on WebKit iPhone 13 and 15, Pixel 7, iPad Mini and iPad Pro portrait and landscape, Galaxy Tab S4 portrait and landscape, and desktops 1280, 1440, and 1920.
+
+## Cases executed
+
+- Guest header, Book Now, WhatsApp, Demo label, and “See your next look.” on phone and desktop.
+- Style, colour, brows, beard, and nails: select, preview, generate or on-device colour, slider, and try another, on phone, tablet, and desktop. Mock only.
+- Tool pill height and single row at 320, 360, 390, 430, 768, 1024, and 1280.
+- Camera, shutter, retake, try another, upload instead, back, and denied camera.
+- Consent, style, brows, beard, and nails previews on the mock. Result slider and JPEG save.
+- Anonymous cap and salon mode. Booking phone-code gate. Salon rename from the owner and from super admin.
+- Owner, staff, and super login. Staff blocked from settings writes and from `/super`.
+- Owner logo upload and restore of the Lookuvi mark.
+- Super admin hairstyle engine switch with no provider call. Image costs table.
+- Device fit, 44px targets, and 16px inputs on the responsive projects, including rotation.
+- HEIC and spend-cap behaviour in unit tests (`images-heic`, spend reservation, provider timeout recorded as uncertain, no retry).
+- Production build, health, missing secrets, and dev flags.
+
+## Physical device only
+
+These were not run on a handset:
+
+- The iOS Safari permission sheet and a second shutter after Retake. The automated camera is Chromium, including the iPhone 13 viewport. WebKit here has no camera.
+- A real HEIC from the iPhone camera roll. Sharp on this machine cannot decode HEVC. The browser tries `createImageBitmap` first, then `POST /api/v1/tryon/prepare-photo`.
+- Android Chrome’s permission denial sheet and the `capture` file input.
+- The home indicator and Safari’s collapsing toolbar.
+- A real fal or OpenAI hairstyle. This pass did not spend.

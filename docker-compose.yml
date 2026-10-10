@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: helix
+      POSTGRES_PASSWORD: helix
+      POSTGRES_DB: helix
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U helix -d helix"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://helix:helix@db:5432/helix
+      AUTH_SECRET: dev-only-change-me-before-any-real-deploy
+      AUTH_TRUST_HOST: "true"
+      APP_BASE_URL: http://localhost:3000
+      ROOT_DOMAIN: localhost
+      AI_PROVIDER: mock
+      BILLING_PROVIDER: mock
+      ALLOW_DEV_MAGIC_LINK: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

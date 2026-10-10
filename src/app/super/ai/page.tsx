@@ -1,0 +1,40 @@
+import { BenchmarkPanel } from "@/components/admin/BenchmarkPanel";
+import { SuperAiForm } from "@/components/admin/SuperAiForm";
+import { SuperCostPanel } from "@/components/admin/SuperCostPanel";
+import { costReport } from "@/lib/ai/cost-report";
+import { platformAiView } from "@/lib/ai/settings-store";
+import { STYLES } from "@/data/styles";
+import { quoteBenchmark } from "@/lib/ai/benchmark";
+import { prisma } from "@/lib/prisma";
+import { pageSuper } from "@/lib/session";
+
+export const dynamic = "force-dynamic";
+
+export default async function SuperAiPage() {
+  await pageSuper();
+  const initial = await platformAiView();
+  const salons = await prisma.tenant.findMany({
+    select: { id: true, name: true, hairstyleEngine: true },
+    orderBy: { name: "asc" },
+  });
+  const costs = await costReport({ provider: initial.provider, tier: initial.tier, imagesPerMonth: 100 });
+  const squareQuote = quoteBenchmark(1024, 1024);
+  const styles = STYLES.map((style) => ({ id: style.id, name: style.name, lengthCategory: style.lengthCategory }));
+  return (
+    <main className="mx-auto max-w-3xl px-4 py-8">
+      <h1 className="page-title">AI settings</h1>
+      <p className="mt-2 mb-4 max-w-xl text-base leading-6 text-muted">
+        Test is the default for a new key and for every calibration run. Medium turns on only after you approve it. High stays off until you enable it. Guests use Test until a salon or this page selects a higher tier that is allowed.
+        Guest Test and Medium still send gpt-image-1-mini, which shuts down on 1 Dec 2026. Guest High still sends gpt-image-1, which shuts down on 23 Oct 2026. Those prices and requests are unchanged. Move a tier only in a later change that updates the estimate and the request together, after the comparison dropdown has been checked. The proposed replacement for new edits is gpt-image-2.5-sunburst, with gpt-image-2.5-flare as the faster check. OpenRouter comparisons use their own key on this page. OpenRouter does not proxy fal.ai.
+      </p>
+      <SuperAiForm initial={initial} salons={salons} />
+      {squareQuote.ok && (
+        <p className="mt-4 text-sm leading-6">
+          Reference benchmark, off for guests: {squareQuote.model} quality {squareQuote.quality} at 1024×1024 is about ₹{squareQuote.estimateInr.toFixed(2)} (${squareQuote.estimateUsd.toFixed(3)}), including a conservative image-input allowance. A 1536×1024 canvas is higher, about the mid-teens in rupees. The ₹30 run cap is checked against that full estimate. The spend cap includes this call, billed failures, and uncertain timeouts.
+        </p>
+      )}
+      <BenchmarkPanel styles={styles} />
+      <SuperCostPanel initial={costs} />
+    </main>
+  );
+}

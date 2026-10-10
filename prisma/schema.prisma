@@ -1,0 +1,483 @@
+// HelixStac TryOn
+// Provider is sqlite by default so `npm run db:push` works with no extra services.
+// scripts/prepare-prisma.mjs switches this to postgresql when DATABASE_URL is a postgres URL.
+// JSON columns are stored as strings so the same schema runs on SQLite and PostgreSQL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                  String    @id @default(cuid())
+  slug                String    @unique
+  name                String
+  logoUrl             String?
+  primaryColor        String    @default("#0E7C74")
+  accentColor         String    @default("#E9897A")
+  languages           String    @default("[\"en\",\"hi\"]")
+  defaultLang         String    @default("en")
+  whatsapp            String    @default("")
+  address             String    @default("")
+  mapsUrl             String    @default("")
+  city                String    @default("")
+  gstin               String?
+  plan                String    @default("STARTER")
+  status              String    @default("TRIAL")
+  trialEndsAt         DateTime?
+  removeBranding      Boolean   @default(false)
+  allowedOrigins      String    @default("[]")
+  creditBalance       Int       @default(0)
+  dailyCap            Int       @default(100)
+  showMen             Boolean   @default(true)
+  showWomen           Boolean   @default(true)
+  showKids            Boolean   @default(true)
+  toolColour          Boolean   @default(true)
+  toolStyle           Boolean   @default(true)
+  toolBrows           Boolean   @default(true)
+  toolBeard           Boolean   @default(true)
+  toolNails           Boolean   @default(true)
+  hairPickerOn        Boolean   @default(true)
+  hairSuggestOn       Boolean   @default(false)
+  hairSuggestUsesCredits Boolean @default(false)
+  anonDailyCap        Int       @default(8)
+  memberDailyCap      Int       @default(30)
+  requireLoginToBook  Boolean   @default(false)
+  salonNonce          String    @default("")
+  aiProvider          String    @default("")
+  aiKeyCipher         String    @default("")
+  aiKeyHint           String    @default("")
+  aiTier              String    @default("")
+  /** Empty inherits the platform guest hairstyle engine (fal or openai). */
+  hairstyleEngine     String    @default("")
+  onboardingDone      Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  domains             Domain[]
+  services            Service[]
+  styles              TenantStyle[]
+  shades              TenantShade[]
+  members             Membership[]
+  leads               Lead[]
+  ledger              CreditLedger[]
+  tryOns              TryOn[]
+  events              UsageEvent[]
+  consents            ConsentLog[]
+  subscription        Subscription?
+  dataRequests        DataRequest[]
+  outlets             Outlet[]
+  invoices            Invoice[]
+  customers           Customer[]
+  bookings            Booking[]
+}
+
+model Domain {
+  id        String  @id @default(cuid())
+  tenantId  String
+  host      String  @unique
+  verified  Boolean @default(false)
+  token     String  @default("")
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model Outlet {
+  id        String  @id @default(cuid())
+  tenantId  String
+  name      String
+  whatsapp  String  @default("")
+  address   String  @default("")
+  mapsUrl   String  @default("")
+  isPrimary Boolean @default(false)
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String
+  passwordHash String
+  isSuperAdmin Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  memberships  Membership[]
+}
+
+model Membership {
+  id       String @id @default(cuid())
+  userId   String
+  tenantId String
+  role     String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+}
+
+model Service {
+  id          String  @id @default(cuid())
+  tenantId    String
+  key         String
+  name        String
+  nameI18n    String  @default("{}")
+  priceInr    Int
+  durationMin Int?
+  active      Boolean @default(true)
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+
+model TenantStyle {
+  id         String  @id @default(cuid())
+  tenantId   String
+  styleId    String
+  enabled    Boolean @default(true)
+  customName String?
+  sort       Int     @default(0)
+  serviceIds String  @default("[]")
+  /** Owner override of density, texture, and optional face shapes. Empty uses the catalog seed. */
+  suitabilityJson String @default("")
+  tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, styleId])
+  @@index([tenantId])
+}
+
+model TenantShade {
+  id         String  @id @default(cuid())
+  tenantId   String
+  shadeId    String
+  enabled    Boolean @default(true)
+  serviceIds String  @default("[]")
+  tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, shadeId])
+  @@index([tenantId])
+}
+
+model ConsentLog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  sessionId   String
+  purpose     String
+  textVersion String
+  textHash    String
+  lang        String
+  accepted    Boolean
+  ageGate     Boolean  @default(false)
+  uaHash      String?
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([sessionId])
+}
+
+model TryOn {
+  id           String   @id @default(cuid())
+  tenantId     String
+  sessionId    String
+  styleId      String?
+  shadeId      String?
+  kind         String
+  tier         String   @default("anon")
+  actorKey     String   @default("")
+  quality      String   @default("standard")
+  provider     String?
+  status       String
+  latencyMs    Int?
+  costMicroUsd Int?
+  credits      Int      @default(0)
+  createdAt    DateTime @default(now())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@index([tenantId, actorKey, createdAt])
+}
+
+model CreditLedger {
+  id           String    @id @default(cuid())
+  tenantId     String
+  delta        Int
+  reason       String
+  refId        String?
+  balanceAfter Int
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, refId])
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  tenantId  String
+  sessionId String?
+  name      String?
+  phone     String?
+  lookName  String
+  shadeName String?
+  services  String   @default("[]")
+  lang      String   @default("en")
+  src       String?
+  status    String   @default("NEW")
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+}
+
+model UsageEvent {
+  id        String   @id @default(cuid())
+  tenantId  String
+  sessionId String
+  name      String
+  props     String   @default("{}")
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, name, createdAt])
+}
+
+model Subscription {
+  id               String    @id @default(cuid())
+  tenantId         String    @unique
+  plan             String
+  interval         String
+  provider         String    @default("mock")
+  externalId       String?
+  status           String
+  currentPeriodEnd DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model DataRequest {
+  id        String   @id @default(cuid())
+  tenantId  String
+  kind      String
+  contact   String
+  sessionId String?
+  status    String   @default("OPEN")
+  note      String   @default("")
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+}
+
+model Invoice {
+  id          String   @id @default(cuid())
+  tenantId    String
+  number      String   @unique
+  amountExGst Int
+  gstInr      Int
+  totalInr    Int
+  description String
+  status      String
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model MagicLink {
+  id        String   @id @default(cuid())
+  email     String
+  tokenHash String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  action    String
+  target    String
+  meta      String   @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model PlatformSetting {
+  key   String @id
+  value String
+}
+
+model AiCall {
+  id            String   @id @default(cuid())
+  provider      String
+  quality       String
+  model         String   @default("")
+  estimatePaise Int      @default(0)
+  tenantId      String   @default("")
+  status        String   @default("CHARGED")
+  tool          String   @default("")
+  tier          String   @default("")
+  imageSize     String   @default("")
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  totalTokens   Int      @default(0)
+  usageJson     String   @default("")
+  costUsdMicros Int      @default(0)
+  costInrPaise  Int      @default(0)
+  charged       Boolean  @default(false)
+  billed        Boolean  @default(false)
+  latencyMs     Int      @default(0)
+  costSource        String   @default("estimate")
+  providerRequestId String   @default("")
+  costNote          String   @default("")
+  createdAt         DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+/// One vision reading of a sanitized selfie. The photo itself is not stored. A repeat of the same hash is free.
+model HairSuggest {
+  id         String   @id @default(cuid())
+  tenantId   String
+  photoHash  String
+  model      String
+  resultJson String   @default("")
+  callId     String   @default("")
+  createdAt  DateTime @default(now())
+
+  @@unique([tenantId, photoHash])
+  @@index([tenantId])
+}
+
+/// One guest or benchmark submission. The same request id must not start a second provider call.
+model GenerationJob {
+  id          String   @id @default(cuid())
+  tenantId    String
+  requestId   String
+  fingerprint String
+  status      String
+  demoReason  String   @default("")
+  outcome     String   @default("")
+  imagePath   String   @default("")
+  message     String   @default("")
+  callId      String   @default("")
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  @@unique([tenantId, requestId])
+  @@index([expiresAt])
+}
+
+/// Super-admin reference-mode run. Photos live under var/benchmarks and are not public.
+model BenchmarkRun {
+  id          String   @id @default(cuid())
+  styleId     String
+  model       String
+  quality     String
+  size        String
+  status           String
+  estimateInr      Float    @default(0)
+  estimateUsd      Float    @default(0)
+  actualUsd        Float    @default(0)
+  actualInr        Float    @default(0)
+  inputTokens      Int      @default(0)
+  outputTokens     Int      @default(0)
+  imageTokens      Int      @default(0)
+  textTokens       Int      @default(0)
+  latencyMs        Int      @default(0)
+  clothingWarning  String   @default("")
+  callId           String   @default("")
+  dir              String
+  source           String   @default("benchmark")
+  message          String   @default("")
+  createdAt        DateTime @default(now())
+}
+
+model Customer {
+  id           String        @id @default(cuid())
+  tenantId     String
+  phone        String
+  name         String        @default("")
+  dob          String        @default("")
+  audience     String        @default("")
+  hairLength   String        @default("")
+  onboarded    Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  people       GuestPerson[]
+  bookings     Booking[]
+  looks        SavedLook[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+model GuestPerson {
+  id         String   @id @default(cuid())
+  customerId String
+  label      String
+  audience   String
+  hairLength String   @default("")
+  isPrimary  Boolean  @default(false)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+}
+
+model OtpChallenge {
+  id        String   @id @default(cuid())
+  tenantId  String
+  phone     String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, phone])
+}
+
+model Booking {
+  id          String   @id @default(cuid())
+  tenantId    String
+  customerId  String
+  lookName    String   @default("")
+  lookId      String   @default("")
+  tool        String   @default("")
+  services    String   @default("[]")
+  preferredAt String   @default("")
+  note        String   @default("")
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([customerId])
+}
+
+model SavedLook {
+  id         String   @id @default(cuid())
+  customerId String
+  tenantId   String
+  tool       String
+  lookId     String
+  lookName   String
+  createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+}
