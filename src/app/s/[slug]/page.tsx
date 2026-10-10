@@ -56,6 +56,7 @@ export default async function SalonPage({
       salonToken={salonMode ? query.salon : undefined}
       salonMode={salonMode}
       demoHint={demoHint}
+      poseDebug={Boolean(session?.user?.isSuperAdmin)}
     />
   );
 }

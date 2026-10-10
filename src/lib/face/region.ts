@@ -1,14 +1,36 @@
 import sharp from "sharp";
 import { classifySkinPhoto } from "@/lib/hand-photo";
+import { LIPS } from "@/lib/face/landmarks";
+import { logInfo } from "@/lib/logger";
+import { fillPolygon, stampDisks } from "@/lib/face/raster";
+import {
+  beardLoop,
+  browStroke,
+  debugFromPose,
+  faceBoxFromLandmarks,
+  fringeBox,
+  jawVisible,
+  POSE_FALLBACK_WARNING,
+  poseFromLandmarks,
+  poseOutOfRange,
+  type FaceLandmark,
+  type PlacementDebug,
+} from "@/lib/face/pose";
 
 export const TRY_ANOTHER_PHOTO = "Try another photo. We couldn't place this look safely on this picture.";
 export const BROWS_HIDDEN = "Brows hidden by hair. Move your fringe aside and try again.";
 export const FACE_TOO_TILTED = "Face too tilted. Hold the phone level and try again.";
 export const FACE_TOO_TURNED = "Face too turned. Look straight at the camera and try again.";
+export const FACE_TOO_PITCH = "Chin too high or too low. Hold the phone at eye level and try again.";
+export const JAW_NOT_VISIBLE = "Jaw not visible. Include your chin and jawline and try again.";
+export const NO_FACE = "We couldn't find a face. Use a front-facing photo and try again.";
 
-/** A slight head roll still reads as a front-facing selfie. The 28° fixture stays over this. */
+/** Kept for older signal fixtures. Landmark roll uses ROLL_LIMIT in pose.ts. */
 export const BROW_ROLL_LIMIT = 24;
-/** Profile faces in the fixtures sit near 0.79. Partial bangs stay above this. */
+/**
+ * Skin-blob symmetry is not a reject threshold. Neck, hands, and warm walls
+ * move this number on a straight-on selfie. Turn is judged from landmarks.
+ */
 export const BROW_SYMMETRY_MIN = 0.86;
 /** Fringe across part of the brow band is allowed. A band that is mostly hair is not. */
 export const BROW_HAIR_MAX = 0.62;
@@ -71,7 +93,6 @@ export function browSignalsFromLandmarks(marks: BrowLandmarks, frame = { width: 
 export function judgeBrowPlacement(signals: BrowSignals): { ok: true } | { ok: false; reason: NonNullable<RegionReport["reason"]>; message: string } {
   if (signals.faceHeight < MIN_FACE) return { ok: false, reason: "small", message: TRY_ANOTHER_PHOTO };
   if (signals.rollDeg > BROW_ROLL_LIMIT) return { ok: false, reason: "tilt", message: FACE_TOO_TILTED };
-  if (signals.symmetry < BROW_SYMMETRY_MIN) return { ok: false, reason: "profile", message: FACE_TOO_TURNED };
   if (signals.browHair > BROW_HAIR_MAX) return { ok: false, reason: "hair", message: BROWS_HIDDEN };
   if (signals.maskFraction < 0.002 || signals.maskFraction > 0.14) return { ok: false, reason: "area", message: TRY_ANOTHER_PHOTO };
   if (!signals.inBrowZone) return { ok: false, reason: "zone", message: TRY_ANOTHER_PHOTO };
@@ -81,13 +102,15 @@ export function judgeBrowPlacement(signals: BrowSignals): { ok: true } | { ok: f
 export type RegionReport = {
   ok: boolean;
   message: string;
-  reason?: "none" | "many" | "tilt" | "profile" | "small" | "area" | "zone" | "hand" | "hair";
+  reason?: "none" | "many" | "tilt" | "profile" | "pitch" | "jaw" | "small" | "area" | "zone" | "hand" | "hair";
   width: number;
   height: number;
   face: FaceBox | null;
   mask: Uint8Array;
   feather: Uint8Array;
   raw: Buffer;
+  debug?: PlacementDebug;
+  warning?: string;
 };
 
 const MIN_FACE = 72;
@@ -260,7 +283,7 @@ function faceSpans(data: Buffer, width: number, height: number, face: FaceBox) {
 
 export type HairExtent = "short" | "medium" | "long";
 
-export type RegionOptions = { hairExtent?: HairExtent };
+export type RegionOptions = { hairExtent?: HairExtent; landmarks?: FaceLandmark[] | null; faceCount?: number };
 
 /** How far a new cut may grow past the hair that is already in the photo. */
 export function hairExtentForStyle(style: { id?: string; category?: string } | null | undefined, tool: RegionTool): HairExtent {
@@ -563,6 +586,126 @@ function fail(partial: Omit<RegionReport, "ok" | "message" | "feather"> & { reas
   return { ...partial, ok: false, message, feather: empty(partial.width, partial.height) };
 }
 
+function maskFractionOf(mask: Uint8Array, width: number, height: number) {
+  const box = maskBox(mask, width, height);
+  return box ? Math.round((box.count / (width * height)) * 10000) / 10000 : 0;
+}
+
+function messageFor(failed: string) {
+  if (failed === "yaw") return FACE_TOO_TURNED;
+  if (failed === "roll") return FACE_TOO_TILTED;
+  if (failed === "pitch") return FACE_TOO_PITCH;
+  if (failed === "jaw") return JAW_NOT_VISIBLE;
+  if (failed === "hair") return BROWS_HIDDEN;
+  if (failed === "none" || failed === "small") return NO_FACE;
+  if (failed === "many") return "We found more than one face. Use a photo with one person and try again.";
+  return TRY_ANOTHER_PHOTO;
+}
+
+function reasonFor(failed: string): NonNullable<RegionReport["reason"]> {
+  if (failed === "yaw") return "profile";
+  if (failed === "roll") return "tilt";
+  if (failed === "pitch") return "pitch";
+  if (failed === "jaw") return "jaw";
+  if (failed === "hair") return "hair";
+  if (failed === "small") return "small";
+  if (failed === "many") return "many";
+  return "none";
+}
+
+function fringeHair(data: Buffer, width: number, height: number, points: FaceLandmark[]) {
+  const box = fringeBox(points, width, height);
+  if (!box || box.y1 < box.y0 || box.x1 < box.x0) return 0;
+  let hair = 0;
+  let total = 0;
+  for (let y = box.y0; y <= box.y1; y += 1) {
+    for (let x = box.x0; x <= box.x1; x += 1) {
+      total += 1;
+      const i = (y * width + x) * 3;
+      if (hairLike(data[i], data[i + 1], data[i + 2])) hair += 1;
+    }
+  }
+  return total ? hair / total : 0;
+}
+
+function paintBrowLandmarks(mask: Uint8Array, width: number, height: number, points: FaceLandmark[], eyePx: number) {
+  const stroke = browStroke(points, width, height);
+  if (stroke.length < 4) return;
+  stampDisks(mask, width, height, stroke, Math.max(2, eyePx * 0.22));
+}
+
+function paintBeardLandmarks(mask: Uint8Array, width: number, height: number, points: FaceLandmark[]) {
+  const loop = beardLoop(points, width, height);
+  if (loop.length < 4) return;
+  fillPolygon(mask, width, height, loop);
+  const lips: { x: number; y: number }[] = [];
+  for (const index of LIPS) {
+    const point = points[index];
+    if (!point) continue;
+    lips.push({ x: point.x * width, y: point.y * height });
+  }
+  if (lips.length < 3) return;
+  const hole = empty(width, height);
+  fillPolygon(hole, width, height, lips);
+  for (let i = 0; i < mask.length; i += 1) if (hole[i]) mask[i] = 0;
+}
+
+/**
+ * Brow and beard placement from face landmarks. Returns null when the points
+ * cannot be read, so the caller can fall back without a symmetry reject.
+ */
+function placeWithLandmarks(
+  data: Buffer,
+  width: number,
+  height: number,
+  tool: "brows" | "beard",
+  points: FaceLandmark[],
+  mask: Uint8Array,
+  base: { width: number; height: number; raw: Buffer; mask: Uint8Array; face: FaceBox | null },
+  faceCount?: number,
+): RegionReport | null {
+  if (faceCount && faceCount >= 2) {
+    const debug = debugFromPose(null, { source: "landmarks", failed: "many" });
+    return fail({ ...base, reason: "many", message: messageFor("many"), debug });
+  }
+  const pose = poseFromLandmarks(points, width, height);
+  const face = faceBoxFromLandmarks(points, width, height);
+  if (!pose || !face) return null;
+  if (face.h < MIN_FACE) {
+    const debug = debugFromPose(pose, { source: "landmarks", failed: "small" });
+    return fail({ ...base, face, reason: "small", message: NO_FACE, debug });
+  }
+  if (tool === "brows") paintBrowLandmarks(mask, width, height, points, pose.eyePx);
+  else paintBeardLandmarks(mask, width, height, points);
+  const maskArea = maskFractionOf(mask, width, height);
+  let failed: string | null = null;
+  if (tool === "brows") {
+    failed = poseOutOfRange(pose);
+    if (!failed && fringeHair(data, width, height, points) > BROW_HAIR_MAX) failed = "hair";
+    if (!failed && maskArea < 0.001) failed = "none";
+  } else if (!jawVisible(points, width, height, pose.yaw) || maskArea < 0.001) {
+    failed = "jaw";
+  }
+  const debug = debugFromPose(pose, { source: "landmarks", failed, maskArea });
+  if (failed) return fail({ ...base, face, reason: reasonFor(failed), message: messageFor(failed), debug });
+  const radius = Math.max(2, Math.min(6, Math.round(face.h / 90)));
+  return { ...base, face, ok: true, message: "", warning: "", debug, feather: featherMask(mask, width, height, radius) };
+}
+
+export function logPlacementRejection(tool: string, debug: PlacementDebug | undefined) {
+  if (!debug) return;
+  logInfo("placement rejected", {
+    tool,
+    yaw: debug.yaw,
+    roll: debug.roll,
+    pitch: debug.pitch,
+    faceSize: debug.faceSize,
+    maskArea: debug.maskArea,
+    failed: debug.failed,
+    source: debug.source,
+  });
+}
+
 export function analyzeRegion(data: Buffer, width: number, height: number, tool: RegionTool, options?: RegionOptions): RegionReport {
   const mask = empty(width, height);
   const base = { width, height, raw: data, mask, face: null as FaceBox | null };
@@ -582,39 +725,52 @@ export function analyzeRegion(data: Buffer, width: number, height: number, tool:
     if (classifySkinPhoto(small, 48, 48, 3) === "face") return fail({ ...base, reason: "hand" });
     nailMask(mask, data, width, height);
   } else {
+    const faceTool = tool === "brows" || tool === "beard";
+    if ((tool === "brows" || tool === "beard") && options?.landmarks?.length === 478) {
+      const placed = placeWithLandmarks(data, width, height, tool, options.landmarks, mask, base, options.faceCount);
+      if (placed) return placed;
+    }
     const blobs = faceBlobs(data, width, height);
     const skin = skinGrid(data, width, height);
     if (fingertipBoxes(skin, width, height).length >= 3) return fail({ ...base, reason: "hand" });
     if (blobs.length === 0) {
-      return fail({
-        ...base,
-        reason: "none",
-        message: tool === "brows" ? "We couldn't find a face. Use a front-facing photo and try again." : undefined,
-      });
+      const debug = faceTool ? debugFromPose(null, { source: "fallback", failed: "none" }) : undefined;
+      return fail({ ...base, reason: "none", message: faceTool ? NO_FACE : undefined, debug });
     }
-    if (blobs.length >= 2) return fail({ ...base, reason: "many" });
+    if (blobs.length >= 2) {
+      const debug = faceTool ? debugFromPose(null, { source: "fallback", failed: "many" }) : undefined;
+      return fail({ ...base, reason: "many", message: faceTool ? messageFor("many") : undefined, debug });
+    }
     const blob = blobs[0];
     const face = blob.box;
     base.face = face;
     if (tool === "brows") browMask(mask, width, height, face);
     else if (tool === "beard") beardMask(mask, width, height, face);
     else hairMask(mask, width, height, face, data, options?.hairExtent ?? (tool === "colour" ? "short" : "long"));
-    if (tool === "brows") {
-      const box = maskBox(mask, width, height);
-      const fraction = box ? box.count / (width * height) : 0;
-      const judged = judgeBrowPlacement({
-        rollDeg: blob.tilt,
-        symmetry: blob.symmetry,
-        faceHeight: face.h,
-        browHair: browBandHair(data, width, height, face),
-        maskFraction: fraction,
-        inBrowZone: Boolean(box && zoneOk("brows", face, box)),
-      });
-      if (!judged.ok) return fail({ ...base, face, reason: judged.reason, message: judged.message });
+    if (faceTool) {
+      if (face.h < MIN_FACE) {
+        const debug = debugFromPose(null, { source: "fallback", failed: "small", maskArea: maskFractionOf(mask, width, height) });
+        return fail({ ...base, face, reason: "small", message: NO_FACE, debug });
+      }
+      if (tool === "brows" && browBandHair(data, width, height, face) > BROW_HAIR_MAX) {
+        const debug = debugFromPose(null, { source: "fallback", failed: "hair", maskArea: maskFractionOf(mask, width, height) });
+        return fail({ ...base, face, reason: "hair", message: BROWS_HIDDEN, debug });
+      }
     } else {
       if (face.h < MIN_FACE) return fail({ ...base, face, reason: "small" });
       if (blob.tilt > 18) return fail({ ...base, face, reason: "tilt" });
       if (blob.symmetry < 0.86) return fail({ ...base, face, reason: "profile" });
+    }
+    if (faceTool) {
+      const maskArea = maskFractionOf(mask, width, height);
+      if (maskArea < 0.001) {
+        const failed = tool === "beard" ? "jaw" : "none";
+        const debug = debugFromPose(null, { source: "fallback", failed, maskArea });
+        return fail({ ...base, face, reason: reasonFor(failed), message: messageFor(failed), debug });
+      }
+      const radius = Math.max(2, Math.min(6, Math.round(face.h / 90)));
+      const debug = debugFromPose(null, { source: "fallback", failed: null, maskArea, warning: POSE_FALLBACK_WARNING });
+      return { ...base, face, ok: true, message: "", warning: POSE_FALLBACK_WARNING, debug, feather: featherMask(mask, width, height, radius) };
     }
   }
   const box = maskBox(mask, width, height);

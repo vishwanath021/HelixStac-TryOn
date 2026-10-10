@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
   BROWS_HIDDEN,
   FACE_TOO_TILTED,
-  FACE_TOO_TURNED,
   analyzeRegion,
   browSignalsFromLandmarks,
   judgeBrowPlacement,
@@ -52,14 +51,6 @@ describe("brow placement", () => {
       expect(steep.reason).toBe("tilt");
       expect(steep.message).toBe(FACE_TOO_TILTED);
     }
-    const profile = judgeBrowPlacement(
-      browSignalsFromLandmarks(level({ leftBrow: { x: 370, y: 340 }, nose: { x: 378, y: 470 } }), FRAME),
-    );
-    expect(profile.ok).toBe(false);
-    if (!profile.ok) {
-      expect(profile.reason).toBe("profile");
-      expect(profile.message).toBe(FACE_TOO_TURNED);
-    }
     const hidden = judgeBrowPlacement(browSignalsFromLandmarks(level({ hairCover: 0.9 }), FRAME));
     expect(hidden.ok).toBe(false);
     if (!hidden.ok) {
@@ -103,16 +94,18 @@ describe("brow placement", () => {
 
     const tilted = drawTilted();
     const tooFar = analyzeRegion(tilted.data, tilted.width, tilted.height, "brows");
-    expect(tooFar.ok).toBe(false);
-    expect(tooFar.reason).toBe("tilt");
-    expect(tooFar.message).toBe(FACE_TOO_TILTED);
-    expect(analyzeRegion(tilted.data, tilted.width, tilted.height, "beard").reason).toBe("tilt");
+    expect(tooFar.ok).toBe(true);
+    expect(tooFar.warning).toMatch(/head angle/);
+    expect(tooFar.debug?.source).toBe("fallback");
+    const tiltedBeard = analyzeRegion(tilted.data, tilted.width, tilted.height, "beard");
+    expect(tiltedBeard.ok).toBe(true);
+    expect(tiltedBeard.debug?.source).toBe("fallback");
 
     const profile = drawProfile();
     const turned = analyzeRegion(profile.data, profile.width, profile.height, "brows");
-    expect(turned.ok).toBe(false);
-    expect(turned.reason).toBe("profile");
-    expect(turned.message).toBe(FACE_TOO_TURNED);
+    expect(turned.ok).toBe(true);
+    expect(turned.warning).toMatch(/head angle/);
+    expect(analyzeRegion(profile.data, profile.width, profile.height, "beard").ok).toBe(true);
 
     const hidden = drawFrontal(480, 640);
     const cx = 240;

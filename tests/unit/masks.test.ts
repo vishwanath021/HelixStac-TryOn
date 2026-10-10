@@ -317,12 +317,12 @@ describe("region masks", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("rejects a missing face, a second face, a tilt, a profile, and a tiny face before any edit", async () => {
+  it("rejects a missing face, a second face, and a tiny face before any edit", async () => {
     const { writeMaskFixtures } = await import("@/lib/face/fixtures");
     const files = await writeMaskFixtures();
     const jpeg = (name: string) => files.find((item) => item.name === name)!.jpeg;
     const reasons: Record<string, string> = {};
-    for (const name of ["no-face", "two-face", "tilted", "profile", "low-res"]) {
+    for (const name of ["no-face", "two-face", "low-res"]) {
       let calls = 0;
       const result = await runLockedEdit({
         image: jpeg(name),
@@ -338,9 +338,19 @@ describe("region masks", () => {
     }
     expect(reasons["no-face"]).toBe("none");
     expect(reasons["two-face"]).toBe("many");
-    expect(reasons.tilted).toBe("tilt");
-    expect(reasons.profile).toBe("profile");
     expect(reasons["low-res"]).toBe("small");
+  });
+
+  it("does not hard-reject a beard when only the skin blob looks tilted or turned", async () => {
+    const { writeMaskFixtures } = await import("@/lib/face/fixtures");
+    const files = await writeMaskFixtures();
+    for (const name of ["tilted", "profile"]) {
+      const jpeg = files.find((item) => item.name === name)!.jpeg;
+      const report = await preflightPhoto(jpeg, "beard");
+      expect(report.ok, name).toBe(true);
+      expect(report.warning, name).toMatch(/head angle/);
+      expect(report.debug?.source).toBe("fallback");
+    }
   });
 
   it("locks an off-centre, mirrored, EXIF-rotated, wide, and camera photo", async () => {

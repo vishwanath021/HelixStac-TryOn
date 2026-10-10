@@ -11,9 +11,33 @@ import { StyleCard } from "@/components/tryon/StyleCard";
 import { t } from "@/data/i18n";
 import { orderStylesForPicker, suggestStyles, type HairReading } from "@/lib/hair-suitability";
 import { captureShouldMirror, visiblePortraitCrop } from "@/lib/capture";
+import { detectFaceLandmarks } from "@/lib/face/detect-client";
+import type { PlacementDebug } from "@/lib/face/pose";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 import type { SalonConfig } from "@/lib/salon";
 import { normalizeWhatsAppPhone } from "@/lib/whatsapp";
+
+function poseLine(label: string, value: number | string | null) {
+  return (
+    <div>
+      <dt className="inline">{label} </dt>
+      <dd className="inline">{value ?? "—"}</dd>
+    </div>
+  );
+}
+
+function PoseReadout({ debug }: { debug: PlacementDebug }) {
+  return (
+    <dl data-testid="pose-debug" className="mx-auto mt-2 max-w-sm rounded-xl bg-black/5 px-3 py-2 text-left text-xs leading-5">
+      {poseLine("Yaw", debug.yaw === null ? null : `${debug.yaw}°`)}
+      {poseLine("Roll", debug.roll === null ? null : `${debug.roll}°`)}
+      {poseLine("Pitch", debug.pitch === null ? null : `${debug.pitch}°`)}
+      {poseLine("Face size", debug.faceSize)}
+      {poseLine("Mask area", debug.maskArea)}
+      {poseLine("Check", debug.failed ?? "ok")}
+    </dl>
+  );
+}
 
 function pickClass(selected: boolean) {
   return `relative overflow-hidden rounded-[14px] border bg-white text-left shadow-sm ${selected ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`;
@@ -69,6 +93,7 @@ export function TryOnApp({
   salonToken,
   salonMode = false,
   demoHint = false,
+  poseDebug = false,
 }: {
   config: SalonConfig;
   embed?: boolean;
@@ -78,6 +103,8 @@ export function TryOnApp({
   salonToken?: string;
   salonMode?: boolean;
   demoHint?: boolean;
+  /** Signed-in super-admin only. Guests never receive the numbers. */
+  poseDebug?: boolean;
 }) {
   const lang = config.defaultLang || "en";
   const [sid, setSid] = useState("");
@@ -107,6 +134,7 @@ export function TryOnApp({
   const [pendingName, setPendingName] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [poseNote, setPoseNote] = useState<PlacementDebug | null>(null);
   const [active, setActive] = useState<Look | null>(null);
   const [freshGlow, setFreshGlow] = useState(false);
   const [modelStatus, setModelStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -538,6 +566,7 @@ export function TryOnApp({
     if (previewLock.current || busy) return;
     previewLock.current = true;
     setError("");
+    setPoseNote(null);
     setPendingName(chosen.name);
     setBusy(true);
     try {
@@ -552,10 +581,19 @@ export function TryOnApp({
       body.set("sessionId", sid || sessionId());
       body.set("requestId", crypto.randomUUID());
       if (salonToken) body.set("salonToken", salonToken);
+      if (chosen.tool === "brows" || chosen.tool === "beard") {
+        const detected = await detectFaceLandmarks(shot.blob).catch(() => null);
+        if (detected) {
+          body.set("landmarks", JSON.stringify(detected.landmarks));
+          body.set("pose", JSON.stringify(detected.pose));
+          body.set("faceCount", String(detected.faceCount));
+        }
+      }
       const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
       if (!res.ok) {
         const data = await res.json().catch(() => ({ message: t(lang, "creditsEmpty") }));
         setError(data.message || t(lang, "creditsEmpty"));
+        if (poseDebug && data.debug) setPoseNote(data.debug as PlacementDebug);
         track("generate_failed", { styleId: chosen.id });
         return;
       }
@@ -568,7 +606,18 @@ export function TryOnApp({
       const out = await res.blob();
       const reason = res.headers.get("x-demo-reason") || "";
       const sample = reason === "no-key" || reason === "spend-cap" || reason === "failover" || reason === "placement";
-      setNotice(reason === "spend-cap" ? t(lang, "spendCapNote") : "");
+      const warning = res.headers.get("x-placement-warning") || "";
+      setNotice(reason === "spend-cap" ? t(lang, "spendCapNote") : warning);
+      if (poseDebug) {
+        const raw = res.headers.get("x-placement-debug");
+        if (raw) {
+          try {
+            setPoseNote(JSON.parse(raw) as PlacementDebug);
+          } catch {
+            setPoseNote(null);
+          }
+        }
+      }
       setActive({
         id: res.headers.get("x-tryon-id") || crypto.randomUUID(),
         styleId: chosen.id,
@@ -838,6 +887,7 @@ export function TryOnApp({
         </label>
       )}
       {error && <p className="mt-3 text-center text-sm text-[var(--bad)]" role="alert">{error}</p>}
+      {poseDebug && poseNote && (error || showResult) && <PoseReadout debug={poseNote} />}
       {notice && <p className="mt-3 text-center text-sm" role="status">{notice}</p>}
 
       {!showResult && tool !== "colour" && styleId && (

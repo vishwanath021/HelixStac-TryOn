@@ -1,4 +1,5 @@
 import type { ModelTier, UsageNumbers } from "@/lib/ai/tiers";
+import type { FaceLandmark } from "@/lib/face/pose";
 
 export type PreviewQuality = "standard" | "hd";
 
@@ -17,6 +18,8 @@ export type GenerateInput = {
   styleName?: string;
   /** PNG mask. Transparent pixels are the only area a provider may edit. */
   maskPng?: Buffer;
+  /** Browser face landmarks. The server recomputes yaw, roll, and pitch from these. */
+  landmarks?: FaceLandmark[];
 };
 
 export type GenerateOutput = {

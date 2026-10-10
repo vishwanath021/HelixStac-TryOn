@@ -9,7 +9,7 @@ import { ledgerTool, resolveGuestTier, tierRequest, type ImageProviderName, type
 import type { GenerateInput, GenerateOutput, ImageStyleProvider } from "@/lib/ai/types";
 import { styleById } from "@/data/styles";
 import { runLockedEdit } from "@/lib/face/pipeline";
-import { hairExtentForStyle, preflightPhoto, type RegionTool } from "@/lib/face/region";
+import { hairExtentForStyle, logPlacementRejection, preflightPhoto, type RegionTool } from "@/lib/face/region";
 import { aiProviderName } from "@/lib/env";
 import { logProviderCall } from "@/lib/logger";
 
@@ -63,8 +63,11 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
   if (primary.name === "mock") return demoFallback(input, primary.name, "no-key");
   const tool = regionOf(input);
   const hairExtent = hairExtentForStyle(styleById(input.styleId), tool);
-  const pre = await preflightPhoto(input.image, tool, { hairExtent });
-  if (!pre.ok) return demoFallback(input, "mock:placement", "placement");
+  const pre = await preflightPhoto(input.image, tool, { hairExtent, landmarks: input.landmarks });
+  if (!pre.ok) {
+    logPlacementRejection(tool, pre.debug);
+    return demoFallback(input, "mock:placement", "placement");
+  }
 
   const flags = await readTierFlags(input.tenantId);
   const tier: ModelTier = resolveGuestTier({ ...flags, purpose: "guest" });
@@ -79,6 +82,7 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
     image: input.image,
     tool,
     hairExtent,
+    landmarks: input.landmarks,
     edit: async (attempt) => {
       const gate = await beginPaidCall({
         provider: primary.name,

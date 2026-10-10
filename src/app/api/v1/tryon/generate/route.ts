@@ -18,7 +18,8 @@ import { consumePreviewRate, guestLimitMessage, toolEnabled, type PreviewTool, t
 import { resolveLook } from "@/lib/guidance";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 import { sanitizeSelfie, ImageError } from "@/lib/images";
-import { hairExtentForStyle, preflightPhoto, TRY_ANOTHER_PHOTO, type RegionTool } from "@/lib/face/region";
+import { hairExtentForStyle, logPlacementRejection, preflightPhoto, TRY_ANOTHER_PHOTO, type RegionTool } from "@/lib/face/region";
+import { parseLandmarks, type PlacementDebug } from "@/lib/face/pose";
 import { logError } from "@/lib/logger";
 import { AI_PREVIEW_KINDS, actorKeyFor, capForTier, hashIp, readGuestToken, verifySalonToken, type PreviewTier } from "@/lib/preview-access";
 import { prisma } from "@/lib/prisma";
@@ -31,6 +32,15 @@ import { clientIp } from "@/lib/ratelimit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 3600;
+
+async function viewerIsSuper() {
+  try {
+    const session = await auth();
+    return Boolean(session?.user?.isSuperAdmin);
+  } catch {
+    return false;
+  }
+}
 
 async function signedInOwnerOrSuper(tenantId: string) {
   try {
@@ -206,12 +216,22 @@ export async function POST(req: Request) {
   const region: RegionTool = tool === "nails" ? "nails" : tool === "brows" ? "brows" : tool === "beard" ? "beard" : shade ? "colour" : "style";
   const lookStyle = tool === "style" ? styleById(styleId) : null;
   const choice = await resolveProviderChoice(tenant.id);
-  if (selectProvider(choice.name, choice.apiKey).name !== "mock") {
-    const placement = await preflightPhoto(jpeg, region, { hairExtent: hairExtentForStyle(lookStyle, region) });
+  const landmarks = parseLandmarks(form.get("landmarks"));
+  const faceCount = Number(form.get("faceCount") || 0);
+  const providerName = selectProvider(choice.name, choice.apiKey).name;
+  let placementDebug: PlacementDebug | undefined;
+  let placementWarning = "";
+  if (providerName !== "mock" || landmarks) {
+    const placement = await preflightPhoto(jpeg, region, { hairExtent: hairExtentForStyle(lookStyle, region), landmarks, faceCount });
+    placementDebug = placement.debug;
+    placementWarning = placement.warning || "";
     if (!placement.ok) {
       const message = placement.message || TRY_ANOTHER_PHOTO;
+      logPlacementRejection(region, placement.debug);
       await failGenerationJob(jobId, { outcome: "placement", message });
-      return NextResponse.json({ error: "PLACEMENT", message }, { status: 422 });
+      const body: { error: string; message: string; debug?: PlacementDebug } = { error: "PLACEMENT", message };
+      if (await viewerIsSuper()) body.debug = placement.debug;
+      return NextResponse.json(body, { status: 422 });
     }
   }
 
@@ -273,6 +293,7 @@ export async function POST(req: Request) {
       tier: modelTier,
       kind: tool,
       styleName: look.name,
+      landmarks: landmarks ?? undefined,
     };
     const result = await generateWithFailover(input, choice);
     const outcome = salonOutcome(result.demoReason);
@@ -308,13 +329,18 @@ export async function POST(req: Request) {
         callId: result.callId,
       });
     }
-    return new NextResponse(new Uint8Array(result.image), {
-      status: 200,
-      headers: guestPreviewHeaders({
+    const headers: Record<string, string> = {
+      ...guestPreviewHeaders({
         tryOnId: tryOn.id,
         creditsLeft: balance?.creditBalance ?? 0,
         demoReason: result.demoReason || "",
       }),
+    };
+    if (placementWarning) headers["x-placement-warning"] = placementWarning;
+    if (placementDebug && (await viewerIsSuper())) headers["x-placement-debug"] = JSON.stringify(placementDebug);
+    return new NextResponse(new Uint8Array(result.image), {
+      status: 200,
+      headers,
     });
   } catch (error) {
     await settleCredits(tenant.id, refId, "REFUND");

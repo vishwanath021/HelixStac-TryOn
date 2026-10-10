@@ -9,6 +9,6 @@ These files are redistributed so the colour try-on does not call a third-party C
 
 The Apache 2.0 text is at https://www.apache.org/licenses/LICENSE-2.0
 
-Do not replace these files with a hotlink to jsDelivr or `storage.googleapis.com` in the browser. The page loads `/mediapipe/wasm` and `/mediapipe/hair_segmenter.tflite` from this app.
+Do not replace these files with a hotlink to jsDelivr or `storage.googleapis.com` in the browser. The page loads `/mediapipe/wasm` and `/mediapipe/hair_segmenter.tflite` from this app. Brow and beard placement loads the face landmarker from `/mediapipe/face-landmarker`, which reads `assets/vision/face_landmarker.task` (Apache License 2.0, same file as the hair-only composite).
 
 The super-admin hair-only composite uses a separate server copy of the hair segmenter, plus the selfie multiclass segmenter and the face landmarker. Those three files and their licence notes are in `assets/vision/NOTICE.md`.

@@ -12,6 +12,7 @@ import {
   type HairExtent,
   type RegionTool,
 } from "@/lib/face/region";
+import type { FaceLandmark } from "@/lib/face/pose";
 import { SpendCapError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
 import type { GenerateOutput } from "@/lib/ai/types";
 
@@ -64,11 +65,12 @@ export async function runLockedEdit(args: {
   tool: RegionTool;
   edit: (attempt: number) => Promise<GenerateOutput>;
   hairExtent?: HairExtent;
+  landmarks?: FaceLandmark[] | null;
   /** Test hook. Skips the composite so the post-check can fail on purpose. */
   skipLock?: boolean;
 }): Promise<LockedEdit> {
   const decoded = await decodeRgb(args.image);
-  const report = analyzeRegion(decoded.data, decoded.width, decoded.height, args.tool, { hairExtent: args.hairExtent });
+  const report = analyzeRegion(decoded.data, decoded.width, decoded.height, args.tool, { hairExtent: args.hairExtent, landmarks: args.landmarks });
   if (!report.ok) return { ok: false, calls: 0, reason: "placement", message: report.message || TRY_ANOTHER_PHOTO };
 
   let calls = 0;
