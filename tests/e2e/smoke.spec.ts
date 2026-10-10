@@ -77,7 +77,8 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
     return badge?.getAttribute("data-error") ?? "absent";
   })).not.toBe("true");
   await expect(page.getByLabel("Password")).toHaveCount(0);
-  await expect(page.getByText("Demo", { exact: true })).toBeVisible();
+  await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/demo mode/i)).toHaveCount(0);
   await artifact(page, "guest-before");
   await expect(page.getByText(/before we use a photo/i)).toHaveCount(0);
   const gallery = page.getByRole("region", { name: "Styles" });
@@ -122,7 +123,9 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.getByRole("button", { name: "Try this look" }).click();
   await expect(page.getByText("Styling your look...")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText("Demo", { exact: true }).first()).toBeVisible();
+  await expect(page.locator("section[aria-label=Photo]")).toHaveClass(/is-ready/);
+  await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/demo mode/i)).toHaveCount(0);
   const slider = page.getByRole("slider", { name: /BEFORE \/ AFTER/i });
   await expect(slider).toBeVisible();
   await slider.fill("30");
@@ -258,7 +261,7 @@ test("brows, beard, and nails use photo cards and the same demo result", async (
   await page.getByRole("region", { name: "Brows" }).getByRole("button", { name: "Soft Arch" }).click();
   await page.getByRole("button", { name: "Try this look" }).click();
   await expect(page.getByRole("heading", { name: "Soft Arch" })).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText("Demo", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Book this look" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Try another" })).toBeVisible();

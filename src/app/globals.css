@@ -282,6 +282,43 @@ textarea { min-height: 48px; }
   color: #fff;
 }
 
+.ai-photo {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  padding: 3px;
+  background: #fff;
+  box-shadow: 0 0 18px rgba(139, 92, 246, 0.45), 0 0 32px rgba(59, 130, 246, 0.28);
+}
+.ai-photo.is-working {
+  padding: 2px;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.28);
+}
+.ai-photo-spin {
+  position: absolute;
+  inset: -60%;
+  background: conic-gradient(from 0deg, #8B5CF6, #3B82F6, #06B6D4, #22C55E, #EAB308, #EC4899, #8B5CF6);
+}
+.ai-photo-inner {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 13px;
+  background: #fff;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ai-photo-spin { animation: ai-spin 8s linear infinite; }
+  .ai-photo.is-working .ai-photo-spin { animation-duration: 14s; opacity: 0.72; }
+  .ai-photo.is-fresh { animation: ai-sweep 1.15s ease-out; }
+  .ai-photo.is-fresh .ai-photo-spin { animation-duration: 1.15s; }
+}
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+@keyframes ai-sweep {
+  0% { box-shadow: 0 0 8px rgba(139, 92, 246, 0.25); }
+  40% { box-shadow: 0 0 28px rgba(236, 72, 153, 0.55), 0 0 46px rgba(59, 130, 246, 0.42); }
+  100% { box-shadow: 0 0 18px rgba(139, 92, 246, 0.45), 0 0 32px rgba(59, 130, 246, 0.28); }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .btn, .seg-btn, .chip {
     transition: transform 90ms ease, box-shadow 90ms ease, background-color 90ms ease;

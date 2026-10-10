@@ -68,7 +68,7 @@ export function TryOnApp({
   initialShadeId,
   salonToken,
   salonMode = false,
-  demoMode = false,
+  demoHint = false,
 }: {
   config: SalonConfig;
   embed?: boolean;
@@ -77,7 +77,7 @@ export function TryOnApp({
   initialShadeId?: string;
   salonToken?: string;
   salonMode?: boolean;
-  demoMode?: boolean;
+  demoHint?: boolean;
 }) {
   const lang = config.defaultLang || "en";
   const [sid, setSid] = useState("");
@@ -108,6 +108,7 @@ export function TryOnApp({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [active, setActive] = useState<Look | null>(null);
+  const [freshGlow, setFreshGlow] = useState(false);
   const [modelStatus, setModelStatus] = useState<"loading" | "ready" | "error">("loading");
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -167,6 +168,12 @@ export function TryOnApp({
       }))
     : [];
   const showResult = tool !== "colour" && stylePhase === "result" && active?.tool === tool && !busy;
+  useEffect(() => {
+    if (!showResult || !active?.id) return;
+    setFreshGlow(true);
+    const timer = window.setTimeout(() => setFreshGlow(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, [showResult, active?.id]);
   const phone = normalizeWhatsAppPhone(config.whatsapp);
   const bookHref = phone
     ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hi ${config.name}, I would like to book an appointment.`)}`
@@ -677,8 +684,6 @@ export function TryOnApp({
         </div>
       </header>
 
-      {demoMode && <p className="mb-2 text-sm text-muted" role="status">Demo</p>}
-
       <h2 className="page-title">{t(lang, "pageTitle")}</h2>
 
       <div className="seg-fade mt-4">
@@ -702,11 +707,16 @@ export function TryOnApp({
 
       <div className="mt-6 grid items-start gap-8 lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
       <div>
-      <section ref={frameRef} className="overflow-hidden rounded-[14px] border border-line bg-white shadow-lift" aria-label="Photo">
+      <section
+        ref={frameRef}
+        className={busy || showResult ? `ai-photo ${showResult ? "is-ready" : "is-working"}${freshGlow ? " is-fresh" : ""}` : "overflow-hidden rounded-[14px] border border-line bg-white shadow-lift"}
+        aria-label="Photo"
+      >
+        {(busy || showResult) && <div className="ai-photo-spin" aria-hidden="true" />}
+        <div className={busy || showResult ? "ai-photo-inner" : "contents"}>
         {showResult && active ? (
           <div>
             <BeforeAfter before={active.before} after={active.after} beforeLabel={t(lang, "before")} afterLabel={t(lang, "after")} />
-            {active.demo && <p className="px-4 py-2 text-center text-sm text-muted" role="status">Demo</p>}
           </div>
         ) : (
           <div className="relative aspect-[3/4]">
@@ -779,6 +789,7 @@ export function TryOnApp({
             )}
           </div>
         )}
+        </div>
       </section>
 
       <label className="mt-3 flex min-h-11 items-center gap-3 text-sm">
@@ -941,6 +952,7 @@ export function TryOnApp({
         )}
       </section>
       </div>
+      {demoHint && <p className="mt-8 text-center text-xs text-muted">Demo preview</p>}
       {config.poweredBy && (
         <p className="mt-10 flex items-center justify-center gap-2 text-xs text-muted">
           <LookuviMark className="h-5 w-5" />
@@ -960,18 +972,48 @@ function WhatsAppGlyph() {
 }
 
 function ToolGlyph({ name }: { name: "style" | "colour" | "brows" | "nails" | "beard" }) {
-  const common = { viewBox: "0 0 24 24", className: "h-4 w-4", fill: "none", stroke: "currentColor", strokeWidth: 1.8, "aria-hidden": true } as const;
+  const common = { viewBox: "0 0 24 24", className: "h-5 w-5 shrink-0", "aria-hidden": true } as const;
   if (name === "colour") {
-    return <svg {...common}><circle cx="12" cy="12" r="7" /><circle cx="9" cy="10" r="1" fill="currentColor" /><circle cx="14" cy="9" r="1" fill="currentColor" /><circle cx="15" cy="13" r="1" fill="currentColor" /></svg>;
+    return (
+      <svg {...common}>
+        <path fill="currentColor" d="M12 2.4c.4 0 .8.3 1 .7 1.6 3.2 5.2 7.2 5.2 11a6.2 6.2 0 0 1-12.4 0c0-3.8 3.6-7.8 5.2-11 .2-.4.6-.7 1-.7z" />
+        <path fill="#B6A0C9" d="M8.4 13.2a2.1 2.1 0 0 0 2.2 3.2 5 5 0 0 1-2.2-3.2z" />
+      </svg>
+    );
   }
   if (name === "brows") {
-    return <svg {...common}><path d="M4 14c2-4 5-6 8-6s6 2 8 6" strokeLinecap="round" /></svg>;
+    return (
+      <svg {...common}>
+        <path fill="currentColor" d="M2.4 15.6c1.2-1.2 2.6-3.2 4.2-4.6 1.8-1.6 3.6-2.4 5.4-2.4 2.2 0 4.2 1 6.2 3.2 1.2 1.3 2.2 2.2 3.4 2.6-.6 1.2-2.2.6-3.6-.6-1.6-1.4-3.2-2.2-5-2.2-1.4 0-2.8.6-4.2 1.8-1.2 1-2.2 2.2-3 3.2-1 .4-2.2.2-3.4-1z" />
+        <path fill="#B6A0C9" d="M6.2 13.2c1.4-1.2 2.8-2 4.4-2 1.2 0 2.4.4 3.6 1.4-.8.6-1.8 1-2.8 1-1.2 0-2.4-.6-3.4-1.6-.6.2-1.2.6-1.8 1.2z" />
+      </svg>
+    );
   }
   if (name === "nails") {
-    return <svg {...common}><path d="M8 14V8a2 2 0 0 1 4 0v6M12 14V7a2 2 0 0 1 4 0v7" strokeLinecap="round" /></svg>;
+    return (
+      <svg {...common}>
+        <rect x="9" y="2.2" width="6" height="3.2" rx="1.2" fill="#B6A0C9" />
+        <rect x="8.2" y="5" width="7.6" height="2.2" rx="0.6" fill="currentColor" />
+        <path fill="currentColor" d="M7.2 8.2h9.6c.6 0 1 .5.9 1.1l-.8 8.2A3.2 3.2 0 0 1 13.7 20.4h-3.4a3.2 3.2 0 0 1-3.2-2.9l-.8-8.2c-.1-.6.3-1.1.9-1.1z" />
+        <path fill="#B6A0C9" d="M8.4 13.2h7.2l-.4 4.2a1.8 1.8 0 0 1-1.8 1.6h-2.8a1.8 1.8 0 0 1-1.8-1.6l-.4-4.2z" />
+      </svg>
+    );
   }
   if (name === "beard") {
-    return <svg {...common}><path d="M8 9c0 6 2 9 4 9s4-3 4-9" strokeLinecap="round" /></svg>;
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="8.2" r="3.6" fill="currentColor" />
+        <path fill="currentColor" d="M5.6 13.4c.4 4.6 2.8 8.2 6.4 8.2s6-3.6 6.4-8.2c-1.6 1.8-3.8 2.8-6.4 2.8s-4.8-1-6.4-2.8z" />
+        <path fill="#B6A0C9" d="M8.2 15.2c.8 2.2 2.2 3.4 3.8 3.4s3-1.2 3.8-3.4c-1 .8-2.3 1.2-3.8 1.2s-2.8-.4-3.8-1.2z" />
+      </svg>
+    );
   }
-  return <svg {...common}><circle cx="7" cy="8" r="2.2" /><circle cx="16" cy="15" r="2.2" /><path d="M9 9.5 14.5 14" strokeLinecap="round" /></svg>;
+  return (
+    <svg {...common}>
+      <path fill="currentColor" fillRule="evenodd" d="M7.1 13.6a3.3 3.3 0 1 0 .2 4.7 3.3 3.3 0 0 0-.2-4.7zm.7 1.6a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM16.9 13.6a3.3 3.3 0 1 0 .2 4.7 3.3 3.3 0 0 0-.2-4.7zm.7 1.6a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z" />
+      <path fill="currentColor" d="M8.6 13.2 16.4 4.2c.4-.5 1.1-.5 1.5.1.3.5.2 1.2-.3 1.6l-7.6 8.6c-.5.5-1.3.4-1.7-.2-.3-.4-.2-.9.3-1.1z" />
+      <path fill="currentColor" d="M15.4 13.2 7.6 4.2c-.4-.5-1.1-.5-1.5.1-.3.5-.2 1.2.3 1.6l7.6 8.6c.5.5 1.3.4 1.7-.2.3-.4.2-.9-.3-1.1z" />
+      <circle cx="12" cy="12.2" r="1.5" fill="#B6A0C9" />
+    </svg>
+  );
 }

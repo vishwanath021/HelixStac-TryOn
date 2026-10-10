@@ -1,8 +1,6 @@
 import sharp from "sharp";
 import { readStyleThumbnail, type ThumbFolder } from "@/lib/ai/style-reference";
 
-export const DEMO_STYLE_BANNER = "Demo mode: connect an AI key to see this style on your own face";
-
 function escapeXml(value: string) {
   return value.replace(/[<>&'"]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[char] ?? char);
 }
@@ -35,17 +33,8 @@ export async function demoStyleComposite(userJpeg: Buffer, styleId: string, styl
   const height = 1024;
   const base = await sharp(userJpeg).rotate().resize(width, height, { fit: "cover" }).jpeg({ quality: 86 }).toBuffer();
   const card = await referenceCard(styleId, styleName, folder);
-  const place = folder === "nails" ? "hand" : "face";
-  const banner = Buffer.from(`<svg width="${width}" height="96" xmlns="http://www.w3.org/2000/svg">
-    <rect width="${width}" height="96" fill="#241c16"/>
-    <text x="28" y="40" font-family="sans-serif" font-size="20" fill="#fffdfb">Demo mode: connect an AI key</text>
-    <text x="28" y="70" font-family="sans-serif" font-size="20" fill="#fffdfb">to see this style on your own ${place}</text>
-  </svg>`);
   return sharp(base)
-    .composite([
-      { input: card, top: 28, left: width - 236 - 28 },
-      { input: banner, top: height - 96, left: 0 },
-    ])
+    .composite([{ input: card, top: 28, left: width - 236 - 28 }])
     .jpeg({ quality: 84 })
     .toBuffer();
 }

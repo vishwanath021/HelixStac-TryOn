@@ -1,8 +1,10 @@
 import { headers } from "next/headers";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { auth } from "@/auth";
 import { TryOnApp } from "@/components/tryon/TryOnApp";
 import { usingDemoProvider } from "@/lib/env";
+import { prisma } from "@/lib/prisma";
 import { verifySalonToken } from "@/lib/preview-access";
 import { loadTenantByHost, loadTenantBySlug, toSalonConfig } from "@/lib/salon";
 
@@ -33,6 +35,18 @@ export default async function SalonPage({
   if (!tenant) notFound();
   const config = toSalonConfig(tenant);
   const salonMode = verifySalonToken(query.salon || "", tenant.id, tenant.salonNonce);
+  const session = await auth();
+  let demoHint = false;
+  if (usingDemoProvider() && session?.user?.id) {
+    if (session.user.isSuperAdmin) demoHint = true;
+    else {
+      const owner = await prisma.membership.findFirst({
+        where: { userId: session.user.id, tenantId: tenant.id, role: "OWNER" },
+        select: { id: true },
+      });
+      demoHint = Boolean(owner);
+    }
+  }
   return (
     <TryOnApp
       config={config}
@@ -41,7 +55,7 @@ export default async function SalonPage({
       initialShadeId={query.shade}
       salonToken={salonMode ? query.salon : undefined}
       salonMode={salonMode}
-      demoMode={usingDemoProvider()}
+      demoHint={demoHint}
     />
   );
 }

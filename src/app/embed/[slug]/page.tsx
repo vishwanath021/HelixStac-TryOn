@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import { TryOnApp } from "@/components/tryon/TryOnApp";
-import { usingDemoProvider } from "@/lib/env";
 import { loadTenantBySlug, toSalonConfig } from "@/lib/salon";
 
 export const dynamic = "force-dynamic";
@@ -9,5 +8,5 @@ export default async function EmbedPage({ params }: { params: Promise<{ slug: st
   const { slug } = await params;
   const tenant = await loadTenantBySlug(slug);
   if (!tenant) notFound();
-  return <TryOnApp config={toSalonConfig(tenant)} embed demoMode={usingDemoProvider()} />;
+  return <TryOnApp config={toSalonConfig(tenant)} embed />;
 }

@@ -51,6 +51,11 @@ test("tool pill stays one row and the brand bar stays readable", async ({ page }
   const mark = page.locator('header svg[viewBox="0 0 64 64"]');
   await expect(mark).toBeVisible();
   await expect(page.locator("header img")).toHaveCount(0);
+  await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/demo mode/i)).toHaveCount(0);
+  const icon = await page.locator(".seg-btn svg").first().boundingBox();
+  expect(icon?.width ?? 0).toBeGreaterThanOrEqual(18);
+  expect(icon?.width ?? 0).toBeLessThanOrEqual(22);
   for (const width of [320, 360, 390, 430, 768, 1024, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     const pill = page.locator(".seg");
@@ -198,6 +203,11 @@ test("retake and try another each open a new camera frame", async ({ page }, tes
   await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Soft Bob" }).click();
   await page.getByRole("button", { name: "Try this look" }).click();
   await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('section[aria-label="Photo"]')).toHaveClass(/is-ready/);
+  await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/demo mode/i)).toHaveCount(0);
+  await page.locator('section[aria-label="Photo"]').evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await shot(page, `result-glow-${device}`);
   await page.getByRole("button", { name: "Try another" }).click();
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
   await waitForLiveFrame(page);
@@ -226,6 +236,9 @@ test("staff cannot change salon settings or open the platform admin", async ({ p
     return res.status;
   });
   expect(status).toBe(403);
+  await page.goto("/s/demo-salon");
+  await expect(page.getByText("Demo preview")).toHaveCount(0);
+  await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
   await page.goto("/super");
   await expect(page).toHaveURL(/\/login/);
 });
@@ -249,6 +262,7 @@ test("an owner can replace the salon logo and restore the Lookuvi mark", async (
     await expect(page.getByText("Settings saved.")).toBeVisible();
     await page.goto("/s/demo-salon");
     await expect(page.locator("header img")).toHaveAttribute("src", /^data:image\/jpeg/);
+    await expect(page.getByText("Demo preview")).toBeVisible();
     await page.goto("/admin/settings");
     await page.getByRole("button", { name: "Use Lookuvi mark" }).click();
     await page.getByRole("button", { name: "Save", exact: true }).click();
