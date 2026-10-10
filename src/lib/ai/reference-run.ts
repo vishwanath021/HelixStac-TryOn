@@ -11,7 +11,7 @@ import { assessClothing } from "@/lib/ai/clothing-check";
 import { resolveFalKey, resolveGeminiKey, resolveOpenAIKey, resolveOpenRouterKey } from "@/lib/ai/credentials";
 import { postFalReferenceEdit } from "@/lib/ai/fal-reference";
 import { postOpenRouterReferenceEdit } from "@/lib/ai/openrouter-reference";
-import type { EditSize } from "@/lib/ai/edit-request";
+import type { EditQuality, EditSize } from "@/lib/ai/edit-request";
 import { editFormFields } from "@/lib/ai/edit-request";
 import { postGeminiReferenceEdit } from "@/lib/ai/gemini-reference";
 import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
@@ -99,11 +99,12 @@ export async function executeReferenceEdit(args: {
   tool: string;
   hairTexture?: AskedTexture;
   modelId?: string;
+  quality?: EditQuality;
 }): Promise<ReferenceSuccess | ReferenceFailure> {
   await purgeOldBenchmarks().catch(() => undefined);
   const requestedModel = args.modelId?.trim() || "";
   const prepared = requestedModel
-    ? await prepareComparison({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture, modelId: requestedModel })
+    ? await prepareComparison({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture, modelId: requestedModel, quality: args.quality })
     : await prepareBenchmark({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture });
   if (!prepared.ok) {
     return { ok: false, httpStatus: 400, error: "QUOTE", message: prepared.message, outcome: "quote" };

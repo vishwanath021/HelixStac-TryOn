@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { saveGuestEngine, saveSalonGuestEngine } from "@/lib/ai/guest-hairstyle";
 import { platformAiView, saveFalKey, saveOpenRouterKey, savePlatformAi } from "@/lib/ai/settings-store";
 import { requireSuper } from "@/lib/session";
 
@@ -17,6 +18,11 @@ const schema = z.object({
   openRouterKey: z.string().max(400).optional().default(""),
   openRouterEnabled: z.boolean().optional().default(false),
   removeOpenRouterKey: z.boolean().optional().default(false),
+  guestEngineOnly: z.boolean().optional(),
+  guestEngine: z.enum(["fal", "openai"]).optional(),
+  salonEngineOnly: z.boolean().optional(),
+  salonId: z.string().max(80).optional().default(""),
+  salonEngine: z.enum(["fal", "openai", ""]).optional().default(""),
 });
 
 export async function GET() {
@@ -32,7 +38,13 @@ export async function PUT(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
   try {
-    if (parsed.data.openRouterOnly) {
+    if (parsed.data.guestEngineOnly) {
+      if (!parsed.data.guestEngine) return NextResponse.json({ error: "INVALID" }, { status: 400 });
+      await saveGuestEngine(parsed.data.guestEngine, access.session.user.id);
+    } else if (parsed.data.salonEngineOnly) {
+      if (!parsed.data.salonId) return NextResponse.json({ error: "INVALID" }, { status: 400 });
+      await saveSalonGuestEngine(parsed.data.salonId, parsed.data.salonEngine, access.session.user.id);
+    } else if (parsed.data.openRouterOnly) {
       await saveOpenRouterKey(
         { apiKey: parsed.data.openRouterKey, enabled: parsed.data.openRouterEnabled, remove: parsed.data.removeOpenRouterKey },
         access.session.user.id,

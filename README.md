@@ -1,4 +1,4 @@
-# HelixStac TryOn
+# Lookuvi
 
 White-label virtual hairstyle and hair-colour try-on for small salons. A salon puts a link or a QR in the shop, or pastes one script tag into its website. Guests try a colour on their own phone and can preview a cut. The preview is a guide. Booking opens the salon's WhatsApp and records a lead.
 
@@ -89,7 +89,7 @@ Put keys only in `.env` on your machine. That file is gitignored. On a host, put
 | `AUTH_URL` | Public URL of this app |
 | `APP_BASE_URL` | Used in QR codes and magic links |
 | `ROOT_DOMAIN` | Apex domain. `{slug}.try.{ROOT_DOMAIN}` routes to that salon. |
-| `BRAND_NAME` | Platform name. Default `HelixStac TryOn`. |
+| `BRAND_NAME` | Platform name. Default `Lookuvi`. |
 | `AI_PROVIDER` | `mock` (default), `gemini`, `openai`, `replicate`, or `fal` |
 | `GEMINI_API_KEY` | Paid-tier key. Leave empty to stay on the mock. |
 | `OPENAI_API_KEY` | OpenAI key for `AI_PROVIDER=openai`. Leave empty to stay on the mock. |

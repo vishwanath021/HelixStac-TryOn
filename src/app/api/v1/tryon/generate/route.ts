@@ -6,9 +6,7 @@ import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
 import { shadeById } from "@/data/shades";
 import { resolveProviderChoice } from "@/lib/ai/credentials";
 import { claimGenerationJob, completeGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
-import { referenceModeActive } from "@/lib/ai/reference-mode";
-import { parseAskedTexture, referenceFingerprintMode } from "@/lib/ai/reference-texture";
-import { runTryOnReference } from "@/lib/ai/reference-run";
+import { runGuestHairstyleIfReady } from "@/lib/ai/guest-hairstyle";
 import { salonOutcome, guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { generateWithFailover, selectProvider } from "@/lib/ai/router";
 import { readTierFlags } from "@/lib/ai/settings-store";
@@ -29,8 +27,6 @@ import { browById } from "@/data/brows";
 import { nailById } from "@/data/nails";
 import { styleById } from "@/data/styles";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
-import { isSuperSession } from "@/lib/session";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 3600;
@@ -134,24 +130,14 @@ export async function POST(req: Request) {
     }
   }
 
-  const wantReference = referenceModeActive({
-    isSuperAdmin: await isSuperSession(),
-    requested: String(form.get("referenceMode") || "") === "yes",
-    tool,
-  });
-  const askedTexture = wantReference ? parseAskedTexture(String(form.get("hairTexture") || "")) : "natural";
-  const compareModel = wantReference ? String(form.get("compareModel") || "").trim() : "";
-  if (wantReference && String(form.get("confirm") || "") !== "yes") {
-    return NextResponse.json({ error: "CONFIRM", message: "Confirm the estimated cost before this paid call." }, { status: 400 });
-  }
-
+  const hairstyle = tool === "style" && !shadeId;
   const requestId = String(form.get("requestId") || "");
   let jobId = "";
   if (requestId) {
     const claim = await claimGenerationJob({
       tenantId: tenant.id,
       requestId,
-      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: wantReference ? "" : shadeId || "", mode: wantReference ? referenceFingerprintMode(askedTexture, compareModel) : "production" }),
+      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: hairstyle ? "" : shadeId || "", mode: hairstyle ? "hairstyle" : "production" }),
     });
     if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
     if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
@@ -171,8 +157,8 @@ export async function POST(req: Request) {
     jobId = claim.id;
   }
 
-  if (wantReference) {
-    return runTryOnReference({
+  if (hairstyle) {
+    const styled = await runGuestHairstyleIfReady({
       jpeg,
       original,
       styleId,
@@ -182,10 +168,8 @@ export async function POST(req: Request) {
       actorKey,
       jobId,
       requestId,
-      revealCost: await isSuperSession(),
-      hairTexture: askedTexture,
-      modelId: compareModel,
     });
+    if (styled) return styled;
   }
 
   const shade = tool === "style" ? shadeById(shadeId) : null;

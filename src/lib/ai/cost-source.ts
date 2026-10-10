@@ -38,6 +38,22 @@ function megapixels(width: number, height: number) {
   return (width * height) / 1_000_000;
 }
 
+/**
+ * Dollars per output megapixel for blackforestlabs/flux-3/edit-image.
+ * One value. Change it here if fal raises the rate.
+ * An Oct 10 2026 dashboard charge for 832×1248 was $0.024, counted as 1.00 MP.
+ */
+export const FLUX3_USD_PER_OUTPUT_MEGAPIXEL = 0.024;
+
+/**
+ * fal bills whole output megapixels: width×height/1_000_000, rounded to the nearest
+ * megapixel, and never below 1. 832×1248 is 1.038 MP and bills as 1.00.
+ */
+export function falBilledMegapixels(width: number, height: number) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return 1;
+  return Math.max(1, Math.round(megapixels(width, height)));
+}
+
 const PER_IMAGE: Record<string, number> = {
   "fal-ai/nano-banana-pro/edit": 0.15,
   "fal-ai/nano-banana-2/edit": 0.08,
@@ -57,7 +73,7 @@ const PER_OUTPUT_MP: Record<string, number> = {
  * Per-image models bill one image. Megapixel models bill the downloaded width times height.
  * Inputs are omitted: the pages that mention them do not say how fal rounds them, and the billing API is the invoice.
  * openai/gpt-image-2/edit is token-billed, so this returns null.
- * flux-3 uses $0.024 per output megapixel before 8 Oct 2026 UTC, then $0.048.
+ * flux-3 uses FLUX3_USD_PER_OUTPUT_MEGAPIXEL and fal's whole-megapixel count.
  */
 export function falPriceListUsd(args: {
   model: string;
@@ -72,9 +88,7 @@ export function falPriceListUsd(args: {
   if (perImage != null) return { usd: perImage, unit: "image" };
   const outMp = megapixels(width, height);
   if (args.model === "blackforestlabs/flux-3/edit-image") {
-    const at = args.at ?? new Date();
-    const rate = at.getTime() < Date.parse("2026-10-08T00:00:00Z") ? 0.024 : 0.048;
-    return { usd: roundUsd(outMp * rate), unit: "output megapixels" };
+    return { usd: roundUsd(falBilledMegapixels(width, height) * FLUX3_USD_PER_OUTPUT_MEGAPIXEL), unit: "output megapixels" };
   }
   if (args.model === "fal-ai/flux-2-pro/edit") {
     const units = Math.max(1, Math.ceil(outMp - 1e-9));

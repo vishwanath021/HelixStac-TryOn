@@ -2,7 +2,7 @@
   "name": "helixstac-tryon",
   "version": "0.1.0",
   "private": true,
-  "description": "HelixStac TryOn — white-label virtual hairstyle and hair-colour try-on for salons.",
+  "description": "Lookuvi — white-label virtual hairstyle and hair-colour try-on for salons.",
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",

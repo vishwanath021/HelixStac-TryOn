@@ -1,17 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
+import { LookuviMark } from "@/components/brand/LookuviMark";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { ColourStage } from "@/components/tryon/ColourStage";
-import { ReferenceTextureWarning } from "@/components/tryon/ReferenceTextureWarning";
 import { HairTypePicker } from "@/components/tryon/HairTypePicker";
 import { StyleCard } from "@/components/tryon/StyleCard";
 import { t } from "@/data/i18n";
 import { orderStylesForPicker, suggestStyles, type HairReading } from "@/lib/hair-suitability";
 import { captureShouldMirror, visiblePortraitCrop } from "@/lib/capture";
-import { brandStyle } from "@/lib/contrast";
 import { classifySkinPhoto } from "@/lib/hand-photo";
-import { parseAskedTexture, type AskedTexture } from "@/lib/ai/reference-texture";
 import type { SalonConfig } from "@/lib/salon";
 import { normalizeWhatsAppPhone } from "@/lib/whatsapp";
 
@@ -34,14 +32,6 @@ type Look = {
   serviceKeys: string[];
   tool: "style" | "brows" | "beard" | "nails";
   demo?: boolean;
-  unvalidated?: boolean;
-  referenceId?: string;
-  showCost?: boolean;
-  detail?: string;
-  clothingWarning?: string;
-  rawFaceDrift?: boolean;
-  faceScore?: number | null;
-  modelLabel?: string;
 };
 
 type TryTool = "colour" | "style" | "brows" | "beard" | "nails";
@@ -77,8 +67,6 @@ export function TryOnApp({
   salonToken,
   salonMode = false,
   demoMode = false,
-  referenceModeAvailable = false,
-  comparisonModels = [],
 }: {
   config: SalonConfig;
   embed?: boolean;
@@ -88,8 +76,6 @@ export function TryOnApp({
   salonToken?: string;
   salonMode?: boolean;
   demoMode?: boolean;
-  referenceModeAvailable?: boolean;
-  comparisonModels?: { id: string; label: string; warning?: string }[];
 }) {
   const lang = config.defaultLang || "en";
   const [sid, setSid] = useState("");
@@ -108,8 +94,6 @@ export function TryOnApp({
   const [styleId, setStyleId] = useState("");
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
   const [busy, setBusy] = useState(false);
-  const [referenceMode, setReferenceMode] = useState(false);
-  const [hairTexture, setHairTexture] = useState<AskedTexture>("natural");
   const [pickedDensity, setPickedDensity] = useState("");
   const [pickedTexture, setPickedTexture] = useState("");
   const [showAllStyles, setShowAllStyles] = useState(false);
@@ -117,11 +101,6 @@ export function TryOnApp({
   const [suggestNote, setSuggestNote] = useState("");
   const [suggestCost, setSuggestCost] = useState("");
   const [suggestBusy, setSuggestBusy] = useState(false);
-  const [referenceAck, setReferenceAck] = useState(false);
-  const [referenceQuote, setReferenceQuote] = useState<{ model: string; provider: string; quality: string; size: string; rupees: number; dollars: number; note: string; warning: string } | null>(null);
-  const [compareModel, setCompareModel] = useState(comparisonModels[0]?.id ?? "");
-  const [comparisons, setComparisons] = useState<Look[]>([]);
-  const [referenceChoice, setReferenceChoice] = useState<{ id: string; name: string; serviceKeys: string[]; tool: Look["tool"] } | null>(null);
   const previewLock = useRef(false);
   const [pendingName, setPendingName] = useState("");
   const [error, setError] = useState("");
@@ -390,73 +369,6 @@ export function TryOnApp({
     await applyBlob(blob);
   }
 
-  async function stageReference(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }, modelId = compareModel) {
-    setStyleId(chosen.id);
-    setTool("style");
-    if (!faceShot) {
-      setError(t(lang, "addPhotoFirst"));
-      frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    const consent = consentRef.current || (await consenting.current) || "";
-    if (!consent) {
-      setError(t(lang, "privacyTick"));
-      return;
-    }
-    consentRef.current = consent;
-    setReferenceAck(false);
-    setReferenceChoice(chosen);
-    setError("");
-    setBusy(true);
-    try {
-      const width = faceShot.el.naturalWidth || 0;
-      const height = faceShot.el.naturalHeight || 0;
-      const modelQuery = modelId ? `&model=${encodeURIComponent(modelId)}` : "";
-      const res = await fetch(`/api/v1/tryon/reference-quote?width=${width}&height=${height}&styleId=${encodeURIComponent(chosen.id)}${modelQuery}`);
-      const data = await res.json().catch(() => ({ message: "This reference try-on could not be quoted." }));
-      if (!res.ok) {
-        setReferenceQuote(null);
-        setError(data.message || "This reference try-on could not be quoted.");
-        return;
-      }
-      setReferenceQuote({
-        model: String(data.model || ""),
-        provider: String(data.provider || ""),
-        quality: String(data.quality || ""),
-        size: String(data.size || ""),
-        rupees: Number(data.rupees || 0),
-        dollars: Number(data.dollars || 0),
-        note: String(data.note || ""),
-        warning: String(data.warning || ""),
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function pngUrl(value: string) {
-    const binary = atob(value);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    return URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
-  }
-
-  async function deleteReferenceRun() {
-    if (!active?.referenceId) return;
-    if (!window.confirm("Delete this reference run and its photos now?")) return;
-    const res = await fetch(`/api/v1/super/ai/benchmark/${active.referenceId}`, { method: "DELETE" });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({ message: "Could not delete that run." }));
-      setError(data.message || "Could not delete that run.");
-      return;
-    }
-    const next = comparisons.filter((item) => item.referenceId !== active.referenceId);
-    setComparisons(next);
-    setActive(next[next.length - 1] ?? null);
-    if (!next.length) setStylePhase("pick");
-    setReferenceAck(false);
-  }
-
   function resetForAnotherPhoto() {
     const blobs = new Set<string>();
     const remember = (url?: string) => {
@@ -464,21 +376,16 @@ export function TryOnApp({
     };
     remember(faceShot?.url);
     remember(handShot?.url);
-    for (const look of [active, ...comparisons]) {
-      if (!look) continue;
-      remember(look.before);
-      remember(look.after);
+    if (active) {
+      remember(active.before);
+      remember(active.after);
     }
     for (const url of blobs) URL.revokeObjectURL(url);
     setFaceShot(null);
     setHandShot(null);
     setActive(null);
-    setComparisons([]);
     setStylePhase("pick");
     setStyleId("");
-    setReferenceAck(false);
-    setReferenceQuote(null);
-    setReferenceChoice(null);
     setHairReading(null);
     setPickedDensity("");
     setPickedTexture("");
@@ -531,28 +438,27 @@ export function TryOnApp({
       setPickedTexture(String(data.texture || ""));
       setShowAllStyles(false);
       const low = Number(data.confidence) < 0.4;
-      setSuggestNote(low ? "Low confidence. Adjust the hair type if this looks wrong." : data.cached ? "Same photo. No new reading." : "");
-      if (data.showCost) {
-        const cached = data.cached ? "Cached reading. No new provider charge. " : "";
-        const actual = data.actualKnown
-          ? `${data.actualLabel || "Actual"} $${Number(data.actualDollars || 0).toFixed(3)} (₹${Number(data.actualRupees || 0).toFixed(2)}).`
-          : "Actual —.";
-        setSuggestCost(`${cached}Estimate (reserved) ₹${Number(data.rupees || 0).toFixed(2)}. ${actual} Source: ${data.sourceLabel || "unknown"}.`);
-      } else {
-        setSuggestCost("");
-      }
+      setSuggestNote(low ? "Check the hair type." : "");
+      setSuggestCost("");
     } finally {
       setSuggestBusy(false);
     }
   }
 
-  async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }, referenceConfirm = false) {
+  function selectLook(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }) {
     setStyleId(chosen.id);
     setTool(chosen.tool);
-    if (referenceModeAvailable && referenceMode && chosen.tool === "style" && !referenceConfirm) {
-      await stageReference(chosen);
-      return;
+    setError("");
+    const shot = chosen.tool === "nails" ? handShot : faceShot;
+    if (!shot) {
+      setError(t(lang, chosen.tool === "nails" ? "uploadHand" : "addPhotoFirst"));
+      frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+  }
+
+  async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }) {
+    setStyleId(chosen.id);
+    setTool(chosen.tool);
     const shot = chosen.tool === "nails" ? handShot : faceShot;
     if (!shot) {
       setError(t(lang, chosen.tool === "nails" ? "uploadHand" : "addPhotoFirst"));
@@ -581,14 +487,6 @@ export function TryOnApp({
       body.set("consentId", consent);
       body.set("sessionId", sid || sessionId());
       body.set("requestId", crypto.randomUUID());
-        if (referenceConfirm) {
-        body.set("referenceMode", "yes");
-        body.set("confirm", "yes");
-        if (hairTexture !== "natural") body.set("hairTexture", hairTexture);
-        if (compareModel) body.set("compareModel", compareModel);
-      } else if (chosen.tool === "style" && shadeId) {
-        body.set("shadeId", shadeId);
-      }
       if (salonToken) body.set("salonToken", salonToken);
       const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
       if (!res.ok) {
@@ -599,47 +497,8 @@ export function TryOnApp({
       }
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("json")) {
-        const data = await res.json();
-        if (!data.imageBase64) {
-          setError(data.message || t(lang, "creditsEmpty"));
-          return;
-        }
-        const usage = data.usage as { inputTokens?: number; outputTokens?: number; imageTokens?: number; textTokens?: number } | null;
-        const detail = data.showCost
-          ? [
-              `Estimate (reserved) ₹${Number(data.rupees || 0).toFixed(2)}.`,
-              data.actualKnown
-                ? `${data.actualLabel || "Actual"} $${Number(data.actualDollars || 0).toFixed(3)} (₹${Number(data.actualRupees || 0).toFixed(2)}).`
-                : "Actual —.",
-              `Source: ${data.sourceLabel || "unknown"}.`,
-              data.latencyMs ? `Latency ${(Number(data.latencyMs) / 1000).toFixed(1)} s.` : "",
-              usage ? `Usage input ${usage.inputTokens || 0} (image ${usage.imageTokens || 0}, text ${usage.textTokens || 0}), output ${usage.outputTokens || 0}.` : "",
-            ].filter(Boolean).join(" ")
-          : "";
-        setNotice("");
-        const look: Look = {
-          id: data.id || crypto.randomUUID(),
-          styleId: chosen.id,
-          styleName: chosen.name,
-          shadeName: null,
-          before: shot.url,
-          after: pngUrl(String(data.imageBase64)),
-          rawFaceDrift: Boolean(data.rawFaceDrift),
-          faceScore: data.faceScore == null ? null : Number(data.faceScore),
-          modelLabel: String(data.model || data.provider || ""),
-          serviceKeys: chosen.serviceKeys,
-          tool: chosen.tool,
-          unvalidated: true,
-          referenceId: data.id,
-          showCost: Boolean(data.showCost),
-          detail,
-          clothingWarning: data.clothingWarning || "",
-        };
-        setActive(look);
-        setComparisons((current) => [...current.filter((item) => item.modelLabel !== look.modelLabel), look]);
-        setReferenceAck(false);
-        setStylePhase("result");
-        frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        const data = await res.json().catch(() => ({}));
+        setError(data.message || t(lang, "creditsEmpty"));
         return;
       }
       const out = await res.blob();
@@ -664,6 +523,17 @@ export function TryOnApp({
       previewLock.current = false;
       setBusy(false);
     }
+  }
+
+  async function tryLook() {
+    if (tool === "colour" || !styleId || busy) return;
+    const chosen =
+      tool === "style" ? config.styles.find((item) => item.id === styleId)
+      : tool === "brows" ? config.brows.find((item) => item.id === styleId)
+      : tool === "beard" ? config.beards.find((item) => item.id === styleId)
+      : config.nails.find((item) => item.id === styleId);
+    if (!chosen) return;
+    await preview({ id: chosen.id, name: chosen.name, serviceKeys: chosen.serviceKeys ?? [], tool });
   }
 
   function pickShade(id: string) {
@@ -707,7 +577,7 @@ export function TryOnApp({
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${config.slug}-${active.styleName}.${active.unvalidated ? "png" : "jpg"}`;
+    anchor.download = `${config.slug}-${active.styleName}.jpg`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -715,54 +585,50 @@ export function TryOnApp({
     track("download", { style: active.styleId });
   }
 
-  const tools: { id: TryTool; label: string; on: boolean }[] = [
-    { id: "style", label: t(lang, "hairStyle"), on: config.toolStyle },
-    { id: "colour", label: t(lang, "hairColour"), on: config.toolColour },
-    { id: "brows", label: t(lang, "brows"), on: config.toolBrows },
-    { id: "nails", label: t(lang, "nails"), on: config.toolNails },
-    { id: "beard", label: t(lang, "beardChip"), on: config.toolBeard },
+  const tools: { id: TryTool; label: string; name: string; on: boolean; icon: "style" | "colour" | "brows" | "nails" | "beard" }[] = [
+    { id: "style", label: "Style", name: t(lang, "hairStyle"), on: config.toolStyle, icon: "style" },
+    { id: "colour", label: "Colour", name: t(lang, "hairColour"), on: config.toolColour, icon: "colour" },
+    { id: "brows", label: "Brows", name: t(lang, "brows"), on: config.toolBrows, icon: "brows" },
+    { id: "nails", label: "Nails", name: t(lang, "nails"), on: config.toolNails, icon: "nails" },
+    { id: "beard", label: "Beard", name: t(lang, "beardChip"), on: config.toolBeard, icon: "beard" },
   ];
 
   return (
-    <div style={brandStyle(config.primaryColor, config.accentColor) as CSSProperties} className={embed ? "" : "mx-auto max-w-6xl px-4 pb-16 pt-4"}>
+    <div data-salon-mode={salonMode ? "yes" : "no"} className={embed ? "" : "mx-auto max-w-6xl px-4 pb-16 pt-4"}>
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           {config.logoUrl ? (
             <img src={config.logoUrl} alt="" className="h-12 w-12 shrink-0 rounded-[14px] border border-line bg-white object-cover" />
           ) : (
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] bg-[var(--brand-btn)] font-serif text-lg text-[var(--on-brand)]">{config.name.slice(0, 1)}</div>
+            <LookuviMark className="h-12 w-12 shrink-0" />
           )}
           <h1 className="min-w-0 text-balance font-serif text-xl leading-snug sm:text-2xl">{config.name}</h1>
         </div>
         <div className="flex gap-2">
-          <a className="btn flex-1 whitespace-nowrap sm:flex-none" href={bookHref || undefined} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
-          <a className="btn secondary flex-1 whitespace-nowrap sm:flex-none" href={chatHref || undefined} target="_blank" rel="noreferrer">{t(lang, "whatsappBtn")}</a>
+          <a className="btn brand flex-1 whitespace-nowrap sm:flex-none" href={bookHref || undefined} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
+          <a className="btn secondary flex-1 whitespace-nowrap sm:flex-none" href={chatHref || undefined} target="_blank" rel="noreferrer">
+            <WhatsAppGlyph />
+            {t(lang, "whatsappBtn")}
+          </a>
         </div>
       </header>
 
-      {demoMode && <p className="mb-2 text-sm text-muted" role="status">{t(lang, "demoNote")}</p>}
-      {salonMode && <p className="mb-2 text-sm" role="status">{t(lang, "salonModeOn")}</p>}
+      {demoMode && <p className="mb-2 text-sm text-muted" role="status">Demo</p>}
 
       <h2 className="page-title">{t(lang, "pageTitle")}</h2>
-      <p className="mt-2 max-w-xl text-base text-muted">{t(lang, "pageSubtitle")}</p>
-      <ol className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
-        <li>1. Upload photo</li>
-        <li>2. {t(lang, "chooseStyle")}</li>
-        <li>3. Generate preview</li>
-        <li>4. Compare</li>
-        <li>5. {t(lang, "saveLookHint")}</li>
-      </ol>
 
-      <div className="mt-4 flex flex-wrap gap-1 border-b border-line" role="tablist" aria-label={t(lang, "toolsLabel")}>
+      <div className="seg mt-4" role="tablist" aria-label={t(lang, "toolsLabel")}>
         {tools.filter((item) => item.on).map((item) => (
           <button
             key={item.id}
-            className="tab"
+            className="seg-btn"
             type="button"
             role="tab"
             aria-selected={tool === item.id}
+            aria-label={item.name}
             onClick={() => { setTool(item.id); setError(""); }}
           >
+            <ToolGlyph name={item.icon} />
             {item.label}
           </button>
         ))}
@@ -771,24 +637,10 @@ export function TryOnApp({
       <div className="mt-6 grid items-start gap-8 lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
       <div>
       <section ref={frameRef} className="overflow-hidden rounded-[14px] border border-line bg-white shadow-lift" aria-label="Photo">
-        {showResult && active?.unvalidated ? (
-          <div className="p-3">
-            <p className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-ink">Experimental, unvalidated</p>
-            <div className="grid grid-cols-2 gap-2">
-              <figure>
-                <figcaption className="mb-1 text-center text-[11px] text-muted">Original</figcaption>
-                <img src={active.before} alt="Original selfie" className="max-h-96 w-full object-contain" />
-              </figure>
-              <figure>
-                <figcaption className="mb-1 text-center text-[11px] text-muted">Raw provider image</figcaption>
-                <img src={active.after} alt="Raw provider image, experimental and unvalidated" className="max-h-96 w-full object-contain" />
-              </figure>
-            </div>
-          </div>
-        ) : showResult && active ? (
+        {showResult && active ? (
           <div>
             <BeforeAfter before={active.before} after={active.after} beforeLabel={t(lang, "before")} afterLabel={t(lang, "after")} />
-            {active.demo && <p className="bg-[var(--brand-btn)] px-4 py-3 text-center text-sm leading-6 text-[var(--on-brand)]" role="status">{t(lang, active.tool === "nails" ? "demoNailBanner" : "demoStyleBanner")}</p>}
+            {active.demo && <p className="px-4 py-2 text-center text-sm text-muted" role="status">Demo</p>}
           </div>
         ) : (
           <div className="relative aspect-[3/4]">
@@ -816,9 +668,8 @@ export function TryOnApp({
             )}
             {!cameraOn && !activeShot && (
               <div className="absolute inset-0 grid content-center justify-items-center gap-3 px-6">
-                {tool === "nails" && <p className="text-center text-lg text-ink">{t(lang, "uploadHand")}</p>}
                 <button className="btn min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "takeSelfie")}</button>
-                <button className="btn on-photo min-w-44" type="button" onClick={() => fileRef.current?.click()}>{tool === "nails" ? t(lang, "uploadHand") : t(lang, "uploadPhoto")}</button>
+                <button className="btn secondary min-w-44" type="button" onClick={() => fileRef.current?.click()}>{t(lang, "uploadPhoto")}</button>
                 {cameraError && (
                   <>
                     <p className="text-center text-sm text-[var(--bad)]" role="alert">{cameraError}</p>
@@ -864,7 +715,10 @@ export function TryOnApp({
 
       <label className="mt-3 flex min-h-11 items-center gap-3 text-sm">
         <input type="checkbox" className="h-5 w-5 shrink-0" checked={accepted} onChange={(event) => void acceptPrivacy(event.target.checked)} />
-        <span>{t(lang, "privacyLine")}</span>
+        <span>
+          {t(lang, "privacyLine")}{" "}
+          <a className="underline" href="/privacy">Details</a>
+        </span>
       </label>
 
       <input
@@ -895,9 +749,6 @@ export function TryOnApp({
         }}
       />
 
-      {activeShot && !showResult && (
-        <p className="mt-3 text-center text-sm">{tool === "colour" ? t(lang, "pickColour") : t(lang, "pickBelow")}</p>
-      )}
       {tool === "colour" && faceShot && (
         <label className="mt-3 block px-1 text-sm">
           {t(lang, "intensity")} · {intensity}
@@ -907,52 +758,14 @@ export function TryOnApp({
       {error && <p className="mt-3 text-center text-sm text-[var(--bad)]" role="alert">{error}</p>}
       {notice && <p className="mt-3 text-center text-sm" role="status">{notice}</p>}
 
+      {!showResult && tool !== "colour" && styleId && (
+        <button className="btn mt-4 w-full" type="button" disabled={busy} onClick={() => void tryLook()}>{t(lang, "tryThisLook")}</button>
+      )}
       {showResult && active && (
         <div className="mt-4 grid gap-2">
           <h3 className="text-center font-serif text-2xl">{active.styleName}</h3>
-          {active.unvalidated && (
-            <div className="rounded-xl border border-line bg-white p-3 text-sm leading-6">
-              <p>Experimental, unvalidated. The large image is the raw provider output. It was not accepted. The download is that raw image.</p>
-              {active.modelLabel && <p className="mt-2">Model {active.modelLabel}.</p>}
-              {active.rawFaceDrift && (
-                <p className="mt-2">
-                  Face may differ from your photo.
-                  {active.showCost && active.faceScore != null ? ` Score ${active.faceScore.toFixed(3)}.` : ""}
-                </p>
-              )}
-              {active.clothingWarning === "clothing_changed" && <p className="mt-2">Warning: the neckline or shoulder band changed.</p>}
-              {active.showCost && active.detail && <p className="mt-2">{active.detail}</p>}
-              {active.showCost && active.referenceId && (
-                <p className="mt-2 flex flex-wrap gap-3">
-                  <a className="underline" href={`/super/ai/benchmark/${active.referenceId}`}>Open saved stages</a>
-                  <button className="underline" type="button" onClick={() => void deleteReferenceRun()}>Delete now</button>
-                </p>
-              )}
-              <p className="mt-2 text-muted">Photos stay on this server for 72 hours. Real family photos are personal data and are sent only to the provider for the model you confirmed.</p>
-            </div>
-          )}
-          {comparisons.length > 1 && (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {comparisons.map((look) => (
-                <figure key={look.referenceId || look.id} className="rounded-xl border border-line bg-white p-3 text-sm leading-6">
-                  <figcaption className="font-medium">{look.modelLabel || look.styleName}</figcaption>
-                  <img src={look.after} alt="" className="mt-2 max-h-64 w-full object-contain" />
-                  {look.rawFaceDrift && (
-                    <p className="mt-2">
-                      Face may differ from your photo.
-                      {look.showCost && look.faceScore != null ? ` Score ${look.faceScore.toFixed(3)}.` : ""}
-                    </p>
-                  )}
-                  {look.showCost && look.detail && <p className="mt-2">{look.detail}</p>}
-                  <button className="mt-2 underline" type="button" onClick={() => setActive(look)}>Show this result</button>
-                </figure>
-              ))}
-            </div>
-          )}
-          <p className="text-center text-sm text-muted">{t(lang, active.tool === "brows" ? "browDisclaimer" : active.tool === "beard" ? "beardDisclaimer" : active.tool === "nails" ? "nailDisclaimer" : "disclaimer")}</p>
-          <p className="text-center text-sm font-semibold">{t(lang, "saveLookHint")}</p>
           <button className="btn" type="button" onClick={() => void downloadLook()}>{t(lang, "downloadLook")}</button>
-          <button className="btn" type="button" onClick={() => void book()}>{t(lang, "bookLook")}</button>
+          <button className="btn secondary" type="button" onClick={() => void book()}>{t(lang, "bookLook")}</button>
           <button className="btn secondary" type="button" onClick={() => resetForAnotherPhoto()}>{t(lang, "tryAnotherShort")}</button>
         </div>
       )}
@@ -961,107 +774,6 @@ export function TryOnApp({
       <section ref={gridRef} aria-label={tool === "style" ? t(lang, "styles") : tool === "colour" ? t(lang, "shades") : tool === "brows" ? t(lang, "brows") : tool === "beard" ? t(lang, "beards") : t(lang, "nails")}>
         {tool === "style" && (
           <>
-            {referenceModeAvailable && (
-              <div className="mb-3 rounded-2xl border border-line bg-white p-3 text-sm leading-6">
-                <label className="flex items-start gap-2 font-medium">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={referenceMode}
-                    onChange={(event) => {
-                      setReferenceMode(event.target.checked);
-                      if (!event.target.checked) setHairTexture("natural");
-                      setReferenceAck(false);
-                      setReferenceQuote(null);
-                      setReferenceChoice(null);
-                      if (!event.target.checked) setComparisons([]);
-                    }}
-                  />
-                  <span>Reference mode (test)</span>
-                </label>
-                <p className="mt-2 text-muted">
-                  Shown only on this super-admin session. Off, a hairstyle uses the normal preview. On, it sends your selfie and then the style photo, with no mask and no pasted face.
-                  The result is the raw provider image. Real family photos are personal data and are sent only to the provider for the model you confirm. Files stay on this server for 72 hours.
-                </p>
-                {referenceMode && comparisonModels.length > 0 && (
-                  <label className="mt-3 block font-medium">
-                    Comparison model
-                    <select
-                      className="mt-1 block w-full rounded-xl border border-line bg-white px-3 py-2"
-                      value={compareModel}
-                      onChange={(event) => {
-                        const next = event.target.value;
-                        setCompareModel(next);
-                        setReferenceAck(false);
-                        if (referenceChoice) void stageReference(referenceChoice, next);
-                      }}
-                    >
-                      {comparisonModels.map((model) => (
-                        <option key={model.id} value={model.id}>{model.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                {referenceMode && comparisonModels.find((model) => model.id === compareModel)?.warning && (
-                  <p className="mt-2 text-sm font-medium" role="status">
-                    {comparisonModels.find((model) => model.id === compareModel)?.warning}
-                  </p>
-                )}
-                {referenceMode && comparisonModels.length > 0 && (
-                  <p className="mt-2 text-muted">
-                    Each model is its own estimate, confirmation, and one call. Nothing runs until you confirm that model. There is no retry and no automatic substitution.
-                  </p>
-                )}
-                {referenceMode && (
-                  <label className="mt-3 block font-medium">
-                    Hair texture
-                    <select
-                      className="mt-1 block w-full rounded-xl border border-line bg-white px-3 py-2"
-                      value={hairTexture}
-                      onChange={(event) => {
-                        setHairTexture(parseAskedTexture(event.target.value));
-                        setReferenceAck(false);
-                      }}
-                    >
-                      <option value="natural">Keep natural</option>
-                      <option value="straight">Straight</option>
-                      <option value="wavy">Wavy</option>
-                      <option value="curly">Curly</option>
-                    </select>
-                  </label>
-                )}
-                {referenceMode && (
-                  <p className="mt-2 text-muted">
-                    Keep natural follows the texture already in the selfie. Image 2 still supplies the cut, length and silhouette. Straight, Wavy or Curly asks for that texture and is sent only when you change this.
-                  </p>
-                )}
-                {referenceMode && (referenceChoice || styleId) && (
-                  <ReferenceTextureWarning
-                    styleId={referenceChoice?.id || styleId}
-                    styleName={referenceChoice?.name || config.styles.find((item) => item.id === styleId)?.name || styleId}
-                    referenceTexture={config.styles.find((item) => item.id === (referenceChoice?.id || styleId))?.referenceTexture}
-                    asked={hairTexture}
-                  />
-                )}
-                {referenceMode && referenceQuote && referenceChoice && (
-                  <div className="mt-3 border-t border-line pt-3">
-                    <p>
-                      {referenceChoice.name}. {referenceQuote.model}, quality {referenceQuote.quality}, size {referenceQuote.size}. About ₹{referenceQuote.rupees.toFixed(2)} (${referenceQuote.dollars.toFixed(3)}).
-                    </p>
-                    {referenceQuote.warning && <p className="mt-1 font-medium" role="status">{referenceQuote.warning}</p>}
-                    <p className="mt-1 text-muted">{referenceQuote.note}</p>
-                    <label className="mt-2 flex items-start gap-2">
-                      <input type="checkbox" className="mt-1" checked={referenceAck} onChange={(event) => setReferenceAck(event.target.checked)} />
-                      <span>I understand this makes one paid call for this model and does not retry.</span>
-                    </label>
-                    <button className="btn mt-3" type="button" disabled={busy || !referenceAck} onClick={() => void preview(referenceChoice, true)}>
-                      Try this hairstyle
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-            <h3 className="section-title mb-3">{t(lang, "chooseStyle")}</h3>
             <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Style audience">
               {config.showWomen && <button className="chip" type="button" aria-pressed={gender === "women"} onClick={() => chooseGender("women")}>{t(lang, "women")}</button>}
               {config.showMen && <button className="chip" type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
@@ -1083,7 +795,7 @@ export function TryOnApp({
               onTexture={setPickedTexture}
               onShowAll={setShowAllStyles}
               onSuggest={() => void suggestHair()}
-              onPick={(card) => void preview({ id: card.id, name: card.name, serviceKeys: card.serviceKeys, tool: "style" })}
+              onPick={(card) => selectLook({ id: card.id, name: card.name, serviceKeys: card.serviceKeys, tool: "style" })}
             />
             {config.hairPickerOn && (pickedDensity || pickedTexture) && visibleStyles.length === 0 && (
               <p className="mb-2 text-sm">No style photos for that hair type. Turn on Show all.</p>
@@ -1095,7 +807,7 @@ export function TryOnApp({
                   type="button"
                   aria-pressed={style.id === styleId}
                   className={pickClass(style.id === styleId)}
-                  disabled={busy} onClick={() => void preview({ id: style.id, name: style.name, serviceKeys: style.serviceKeys, tool: "style" })}
+                  disabled={busy} onClick={() => selectLook({ id: style.id, name: style.name, serviceKeys: style.serviceKeys, tool: "style" })}
                 >
                   <PickMark on={style.id === styleId} />
                   <StyleCard id={style.id} name={style.name} />
@@ -1127,7 +839,7 @@ export function TryOnApp({
         {tool === "brows" && (
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
             {config.brows.map((brow) => (
-              <button key={brow.id} type="button" aria-pressed={brow.id === styleId} className={pickClass(brow.id === styleId)} disabled={busy} onClick={() => void preview({ id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" })}>
+              <button key={brow.id} type="button" aria-pressed={brow.id === styleId} className={pickClass(brow.id === styleId)} disabled={busy} onClick={() => selectLook({ id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" })}>
                 <PickMark on={brow.id === styleId} />
                 <StyleCard id={brow.id} name={brow.name} folder="brows" />
                 <span className="block px-2 py-2 text-center text-sm font-medium">{brow.name}</span>
@@ -1139,7 +851,7 @@ export function TryOnApp({
         {tool === "beard" && (
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
             {config.beards.map((beard) => (
-              <button key={beard.id} type="button" aria-pressed={beard.id === styleId} className={pickClass(beard.id === styleId)} disabled={busy} onClick={() => void preview({ id: beard.id, name: beard.name, serviceKeys: beard.serviceKeys, tool: "beard" })}>
+              <button key={beard.id} type="button" aria-pressed={beard.id === styleId} className={pickClass(beard.id === styleId)} disabled={busy} onClick={() => selectLook({ id: beard.id, name: beard.name, serviceKeys: beard.serviceKeys, tool: "beard" })}>
                 <PickMark on={beard.id === styleId} />
                 <StyleCard id={beard.id} name={beard.name} folder="beards" />
                 <span className="block px-2 py-2 text-center text-sm font-medium">{beard.name}</span>
@@ -1151,7 +863,7 @@ export function TryOnApp({
         {tool === "nails" && (
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
             {config.nails.map((nail) => (
-              <button key={nail.id} type="button" aria-pressed={nail.id === styleId} className={pickClass(nail.id === styleId)} disabled={busy} onClick={() => void preview({ id: nail.id, name: nail.name, serviceKeys: nail.serviceKeys, tool: "nails" })}>
+              <button key={nail.id} type="button" aria-pressed={nail.id === styleId} className={pickClass(nail.id === styleId)} disabled={busy} onClick={() => selectLook({ id: nail.id, name: nail.name, serviceKeys: nail.serviceKeys, tool: "nails" })}>
                 <PickMark on={nail.id === styleId} />
                 <StyleCard id={nail.id} name={nail.name} folder="nails" />
                 <span className="block px-2 py-2 text-center text-sm font-medium">{nail.name}</span>
@@ -1161,6 +873,37 @@ export function TryOnApp({
         )}
       </section>
       </div>
+      {config.poweredBy && (
+        <p className="mt-10 flex items-center justify-center gap-2 text-xs text-muted">
+          <LookuviMark className="h-4 w-4" />
+          Powered by Lookuvi
+        </p>
+      )}
     </div>
   );
+}
+
+function WhatsAppGlyph() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="#1F7A4D">
+      <path d="M12 3a9 9 0 0 0-7.8 13.4L3 21l4.7-1.2A9 9 0 1 0 12 3zm5 12.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-.9.2-2.6-.6-2.2-.9-3.6-3.1-3.7-3.2-.1-.2-1-1.3-1-2.5s.6-1.8.9-2c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .5.4.2.6.7 1.8.7 1.9.1.2 0 .3-.1.5l-.3.4c-.1.1-.2.2-.1.4.2.3.7 1.1 1.5 1.8 1 .8 1.8 1.1 2.1 1.2.2.1.4.1.5-.1l.4-.5c.1-.2.3-.2.5-.1.2.1 1.4.7 1.6.8.2.1.4.2.4.3.1.2 0 .8-.2 1.3z" />
+    </svg>
+  );
+}
+
+function ToolGlyph({ name }: { name: "style" | "colour" | "brows" | "nails" | "beard" }) {
+  const common = { viewBox: "0 0 24 24", className: "h-4 w-4", fill: "none", stroke: "currentColor", strokeWidth: 1.8, "aria-hidden": true } as const;
+  if (name === "colour") {
+    return <svg {...common}><circle cx="12" cy="12" r="7" /><circle cx="9" cy="10" r="1" fill="currentColor" /><circle cx="14" cy="9" r="1" fill="currentColor" /><circle cx="15" cy="13" r="1" fill="currentColor" /></svg>;
+  }
+  if (name === "brows") {
+    return <svg {...common}><path d="M4 14c2-4 5-6 8-6s6 2 8 6" strokeLinecap="round" /></svg>;
+  }
+  if (name === "nails") {
+    return <svg {...common}><path d="M8 14V8a2 2 0 0 1 4 0v6M12 14V7a2 2 0 0 1 4 0v7" strokeLinecap="round" /></svg>;
+  }
+  if (name === "beard") {
+    return <svg {...common}><path d="M8 9c0 6 2 9 4 9s4-3 4-9" strokeLinecap="round" /></svg>;
+  }
+  return <svg {...common}><circle cx="7" cy="8" r="2.2" /><circle cx="16" cy="15" r="2.2" /><path d="M9 9.5 14.5 14" strokeLinecap="round" /></svg>;
 }

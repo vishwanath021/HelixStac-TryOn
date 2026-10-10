@@ -62,17 +62,10 @@ async function main() {
     },
   });
 
-  const previousBrand = tenant.primaryColor.toUpperCase();
-  if (previousBrand === "#C4622D" || previousBrand === "#0E7C74") {
-    const previousAccent = tenant.accentColor.toUpperCase();
-    await prisma.tenant.update({
-      where: { id: tenant.id },
-      data: {
-        primaryColor: "#69517D",
-        accentColor: previousAccent === "#241C16" || previousAccent === "#E9897A" ? "#B6A0C9" : tenant.accentColor,
-      },
-    });
-  }
+  await prisma.tenant.update({
+    where: { id: tenant.id },
+    data: { primaryColor: "#69517D", accentColor: "#B6A0C9" },
+  });
 
   const services = [
     { key: "haircut", name: "Haircut", priceInr: 499, durationMin: 45 },
@@ -137,8 +130,8 @@ async function main() {
   });
   const superAdmin = await prisma.user.upsert({
     where: { email: "super@helixstac.app" },
-    update: { passwordHash: superHash, name: "HelixStac Admin", isSuperAdmin: true },
-    create: { email: "super@helixstac.app", name: "HelixStac Admin", passwordHash: superHash, isSuperAdmin: true },
+    update: { passwordHash: superHash, name: "Lookuvi Admin", isSuperAdmin: true },
+    create: { email: "super@helixstac.app", name: "Lookuvi Admin", passwordHash: superHash, isSuperAdmin: true },
   });
   await prisma.membership.upsert({
     where: { userId_tenantId: { userId: owner.id, tenantId: tenant.id } },

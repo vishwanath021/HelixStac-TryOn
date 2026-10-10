@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { actualHeading, capPaise, costSourceLabel, falPriceListUsd, matchFalBillingEvents } from "@/lib/ai/cost-source";
+import { actualHeading, capPaise, costSourceLabel, falBilledMegapixels, falPriceListUsd, FLUX3_USD_PER_OUTPUT_MEGAPIXEL, matchFalBillingEvents } from "@/lib/ai/cost-source";
 import { syncFalBillingCosts } from "@/lib/ai/fal-billing";
 import { beginPaidCall, finalizePaidCall, spendSummary } from "@/lib/ai/spend";
 import { costReport } from "@/lib/ai/cost-report";
@@ -26,20 +26,21 @@ describe("cost source", () => {
   });
 
   it("computes fal actual from the documented unit and the downloaded size", () => {
-    const portrait = falPriceListUsd({
+    expect(FLUX3_USD_PER_OUTPUT_MEGAPIXEL).toBe(0.024);
+    expect(falBilledMegapixels(832, 1248)).toBe(1);
+    const billedRun = falPriceListUsd({
+      model: "blackforestlabs/flux-3/edit-image",
+      outputWidth: 832,
+      outputHeight: 1248,
+      at: new Date("2026-10-10T12:00:00Z"),
+    });
+    expect(billedRun).toEqual({ usd: 0.024, unit: "output megapixels" });
+    const larger = falPriceListUsd({
       model: "blackforestlabs/flux-3/edit-image",
       outputWidth: 1024,
       outputHeight: 1536,
-      at: new Date("2026-10-07T12:00:00Z"),
     });
-    expect(portrait).toEqual({ usd: Math.round((1024 * 1536 / 1_000_000) * 0.024 * 1_000_000) / 1_000_000, unit: "output megapixels" });
-    const afterLaunch = falPriceListUsd({
-      model: "blackforestlabs/flux-3/edit-image",
-      outputWidth: 1024,
-      outputHeight: 1536,
-      at: new Date("2026-10-08T00:00:00Z"),
-    });
-    expect(afterLaunch?.usd).toBeCloseTo((1024 * 1536 / 1_000_000) * 0.048, 6);
+    expect(larger?.usd).toBe(falBilledMegapixels(1024, 1536) * FLUX3_USD_PER_OUTPUT_MEGAPIXEL);
     expect(falPriceListUsd({ model: "fal-ai/nano-banana-pro/edit", outputWidth: 12, outputHeight: 18 })?.usd).toBe(0.15);
     expect(falPriceListUsd({ model: "openai/gpt-image-2/edit", outputWidth: 1024, outputHeight: 1536 })).toBeNull();
   });

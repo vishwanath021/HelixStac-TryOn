@@ -1,5 +1,5 @@
 export function brandName() {
-  return process.env.BRAND_NAME || "HelixStac TryOn";
+  return process.env.BRAND_NAME || "Lookuvi";
 }
 
 export function appBaseUrl() {

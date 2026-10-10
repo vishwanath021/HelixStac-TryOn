@@ -4,11 +4,11 @@ import { PrivacyRequest } from "@/components/PrivacyRequest";
 export default function PrivacyPage() {
   return (
     <main className="mx-auto max-w-2xl px-5 py-10">
-      <p className="text-sm text-muted"><Link href="/">HelixStac TryOn</Link></p>
+      <p className="text-sm text-muted"><Link href="/">Lookuvi</Link></p>
       <h1 className="mt-3 page-title">Privacy</h1>
       <p className="mt-2 text-sm text-muted">Template for the platform and for each salon. Have a lawyer review it before you rely on it. Version 2026-10-03.</p>
       <div className="mt-6 space-y-4 text-sm leading-7">
-        <p>The salon is the data fiduciary for its guests. HelixStac is the processor for the try-on software. Face photos are personal data.</p>
+        <p>The salon is the data fiduciary for its guests. Lookuvi is the processor for the try-on software. Face photos are personal data.</p>
         <p>Live hair colour runs in the browser with a self-hosted MediaPipe model. That photo is not uploaded.</p>
         <p>A style preview sends the selfie and a style id to our server. The server holds the prompt, calls the configured image provider, and returns the image. The bytes stay in memory. They are not written to disk, the database, analytics, or logs. The response is <span className="font-medium">Cache-Control: no-store</span>.</p>
         <p>We do store a consent log (session id, purpose, text version, language, time, a short hash of the browser string), usage events without photos, and booking leads if the guest taps Book.</p>

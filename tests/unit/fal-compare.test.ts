@@ -132,7 +132,7 @@ describe("fal and shutdown catalogue", () => {
     expect(comparisonModel("gpt-image-2")?.provider).toBe("openai");
     expect(comparisonModel("openai/gpt-image-2/edit")?.provider).toBe("fal");
     const usd: Record<string, number> = {
-      "blackforestlabs/flux-3/edit-image": (1024 * 1536) / 1_000_000 * 0.048,
+      "blackforestlabs/flux-3/edit-image": 0.024,
       "fal-ai/nano-banana-pro/edit": 0.15,
       "fal-ai/nano-banana-2/edit": 0.08,
       "bytedance/seedream/v5/lite/edit": 0.035,

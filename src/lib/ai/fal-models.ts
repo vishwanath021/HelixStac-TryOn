@@ -1,4 +1,5 @@
 import { benchmarkRunCapInr } from "@/lib/ai/benchmark";
+import { FLUX3_USD_PER_OUTPUT_MEGAPIXEL } from "@/lib/ai/cost-source";
 import { editSizeForAspect, type EditSize } from "@/lib/ai/edit-request";
 import { bufferedInr, exactInr } from "@/lib/ai/tiers";
 
@@ -192,10 +193,11 @@ export function falUsdRange(
     };
   }
   if (id === "blackforestlabs/flux-3/edit-image") {
+    const usd = FLUX3_USD_PER_OUTPUT_MEGAPIXEL;
     return {
-      lowUsd: outMp * 0.024,
-      highUsd: outMp * 0.048,
-      detail: "$0.024 per output megapixel is the launch price until 8 Oct 2026, then $0.048. The cap uses $0.048. image_urls accepts 1–10 images. aspect_ratio is sent (2:3, 3:2, or 1:1). Resolution stays at the 1k default.",
+      lowUsd: usd,
+      highUsd: usd,
+      detail: `$${FLUX3_USD_PER_OUTPUT_MEGAPIXEL} per output megapixel, one config value. The request leaves resolution at 1k, which fal bills as 1.00 megapixel. A downloaded 832×1248 frame is the same 1.00. The 8% buffer is applied to this figure. image_urls accepts 1–10 images. aspect_ratio is sent (2:3, 3:2, or 1:1).`,
     };
   }
   if (id === "fal-ai/nano-banana-pro/edit") {

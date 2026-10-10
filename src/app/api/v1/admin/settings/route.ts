@@ -53,7 +53,7 @@ export async function PUT(req: Request) {
   const plan = planById(access.tenant.plan);
   const data = parsed.data;
   if (data.removeBranding && !plan.removeBranding) {
-    return NextResponse.json({ error: "PLAN", message: "Removing the HelixStac mark needs Pro or Chain." }, { status: 403 });
+    return NextResponse.json({ error: "PLAN", message: "Removing the Lookuvi mark needs Pro or Chain." }, { status: 403 });
   }
   const languages = data.languages?.filter(isLocale);
   if (languages && plan.languages && languages.length > plan.languages) {

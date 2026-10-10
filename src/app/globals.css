@@ -76,6 +76,9 @@ textarea { min-height: 48px; }
   letter-spacing: 0;
   cursor: pointer;
 }
+.btn.brand { background: var(--aubergine); color: #fff; }
+.btn.brand:hover:not(:disabled),
+.btn.brand:active:not(:disabled) { background: #2f243a; }
 .btn:hover:not(:disabled) { background: var(--brand-btn-hover, #584269); }
 .btn:active:not(:disabled) { background: var(--brand-btn-hover, #584269); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -175,6 +178,52 @@ textarea { min-height: 48px; }
   color: #fff;
   font-size: 14px;
   line-height: 1;
+}
+
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+}
+.seg-btn {
+  display: inline-flex;
+  flex: 1 1 7.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 48px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--aubergine);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.seg-btn[aria-selected="true"] {
+  background: var(--aubergine);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .btn, .seg-btn, .chip {
+    transition: transform 90ms ease, box-shadow 90ms ease, background-color 90ms ease;
+  }
+  .btn:active:not(:disabled),
+  .seg-btn:active,
+  .chip:active {
+    transform: scale(0.97);
+    box-shadow: 0 1px 2px rgba(62, 48, 75, 0.18);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

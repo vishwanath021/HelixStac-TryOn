@@ -18,7 +18,7 @@ import { captureShouldMirror, visiblePortraitCrop } from "@/lib/capture";
 import { drawFrontal } from "@/lib/face/synthetic";
 import { runLockedEdit } from "@/lib/face/pipeline";
 import { prisma } from "@/lib/prisma";
-import { referenceModeActive, showReferenceToggle } from "@/lib/ai/reference-mode";
+import { showReferenceToggle } from "@/lib/ai/reference-mode";
 import { executeReferenceEdit, tryOnReferencePayload, type ReferenceSuccess } from "@/lib/ai/reference-run";
 import { buildReferencePrompt, buildStylePrompt } from "@/lib/prompts";
 import type { SalonConfig } from "@/lib/salon";
@@ -356,35 +356,25 @@ const salonConfig = {
 } satisfies SalonConfig;
 
 describe("salon reference switch", () => {
-  it("keeps guests off the switch and keeps an unrequested try-on on the production path", () => {
+  it("keeps the guest page off the old test toggle", () => {
     delete process.env.TRYON_REFERENCE_MODE;
     expect(showReferenceToggle(false)).toBe(false);
-    expect(showReferenceToggle(true)).toBe(true);
-    expect(referenceModeActive({ isSuperAdmin: false, requested: true, tool: "style" })).toBe(false);
-    expect(referenceModeActive({ isSuperAdmin: true, requested: false, tool: "style" })).toBe(false);
-    expect(referenceModeActive({ isSuperAdmin: true, requested: true, tool: "beard" })).toBe(false);
-    expect(referenceModeActive({ isSuperAdmin: true, requested: true, tool: "style" })).toBe(true);
-    process.env.TRYON_REFERENCE_MODE = "on";
-    expect(showReferenceToggle(false)).toBe(false);
-    expect(referenceModeActive({ isSuperAdmin: false, requested: false, tool: "style" })).toBe(false);
-    expect(referenceModeActive({ isSuperAdmin: false, requested: true, tool: "style" })).toBe(true);
-    delete process.env.TRYON_REFERENCE_MODE;
-    const hidden = renderToStaticMarkup(createElement(TryOnApp, { config: salonConfig, referenceModeAvailable: false }));
-    const shown = renderToStaticMarkup(createElement(TryOnApp, { config: salonConfig, referenceModeAvailable: true }));
-    expect(hidden).not.toContain("Reference mode");
-    expect(hidden).not.toContain("Hair-only composite");
-    expect(hidden).not.toContain("Hair texture");
-    expect(shown).toContain("Reference mode (test)");
-    expect(shown).not.toContain("Hair-only composite");
-    expect(shown).not.toContain("Hair texture");
+    const guest = renderToStaticMarkup(createElement(TryOnApp, { config: salonConfig }));
+    expect(guest).not.toContain("Reference mode");
+    expect(guest).not.toContain("Hair-only composite");
+    expect(guest).not.toContain("Hair texture");
+    expect(guest).toContain("See your next look.");
+    expect(guest).toContain("Take selfie");
     const guestSource = readFileSync("src/components/tryon/TryOnApp.tsx", "utf8");
+    expect(guestSource).toContain("tryThisLook");
     expect(guestSource).not.toContain("Hair-only composite");
-    expect(guestSource.indexOf("Hair texture")).toBeGreaterThan(guestSource.indexOf("referenceMode &&"));
+    expect(guestSource).not.toContain("referenceMode");
     const page = readFileSync("src/app/s/[slug]/page.tsx", "utf8");
     const route = readFileSync("src/app/api/v1/tryon/generate/route.ts", "utf8");
-    expect(page).toContain("showReferenceToggle");
-    expect(route.indexOf("return runTryOnReference")).toBeLessThan(route.indexOf("await generateWithFailover"));
-    expect(route).toContain("runTryOnReference");
+    expect(page).not.toContain("showReferenceToggle");
+    expect(route).toContain("runGuestHairstyleIfReady");
+    expect(route.indexOf("runGuestHairstyleIfReady")).toBeLessThan(route.indexOf("await generateWithFailover"));
+    expect(route).not.toMatch(/gpt-image/);
   });
 
   it("hides the actual cost unless the viewer is a super-admin", () => {

@@ -1,5 +1,6 @@
 "use client";
 
+import { LookuviLockup } from "@/components/brand/LookuviMark";
 import { signIn } from "next-auth/react";
 import { useEffect, useState } from "react";
 
@@ -42,7 +43,8 @@ export function LoginForm() {
 
   return (
     <div className="card mx-auto max-w-md p-6">
-      <h1 className="page-title">Salon login</h1>
+      <LookuviLockup />
+      <h1 className="page-title mt-6">Salon login</h1>
       <p className="mt-2 text-sm text-muted">Owners and staff use email and password. Magic link works when email is configured. In local dev the link can appear here.</p>
       <form className="mt-4 space-y-3" data-ready={ready ? "yes" : "no"} onSubmit={onPassword}>
         <label className="block text-sm">Email

@@ -13,7 +13,7 @@ export const revalidate = 0;
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const tenant = await loadTenantBySlug(slug);
-  const name = tenant?.name || "HelixStac TryOn";
+  const name = tenant?.name || "Lookuvi";
   return { title: { absolute: `${name} QR` } };
 }
 

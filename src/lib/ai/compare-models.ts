@@ -134,7 +134,13 @@ function quoteGemini(modelId: string) {
   };
 }
 
-export function quoteComparisonModel(modelId: string, width: number, height: number, reference = { width: 512, height: 512 }) {
+export function quoteComparisonModel(
+  modelId: string,
+  width: number,
+  height: number,
+  reference = { width: 512, height: 512 },
+  quality?: EditQuality,
+) {
   const row = comparisonModel(modelId);
   if (!row) {
     return { ok: false as const, message: `${modelId} is not a configured comparison model. No other model was substituted.` };
@@ -165,9 +171,10 @@ export function quoteComparisonModel(modelId: string, width: number, height: num
     : tokenOnly
       ? "Estimate from the model page token rates (text input $5/1M, image input $8/1M, image output $30/1M). That page has no per-image output cell, and it says the GPT Image 2 calculator does not estimate 2.5 token counts. Output tokens use the gpt-image-2 allowance. input_fidelity is omitted because the GPT Image 2.5 parameter table does not list it. The explicit omit sentence is written for gpt-image-2. Not an invoice."
       : "Estimate, actual from provider usage. input_fidelity is omitted for this model. Image-input tokens use the 1536×1024 calibration with a 15% margin. Output tokens use the pre-gpt-image-2 guide table as an allowance, priced at this model's own rates. Not an invoice.";
+  const askedQuality = quality && caps.qualities.includes(quality) ? quality : benchmarkQuality();
   const quoted = quoteModelEdit({
     model: row.id,
-    quality: benchmarkQuality(),
+    quality: askedQuality,
     width,
     height,
     reference,
@@ -178,7 +185,7 @@ export function quoteComparisonModel(modelId: string, width: number, height: num
   return { ...quoted, provider: "openai" as const, warning: row.warning, rangeLowInr: null as number | null, rangeHighInr: null as number | null };
 }
 
-export async function prepareComparison(args: { jpeg: Buffer; styleId: string; colourName?: string; texture?: AskedTexture; modelId: string }) {
+export async function prepareComparison(args: { jpeg: Buffer; styleId: string; colourName?: string; texture?: AskedTexture; modelId: string; quality?: EditQuality }) {
   const row = comparisonModel(args.modelId);
   if (!row) {
     return { ok: false as const, message: `${args.modelId} is not a configured comparison model. No other model was substituted.` };
@@ -207,7 +214,7 @@ export async function prepareComparison(args: { jpeg: Buffer; styleId: string; c
   const width = selfieMeta.width || 0;
   const height = selfieMeta.height || 0;
   if (!width || !height) return { ok: false as const, message: "The selfie could not be read." };
-  const quote = quoteComparisonModel(row.id, width, height, { width: referenceMeta.width || 512, height: referenceMeta.height || 512 });
+  const quote = quoteComparisonModel(row.id, width, height, { width: referenceMeta.width || 512, height: referenceMeta.height || 512 }, args.quality);
   if (!quote.ok) return quote;
   const prompt = row.provider === "fal" && falUsesNumberedPrompt(row.id)
     ? FAL_NUMBERED_IMAGE_PROMPT

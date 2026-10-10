@@ -27,7 +27,7 @@ export async function PUT(req: Request) {
   } catch (error) {
     const code = error instanceof Error ? error.message : "";
     if (code === "BYO_OFF") {
-      return NextResponse.json({ error: "BYO_OFF", message: "This salon uses the platform key. Ask HelixStac to turn on a salon key." }, { status: 403 });
+      return NextResponse.json({ error: "BYO_OFF", message: "This salon uses the platform key. Ask Lookuvi to turn on a salon key." }, { status: 403 });
     }
     if (code === "INVALID_KEY") {
       return NextResponse.json({ error: "INVALID_KEY", message: "Paste the provider key. It is stored encrypted and is not shown again." }, { status: 400 });

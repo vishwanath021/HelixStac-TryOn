@@ -19,7 +19,7 @@ export default async function AdminAiPage() {
     <main>
       <h1 className="mb-2 page-title">AI settings</h1>
       <p className="mb-4 max-w-xl text-sm leading-6">
-        Guests use Test until you select Medium or High. Medium and High stay unavailable until HelixStac turns them on.
+        Guests use Test until you select Medium or High. Medium and High stay unavailable until Lookuvi turns them on.
       </p>
       <SalonAiForm initial={initial} showKey={initial.allowByo} />
     </main>

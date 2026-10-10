@@ -116,7 +116,7 @@ export function SettingsForm({
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.removeBranding} disabled={!canRemoveBranding} onChange={(event) => set("removeBranding", event.target.checked)} />
-          Remove “Powered by HelixStac” {canRemoveBranding ? "" : "(Pro or Chain)"}
+          Remove “Powered by Lookuvi” {canRemoveBranding ? "" : "(Pro or Chain)"}
         </label>
         <button className="btn" type="submit">Save</button>
       </form>

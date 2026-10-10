@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { GuestEngine } from "@/lib/ai/guest-hairstyle";
 import type { PlatformAiSettings } from "@/lib/ai/settings-store";
 import { productionModelNotice } from "@/lib/ai/model-notices";
 import type { ImageProviderName, TierRequest } from "@/lib/ai/tiers";
@@ -19,7 +20,13 @@ type Panel = {
   chargedInr?: number;
 };
 
-export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
+export function SuperAiForm({
+  initial,
+  salons,
+}: {
+  initial: PlatformAiSettings;
+  salons: { id: string; name: string; hairstyleEngine: string }[];
+}) {
   const [provider, setProvider] = useState<ImageProviderName>(initial.provider);
   const [tier, setTier] = useState(initial.tier);
   const [apiKey, setApiKey] = useState("");
@@ -37,6 +44,10 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
   const [openRouterKey, setOpenRouterKey] = useState(initial.openRouterKey);
   const [openRouterDraft, setOpenRouterDraft] = useState("");
   const [openRouterEnabled, setOpenRouterEnabled] = useState(initial.openRouterKey.enabled);
+  const [guestEngine, setGuestEngine] = useState<GuestEngine>(initial.guestEngine || "fal");
+  const [salonRows, setSalonRows] = useState(salons);
+  const [salonId, setSalonId] = useState(salons[0]?.id || "");
+  const [salonEngine, setSalonEngine] = useState(salons[0]?.hairstyleEngine || "");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [panels, setPanels] = useState<Panel[]>([]);
@@ -58,6 +69,46 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
     setCalibrationOk(data.calibrationOk);
     if (data.tier) setTier(data.tier);
     if (data.provider) setProvider(data.provider);
+    if (data.guestEngine === "fal" || data.guestEngine === "openai") setGuestEngine(data.guestEngine);
+  }
+
+  async function saveGuest(engine: GuestEngine) {
+    setBusy(true);
+    setMessage("");
+    const res = await fetch("/api/v1/super/ai", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ guestEngineOnly: true, guestEngine: engine }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setMessage(data.message || "Could not save the salon hairstyle model.");
+      return;
+    }
+    applyView(data);
+    setMessage(engine === "fal" ? "Salon screens use FLUX.3." : "Salon screens use OpenAI sunburst, quality medium.");
+  }
+
+  async function saveSalon(engine: string) {
+    if (!salonId) return;
+    setBusy(true);
+    setMessage("");
+    const res = await fetch("/api/v1/super/ai", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ salonEngineOnly: true, salonId, salonEngine: engine }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setMessage(data.message || "Could not save that salon override.");
+      return;
+    }
+    setSalonRows((rows) => rows.map((row) => (row.id === salonId ? { ...row, hairstyleEngine: engine } : row)));
+    setSalonEngine(engine);
+    setMessage(engine ? "That salon uses its own hairstyle model." : "That salon follows the global default.");
+    if (data.guestEngine) applyView(data);
   }
 
   async function save() {
@@ -173,6 +224,45 @@ export function SuperAiForm({ initial }: { initial: PlatformAiSettings }) {
         void save();
       }}
     >
+      <fieldset className="grid gap-3 border-b border-line pb-4" aria-label="Salon hairstyle model">
+        <legend className="text-base font-semibold">Salon hairstyle model</legend>
+        <p className="text-sm text-muted">Guests use this model. Comparison stays on this page.</p>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input type="radio" name="guest-engine" checked={guestEngine === "fal"} onChange={() => setGuestEngine("fal")} />
+          fal FLUX.3 (default)
+        </label>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input type="radio" name="guest-engine" checked={guestEngine === "openai"} onChange={() => setGuestEngine("openai")} />
+          OpenAI gpt-image-2.5-sunburst, quality medium
+        </label>
+        <button className="btn w-fit" type="button" disabled={busy} onClick={() => void saveGuest(guestEngine)}>Save salon default</button>
+        <label className="text-sm">
+          Salon override
+          <select
+            className="field mt-1"
+            aria-label="Salon override"
+            value={salonId}
+            onChange={(event) => {
+              const next = event.target.value;
+              setSalonId(next);
+              setSalonEngine(salonRows.find((row) => row.id === next)?.hairstyleEngine || "");
+            }}
+          >
+            {salonRows.map((salon) => (
+              <option key={salon.id} value={salon.id}>{salon.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          This salon
+          <select className="field mt-1" aria-label="This salon model" value={salonEngine} onChange={(event) => setSalonEngine(event.target.value)}>
+            <option value="">Use global default</option>
+            <option value="fal">fal FLUX.3</option>
+            <option value="openai">OpenAI sunburst</option>
+          </select>
+        </label>
+        <button className="btn secondary w-fit" type="button" disabled={busy || !salonId} onClick={() => void saveSalon(salonEngine)}>Save override</button>
+      </fieldset>
       <p role="status">
         Charged against the cap: ₹{initial.spend.spentInr.toFixed(2)} of ₹{initial.spend.capInr.toFixed(0)} ({initial.spend.calls} calls).
       </p>

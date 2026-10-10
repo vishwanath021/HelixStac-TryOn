@@ -52,6 +52,8 @@ model Tenant {
   aiKeyCipher         String    @default("")
   aiKeyHint           String    @default("")
   aiTier              String    @default("")
+  /** Empty inherits the platform guest hairstyle engine (fal or openai). */
+  hairstyleEngine     String    @default("")
   onboardingDone      Boolean   @default(false)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
