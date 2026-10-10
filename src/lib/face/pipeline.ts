@@ -12,7 +12,7 @@ import {
   type HairExtent,
   type RegionTool,
 } from "@/lib/face/region";
-import type { FaceLandmark } from "@/lib/face/pose";
+import type { FaceLandmark, PlacementDebug } from "@/lib/face/pose";
 import { SpendCapError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
 import type { GenerateOutput } from "@/lib/ai/types";
 
@@ -33,6 +33,7 @@ export type LockedEdit =
       message: string;
       callId?: string;
       detail?: string;
+      debug?: PlacementDebug;
     };
 
 function changedPixels(original: Buffer, next: Buffer, width: number, height: number) {
@@ -110,7 +111,12 @@ export async function runLockedEdit(args: {
   const locked = args.skipLock ? edited : compositeLocked(decoded.data, edited, report.feather);
   const outside = await outsideMaskDelta(decoded.data, locked, report.feather);
   const spill = disallowedChange(args.tool, report.face, changedPixels(decoded.data, locked, decoded.width, decoded.height), decoded.width, decoded.height);
-  if (outside !== 0 || spill > 0.02) return { ok: false, calls, reason: "postcheck", message: TRY_ANOTHER_PHOTO, callId: last.callId };
+  if (outside !== 0 || spill > 0.02) {
+    const value = Math.round(spill * 1000) / 1000;
+    const debug = report.debug ? { ...report.debug, failed: "zone", value } : undefined;
+    const message = args.tool === "brows" ? "The brow edit reached outside the eyebrows. Look straight at the camera and try again." : TRY_ANOTHER_PHOTO;
+    return { ok: false, calls, reason: "postcheck", message, callId: last.callId, debug };
+  }
 
   const image = await sharp(locked, { raw: { width: decoded.width, height: decoded.height, channels: 3 } }).jpeg({ quality: 90 }).toBuffer();
   return { ok: true, image, calls, output: last };

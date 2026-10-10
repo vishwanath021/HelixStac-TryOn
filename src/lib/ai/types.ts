@@ -1,5 +1,5 @@
 import type { ModelTier, UsageNumbers } from "@/lib/ai/tiers";
-import type { FaceLandmark } from "@/lib/face/pose";
+import type { FaceLandmark, PlacementDebug } from "@/lib/face/pose";
 
 export type PreviewQuality = "standard" | "hd";
 
@@ -38,6 +38,9 @@ export type GenerateOutput = {
   imageSize?: string;
   usage?: UsageNumbers;
   costSource?: "usage" | "estimate";
+  /** Set when a placement or outside-zone check refused the photo. */
+  placementMessage?: string;
+  placementDebug?: PlacementDebug;
 };
 
 export interface ImageStyleProvider {

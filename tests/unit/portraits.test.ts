@@ -7,7 +7,7 @@ import type { FaceLandmark } from "@/lib/face/pose";
 
 const dir = path.join(process.cwd(), "tests/fixtures/portraits");
 
-const FRONTAL = ["curly-freckles", "glasses-beard", "glasses-outdoor", "malayali-beard", "phone-smile", "woman-pink"];
+const FRONTAL = ["bindi-smile", "curly-freckles", "glasses-beard", "glasses-outdoor", "malayali-beard", "phone-smile", "woman-pink"];
 
 async function place(name: string, tool: "brows" | "beard") {
   const jpeg = readFileSync(path.join(dir, `${name}.jpg`));
@@ -26,14 +26,20 @@ describe("realistic portrait fixtures", () => {
     }
   });
 
-  it("accepts frontal photos for brows and beard, including glasses, a beard, and a hand beside the face", async () => {
+  it("accepts frontal photos for brows and beard, including a bindi, glasses, a beard, and a hand beside the face", async () => {
     for (const name of FRONTAL) {
       const brows = await place(name, "brows");
       const beard = await place(name, "beard");
-      expect(brows.ok, `${name} brows ${brows.message} yaw ${brows.debug?.yaw}`).toBe(true);
+      expect(brows.ok, `${name} brows ${brows.message} yaw ${brows.debug?.yaw} hair ${brows.debug?.hair} zone ${brows.debug?.zone} area ${brows.debug?.maskArea}`).toBe(true);
       expect(beard.ok, `${name} beard ${beard.message} yaw ${beard.debug?.yaw}`).toBe(true);
       expect(brows.debug?.source).toBe("landmarks");
+      expect(brows.debug?.failed).toBeNull();
       expect(beard.debug?.failed).toBeNull();
+      expect(brows.debug?.hair ?? 1).toBeLessThanOrEqual(0.62);
+      expect(brows.debug?.zone ?? 0).toBeGreaterThanOrEqual(0.06);
+      expect(brows.debug?.zone ?? 1).toBeLessThanOrEqual(0.55);
+      expect(brows.debug?.maskArea ?? 1).toBeLessThan(0.14);
+      expect(brows.debug?.maskArea ?? 0).toBeGreaterThanOrEqual(0.0004);
     }
   });
 

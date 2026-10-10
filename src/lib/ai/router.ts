@@ -66,7 +66,8 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
   const pre = await preflightPhoto(input.image, tool, { hairExtent, landmarks: input.landmarks });
   if (!pre.ok) {
     logPlacementRejection(tool, pre.debug);
-    return demoFallback(input, "mock:placement", "placement");
+    const demo = await demoFallback(input, "mock:placement", "placement");
+    return { ...demo, placementMessage: pre.message, placementDebug: pre.debug };
   }
 
   const flags = await readTierFlags(input.tenantId);
@@ -167,7 +168,8 @@ export async function generateWithFailover(input: GenerateInput, choice?: Provid
     if (locked.reason === "provider" || locked.reason === "unknown-model") {
       throw new UnbilledProviderError(locked.message);
     }
-    return demoFallback(input, "mock:placement", "placement");
+    const demo = await demoFallback(input, "mock:placement", "placement");
+    return { ...demo, placementMessage: locked.message, placementDebug: locked.debug };
   }
   return { ...locked.output, image: locked.image, estimateInr: locked.output.estimateInr };
 }

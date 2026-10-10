@@ -34,7 +34,9 @@ function PoseReadout({ debug }: { debug: PlacementDebug }) {
       {poseLine("Pitch", debug.pitch === null ? null : `${debug.pitch}°`)}
       {poseLine("Face size", debug.faceSize)}
       {poseLine("Mask area", debug.maskArea)}
-      {poseLine("Check", debug.failed ?? "ok")}
+      {poseLine("Hair", debug.hair)}
+      {poseLine("Zone", debug.zone)}
+      {poseLine("Check", debug.failed ? `${debug.failed} ${debug.value ?? ""}`.trim() : "ok")}
     </dl>
   );
 }

@@ -167,7 +167,7 @@ describe("landmark pose", () => {
     expect(jawVisible(face(), SIZE, SIZE, 0)).toBe(true);
   });
 
-  it("names hair across the fringe and ignores a thin glasses line", () => {
+  it("names hair across the fringe and ignores a bindi and a thin glasses line", () => {
     const covered = check("brows", face(), (data) => {
       const y0 = Math.round(0.36 * SIZE - 0.2 * 0.24 * SIZE);
       const y1 = Math.round(0.36 * SIZE - 0.03 * 0.24 * SIZE);
@@ -183,6 +183,23 @@ describe("landmark pose", () => {
     expect(covered.ok).toBe(false);
     expect(covered.message).toBe(BROWS_HIDDEN);
     expect(covered.debug?.failed).toBe("hair");
+    expect(covered.debug?.value).toBeGreaterThan(0.62);
+
+    const bindi = check("brows", face(), (data) => {
+      const cy = Math.round(0.36 * SIZE - 0.1 * 0.24 * SIZE);
+      const cx = Math.round(0.5 * SIZE);
+      for (let y = cy - 5; y <= cy + 5; y += 1) {
+        for (let x = cx - 5; x <= cx + 5; x += 1) {
+          if ((x - cx) ** 2 + (y - cy) ** 2 > 25) continue;
+          const i = (y * SIZE + x) * 3;
+          data[i] = 36;
+          data[i + 1] = 12;
+          data[i + 2] = 16;
+        }
+      }
+    });
+    expect(bindi.ok).toBe(true);
+    expect(bindi.debug?.failed).toBeNull();
 
     const glasses = check("brows", face(), (data) => {
       const y = Math.round(0.36 * SIZE - 0.2 * 0.24 * SIZE);
@@ -194,6 +211,16 @@ describe("landmark pose", () => {
       }
     });
     expect(glasses.ok).toBe(true);
+  });
+
+  it("rejects brows that sit off the face and names the zone value", () => {
+    const points = face();
+    for (const index of [...RIGHT_BROW, ...LEFT_BROW]) points[index] = { x: points[index].x, y: 0.02, z: 0 };
+    const off = check("brows", points);
+    expect(off.ok).toBe(false);
+    expect(off.message).toMatch(/don't line up/);
+    expect(off.debug?.failed).toBe("zone");
+    expect(off.debug?.value).not.toBeNull();
   });
 
   it("rejects a second face from the browser count and ignores a bad landmark payload", () => {

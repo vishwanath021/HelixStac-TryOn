@@ -29,6 +29,12 @@ export type PlacementDebug = {
   pitch: number | null;
   faceSize: number | null;
   maskArea: number;
+  /** Brow hair-sheet fraction, 0–1. Null for tools that do not measure it. */
+  hair: number | null;
+  /** Brow-mask center, as a fraction of face height from the top. */
+  zone: number | null;
+  /** The measured number for `failed`, when a check rejected the photo. */
+  value: number | null;
   failed: string | null;
   source: "landmarks" | "fallback";
   warning: string;
@@ -209,6 +215,9 @@ export function debugFromPose(pose: HeadPose | null, extra: Partial<PlacementDeb
     pitch: pose ? round1(pose.pitch) : null,
     faceSize: pose ? Math.round(pose.faceSize) : null,
     maskArea: extra.maskArea ?? 0,
+    hair: extra.hair ?? null,
+    zone: extra.zone ?? null,
+    value: extra.value ?? null,
     failed: extra.failed ?? null,
     source: extra.source,
     warning: extra.warning ?? "",

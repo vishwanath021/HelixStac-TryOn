@@ -14,5 +14,8 @@ normalized x, y, z for the 478 face points.
 | woman-pink.jpg | Woman, hand beside the cheek | CC0 | https://commons.wikimedia.org/wiki/File:Smiling_woman_pink_shirt.jpg |
 | phone-smile.jpg | Woman indoors, glasses, phone in hand | CC0 | https://commons.wikimedia.org/wiki/File:Smiling_woman_with_a_phone_(Unsplash).jpg |
 | turned-beanie.jpg | Man turned well away from the camera | CC0 | https://commons.wikimedia.org/wiki/File:Beard_and_Beanie_(Unsplash).jpg |
+| bindi-smile.jpg | Woman with a bindi, headscarf, and thin brows | CC0 | https://commons.wikimedia.org/wiki/File:Woman_with_bindi_smiles_(Unsplash).jpg |
 
 Wikimedia Commons file pages record the CC0 1.0 dedication.
+
+bindi-smile.jpg is that photo rotated about 20.4 degrees so the head is level, then fit inside 640×960. The unrotated file leans just past the 20 degree roll limit. Landmarks are Face Landmarker output on the leveled JPEG.

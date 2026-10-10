@@ -300,8 +300,12 @@ export async function POST(req: Request) {
     if (outcome.placement) {
       await settleCredits(tenant.id, refId, "REFUND");
       await prisma.tryOn.update({ where: { id: tryOn.id }, data: { status: "FAILED" } });
-      await failGenerationJob(jobId, { outcome: "placement", message: TRY_ANOTHER_PHOTO, callId: result.callId });
-      return NextResponse.json({ error: "PLACEMENT", message: TRY_ANOTHER_PHOTO }, { status: 422 });
+      const message = result.placementMessage || TRY_ANOTHER_PHOTO;
+      logPlacementRejection(region, result.placementDebug);
+      await failGenerationJob(jobId, { outcome: "placement", message, callId: result.callId });
+      const body: { error: string; message: string; debug?: PlacementDebug } = { error: "PLACEMENT", message };
+      if (await viewerIsSuper()) body.debug = result.placementDebug;
+      return NextResponse.json(body, { status: 422 });
     }
     await settleCredits(tenant.id, refId, outcome.commit ? "COMMIT" : "REFUND");
     const balance = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { creditBalance: true } });
