@@ -34,5 +34,5 @@ export function otpSender(): OtpSender {
 }
 
 export function exposeDevOtp() {
-  return process.env.NODE_ENV !== "production" || process.env.ALLOW_DEV_OTP === "true";
+  return process.env.NODE_ENV !== "production";
 }

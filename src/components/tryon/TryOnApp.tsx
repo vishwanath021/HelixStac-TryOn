@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { LookuviMark } from "@/components/brand/LookuviMark";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { ColourStage } from "@/components/tryon/ColourStage";
@@ -109,6 +110,7 @@ export function TryOnApp({
   const [modelStatus, setModelStatus] = useState<"loading" | "ready" | "error">("loading");
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const cameraGen = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const captureRef = useRef<HTMLInputElement>(null);
   const frameRef = useRef<HTMLElement>(null);
@@ -223,45 +225,105 @@ export function TryOnApp({
     track("consent_accepted", { lang });
   }
 
-  function stopCamera() {
+  function clearPickers() {
+    if (fileRef.current) fileRef.current.value = "";
+    if (captureRef.current) captureRef.current.value = "";
+  }
+
+  function pickFile(input: HTMLInputElement | null) {
+    if (!input) return;
+    input.value = "";
+    input.click();
+  }
+
+  function releaseStream() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
+    video.srcObject = null;
+    video.load();
+  }
+
+  function stopCamera() {
+    cameraGen.current += 1;
+    releaseStream();
     setCameraOn(false);
     setCameraReady(false);
     setVideoEl(null);
   }
 
-  async function startCamera(nextFacing = facing) {
-    setError("");
-    setCameraError("");
-    setStylePhase("pick");
-    if (!navigator.mediaDevices?.getUserMedia) {
+  function dropLiveShot(nextFacing: "user" | "environment") {
+    const shot = nextFacing === "environment" ? handShot : faceShot;
+    if (shot?.url.startsWith("blob:")) URL.revokeObjectURL(shot.url);
+    if (nextFacing === "environment") setHandShot(null);
+    else setFaceShot(null);
+  }
+
+  async function startCamera(nextFacing: "user" | "environment" = facing) {
+    const gen = cameraGen.current + 1;
+    cameraGen.current = gen;
+    clearPickers();
+    releaseStream();
+    flushSync(() => {
+      setError("");
+      setCameraError("");
+      setStylePhase("pick");
+      setCameraReady(false);
+      setFacing(nextFacing);
+      setCameraOn(true);
+      dropLiveShot(nextFacing);
+    });
+    const devices = navigator.mediaDevices;
+    if (!devices?.getUserMedia) {
+      if (cameraGen.current !== gen) return;
+      setCameraOn(false);
       setCameraError(t(lang, "cameraError"));
       return;
     }
+    const pending = devices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: nextFacing }, width: { ideal: 720 }, height: { ideal: 1280 } },
+    });
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: nextFacing }, width: { ideal: 720 }, height: { ideal: 1280 } },
-      });
+      const stream = await pending;
+      if (cameraGen.current !== gen) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       const video = videoRef.current;
       if (!video) {
         stream.getTracks().forEach((track) => track.stop());
+        setCameraOn(false);
         setCameraError(t(lang, "cameraError"));
         return;
       }
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = stream;
+      video.muted = true;
+      video.setAttribute("playsinline", "true");
       video.srcObject = stream;
+      streamRef.current = stream;
       await video.play();
+      if (cameraGen.current !== gen) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        const done = () => resolve();
+        if (typeof video.requestVideoFrameCallback === "function") video.requestVideoFrameCallback(() => done());
+        else video.addEventListener("loadeddata", done, { once: true });
+        window.setTimeout(done, 1200);
+      });
+      if (cameraGen.current !== gen) return;
       setVideoEl(video);
-      setCameraOn(true);
       setCameraReady(true);
-      setFacing(nextFacing);
       track("camera_started", {});
     } catch {
-      stopCamera();
+      if (cameraGen.current !== gen) return;
+      releaseStream();
+      setCameraOn(false);
+      setCameraReady(false);
+      setVideoEl(null);
       setCameraError(t(lang, "cameraError"));
     }
   }
@@ -374,17 +436,12 @@ export function TryOnApp({
     const remember = (url?: string) => {
       if (url?.startsWith("blob:")) blobs.add(url);
     };
-    remember(faceShot?.url);
-    remember(handShot?.url);
     if (active) {
       remember(active.before);
       remember(active.after);
     }
     for (const url of blobs) URL.revokeObjectURL(url);
-    setFaceShot(null);
-    setHandShot(null);
     setActive(null);
-    setStylePhase("pick");
     setStyleId("");
     setHairReading(null);
     setPickedDensity("");
@@ -392,11 +449,10 @@ export function TryOnApp({
     setShowAllStyles(false);
     setSuggestNote("");
     setSuggestCost("");
-    setError("");
     setNotice("");
     setPendingName("");
-    stopCamera();
     frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    void startCamera(tool === "nails" ? "environment" : "user");
   }
 
   async function suggestHair() {
@@ -598,9 +654,9 @@ export function TryOnApp({
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           {config.logoUrl ? (
-            <img src={config.logoUrl} alt="" className="h-12 w-12 shrink-0 rounded-[14px] border border-line bg-white object-cover" />
+            <img src={config.logoUrl} alt="" className="h-14 w-14 shrink-0 object-contain" />
           ) : (
-            <LookuviMark className="h-12 w-12 shrink-0" />
+            <LookuviMark className="h-14 w-10 shrink-0" />
           )}
           <h1 className="min-w-0 text-balance font-serif text-xl leading-snug sm:text-2xl">{config.name}</h1>
         </div>
@@ -617,7 +673,8 @@ export function TryOnApp({
 
       <h2 className="page-title">{t(lang, "pageTitle")}</h2>
 
-      <div className="seg mt-4" role="tablist" aria-label={t(lang, "toolsLabel")}>
+      <div className="seg-fade mt-4">
+      <div className="seg" role="tablist" aria-label={t(lang, "toolsLabel")}>
         {tools.filter((item) => item.on).map((item) => (
           <button
             key={item.id}
@@ -632,6 +689,7 @@ export function TryOnApp({
             {item.label}
           </button>
         ))}
+      </div>
       </div>
 
       <div className="mt-6 grid items-start gap-8 lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
@@ -649,7 +707,9 @@ export function TryOnApp({
               playsInline
               muted
               autoPlay
-              onLoadedData={() => setCameraReady(true)}
+              onLoadedData={() => {
+                if ((videoRef.current?.videoWidth || 0) > 0) setCameraReady(true);
+              }}
               className={cameraOn ? "absolute inset-0 h-full w-full object-cover" : "hidden"}
               style={facing === "user" ? { transform: "scaleX(-1)" } : undefined}
             />
@@ -669,11 +729,11 @@ export function TryOnApp({
             {!cameraOn && !activeShot && (
               <div className="absolute inset-0 grid content-center justify-items-center gap-3 px-6">
                 <button className="btn min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "takeSelfie")}</button>
-                <button className="btn secondary min-w-44" type="button" onClick={() => fileRef.current?.click()}>{t(lang, "uploadPhoto")}</button>
+                <button className="btn secondary min-w-44" type="button" onClick={() => pickFile(fileRef.current)}>{t(lang, "uploadPhoto")}</button>
                 {cameraError && (
                   <>
                     <p className="text-center text-sm text-[var(--bad)]" role="alert">{cameraError}</p>
-                    <button className="btn on-photo min-w-44" type="button" onClick={() => captureRef.current?.click()}>Use the phone camera</button>
+                    <button className="btn on-photo min-w-44" type="button" onClick={() => pickFile(captureRef.current)}>Use the phone camera</button>
                   </>
                 )}
               </div>
@@ -687,7 +747,7 @@ export function TryOnApp({
                     type="button"
                     onClick={() => {
                       stopCamera();
-                      fileRef.current?.click();
+                      pickFile(fileRef.current);
                     }}
                   >
                     {t(lang, "uploadInstead")}

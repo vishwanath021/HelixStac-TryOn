@@ -21,6 +21,7 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/src/data ./src/data
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 COPY --from=builder /app/node_modules ./node_modules
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh

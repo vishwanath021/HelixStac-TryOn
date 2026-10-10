@@ -35,6 +35,7 @@ export default async function SettingsPage() {
           anonDailyCap: tenant.anonDailyCap,
           memberDailyCap: tenant.memberDailyCap,
           requireLoginToBook: tenant.requireLoginToBook,
+          logoUrl: tenant.logoUrl,
         }}
       />
     </main>

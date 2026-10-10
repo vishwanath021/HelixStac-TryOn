@@ -32,7 +32,7 @@ async function main() {
     create: {
       slug: "demo-salon",
       name: "Demo Salon – Bengaluru",
-      logoUrl: "/brand/demo-mark.svg",
+      logoUrl: "/brand/lookuvi-mark.svg",
       primaryColor: "#69517D",
       accentColor: "#B6A0C9",
       languages: JSON.stringify(["en", "hi", "kn", "ta", "te", "mr"]),
@@ -62,9 +62,14 @@ async function main() {
     },
   });
 
+  const inheritedLogo = !tenant.logoUrl || tenant.logoUrl === "/brand/demo-mark.svg" || tenant.logoUrl === "/brand/mark.svg";
   await prisma.tenant.update({
     where: { id: tenant.id },
-    data: { primaryColor: "#69517D", accentColor: "#B6A0C9" },
+    data: {
+      primaryColor: "#69517D",
+      accentColor: "#B6A0C9",
+      ...(inheritedLogo ? { logoUrl: "/brand/lookuvi-mark.svg" } : {}),
+    },
   });
 
   const services = [

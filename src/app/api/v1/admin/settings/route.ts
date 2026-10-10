@@ -3,7 +3,7 @@ import { z } from "zod";
 import { planById } from "@/data/plans";
 import { isLocale, LOCALES } from "@/data/i18n";
 import { prisma } from "@/lib/prisma";
-import { requireMembership, requireOwner } from "@/lib/session";
+import { requireOwner } from "@/lib/session";
 
 const schema = z.object({
   name: z.string().min(2).max(80).optional(),
@@ -36,18 +36,18 @@ const schema = z.object({
 });
 
 export async function GET() {
-  const access = await requireMembership();
+  const access = await requireOwner();
   if ("error" in access && access.error) return access.error;
-  if (!("tenant" in access)) return NextResponse.json({ error: "NO_TENANT" }, { status: 403 });
+  if (!("tenant" in access)) return NextResponse.json({ error: "OWNER_ONLY" }, { status: 403 });
   const { aiKeyCipher: storedCipher, ...tenant } = access.tenant;
   void storedCipher;
   return NextResponse.json({ tenant, role: access.membership.role });
 }
 
 export async function PUT(req: Request) {
-  const access = await requireMembership();
+  const access = await requireOwner();
   if ("error" in access && access.error) return access.error;
-  if (!("tenant" in access)) return NextResponse.json({ error: "NO_TENANT" }, { status: 403 });
+  if (!("tenant" in access)) return NextResponse.json({ error: "OWNER_ONLY" }, { status: 403 });
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
   const plan = planById(access.tenant.plan);

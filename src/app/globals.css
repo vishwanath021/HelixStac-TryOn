@@ -180,34 +180,67 @@ textarea { min-height: 48px; }
   line-height: 1;
 }
 
+.seg-fade { position: relative; }
 .seg {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px;
   width: 100%;
   padding: 4px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: #fff;
 }
+.seg::-webkit-scrollbar { display: none; height: 0; }
 .seg-btn {
   display: inline-flex;
-  flex: 1 1 7.5rem;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-width: 0;
+  scroll-snap-align: start;
+  white-space: nowrap;
   min-height: 48px;
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: var(--aubergine);
-  padding: 8px 12px;
+  padding: 8px 14px;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   cursor: pointer;
+}
+@media (max-width: 767px) {
+  .seg-fade::before,
+  .seg-fade::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 18px;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .seg-fade::before {
+    left: 0;
+    border-radius: 999px 0 0 999px;
+    background: linear-gradient(90deg, #F3F0F8 20%, transparent);
+  }
+  .seg-fade::after {
+    right: 0;
+    border-radius: 0 999px 999px 0;
+    background: linear-gradient(270deg, #F3F0F8 20%, transparent);
+  }
+}
+@media (min-width: 768px) {
+  .seg { overflow: hidden; scroll-snap-type: none; }
+  .seg-btn { flex: 1 1 0; scroll-snap-align: none; }
 }
 .seg-btn[aria-selected="true"] {
   background: var(--aubergine);

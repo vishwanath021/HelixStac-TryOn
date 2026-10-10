@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     data: { email, tokenHash, expiresAt: new Date(Date.now() + 15 * 60 * 1000) },
   });
   const devUrl = `${appBaseUrl()}/login?token=${token}`;
-  const allowDev = process.env.NODE_ENV !== "production" || process.env.ALLOW_DEV_MAGIC_LINK === "true";
+  const allowDev = process.env.NODE_ENV !== "production";
   if (!process.env.SMTP_URL && allowDev) {
     return NextResponse.json({ ...generic, devUrl, message: "Email is not configured. Use the dev link on this screen. Do not enable this in production." });
   }

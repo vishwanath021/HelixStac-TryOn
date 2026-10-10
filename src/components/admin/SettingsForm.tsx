@@ -27,6 +27,7 @@ export function SettingsForm({
     anonDailyCap: number;
     memberDailyCap: number;
     requireLoginToBook: boolean;
+    logoUrl: string | null;
   };
   canRemoveBranding: boolean;
 }) {
@@ -40,6 +41,30 @@ export function SettingsForm({
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function onLogo(file: File | undefined) {
+    if (!file) return;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 128 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      const url = canvas.toDataURL("image/jpeg", 0.8);
+      if (url.length > 180_000) {
+        setMessage("Logo is too large. Use a smaller image.");
+        return;
+      }
+      set("logoUrl", url);
+      setMessage("");
+    } catch {
+      setMessage("That logo could not be read. Use a PNG or JPEG.");
+    }
   }
 
   async function save(event: React.FormEvent) {
@@ -77,6 +102,17 @@ export function SettingsForm({
     <div className="space-y-4">
       <form className="card grid gap-3 p-4" onSubmit={save}>
         <label className="text-sm">Salon name<input className="field mt-1" aria-label="Salon name" value={form.name} onChange={(event) => set("name", event.target.value)} /></label>
+        <div className="text-sm">
+          <span className="block">Salon logo</span>
+          <input className="mt-1 block" type="file" accept="image/*" aria-label="Salon logo" onChange={(event) => void onLogo(event.target.files?.[0])} />
+          <p className="mt-1 text-xs text-muted">Shown beside the salon name. Leave it empty to use the Lookuvi mark.</p>
+          {form.logoUrl && (
+            <div className="mt-2 flex items-center gap-3">
+              <img src={form.logoUrl} alt="" className="h-14 w-14 object-contain" />
+              <button className="btn secondary" type="button" onClick={() => set("logoUrl", null)}>Use Lookuvi mark</button>
+            </div>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <label className="text-sm">Primary<input className="mt-1 h-10 w-full" type="color" value={form.primaryColor} onChange={(event) => set("primaryColor", event.target.value)} /></label>
           <label className="text-sm">Accent<input className="mt-1 h-10 w-full" type="color" value={form.accentColor} onChange={(event) => set("accentColor", event.target.value)} /></label>

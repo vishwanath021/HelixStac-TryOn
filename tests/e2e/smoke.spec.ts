@@ -137,7 +137,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.getByRole("button", { name: "Save" }).click();
   expect((await downloadPromise).suggestedFilename()).toMatch(/\.jpg$/);
   await page.getByRole("button", { name: "Try another" }).click();
-  await expect(page.getByRole("button", { name: "Take selfie" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
   await expect(gallery.getByRole("button", { name: "Kids Soft Bob" })).toHaveCount(0);
   await gallery.getByRole("button", { name: "Kids", exact: true }).click();
   await expect(gallery.locator("img")).toHaveCount(4);

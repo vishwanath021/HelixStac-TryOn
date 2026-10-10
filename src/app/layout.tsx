@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   applicationName: "Lookuvi",
   title: "Lookuvi",
   description: "See your next look.",
-  icons: { icon: "/brand/lookuvi-mark.svg", apple: "/brand/lookuvi-app-icon.png" },
+  icons: { icon: "/brand/lookuvi-app-icon.png", apple: "/brand/lookuvi-app-icon.png" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
