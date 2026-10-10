@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { LookuviMark } from "@/components/brand/LookuviMark";
+import { isPlatformLogo, LookuviMark } from "@/components/brand/LookuviMark";
+import { headerBarColor } from "@/lib/contrast";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { ColourStage } from "@/components/tryon/ColourStage";
 import { HairTypePicker } from "@/components/tryon/HairTypePicker";
@@ -649,23 +650,30 @@ export function TryOnApp({
     { id: "beard", label: "Beard", name: t(lang, "beardChip"), on: config.toolBeard, icon: "beard" },
   ];
 
+  const bar = headerBarColor(config.primaryColor);
+  const platformLogo = isPlatformLogo(config.logoUrl);
+
   return (
-    <div data-salon-mode={salonMode ? "yes" : "no"} className={embed ? "" : "mx-auto max-w-6xl px-4 pb-16 pt-4"}>
-      <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          {config.logoUrl ? (
-            <img src={config.logoUrl} alt="" className="h-14 w-14 shrink-0 object-contain" />
-          ) : (
-            <LookuviMark className="h-14 w-10 shrink-0" />
-          )}
-          <h1 className="min-w-0 text-balance font-serif text-xl leading-snug sm:text-2xl">{config.name}</h1>
-        </div>
-        <div className="flex gap-2">
-          <a className="btn brand flex-1 whitespace-nowrap sm:flex-none" href={bookHref || undefined} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
-          <a className="btn secondary flex-1 whitespace-nowrap sm:flex-none" href={chatHref || undefined} target="_blank" rel="noreferrer">
-            <WhatsAppGlyph />
-            {t(lang, "whatsappBtn")}
-          </a>
+    <div data-salon-mode={salonMode ? "yes" : "no"} className={embed ? "" : "mx-auto max-w-6xl px-4 pb-16"}>
+      <header className={`salon-bar sticky top-0 z-20 mb-6 px-4 ${embed ? "" : "-mx-4"}`} style={{ background: bar }}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-white">
+              {platformLogo ? (
+                <LookuviMark className="h-8 w-8" />
+              ) : (
+                <img src={config.logoUrl || ""} alt="" className="h-8 w-8 object-contain" />
+              )}
+            </span>
+            <h1 className="min-w-0 flex-1 break-words text-lg leading-tight sm:text-xl">{config.name}</h1>
+          </div>
+          <div className="flex gap-2">
+            <a className="btn bar-book flex-1 whitespace-nowrap sm:flex-none" href={bookHref || undefined} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
+            <a className="btn bar-chat flex-1 whitespace-nowrap sm:flex-none" href={chatHref || undefined} target="_blank" rel="noreferrer">
+              <WhatsAppGlyph />
+              {t(lang, "whatsappBtn")}
+            </a>
+          </div>
         </div>
       </header>
 
@@ -935,7 +943,7 @@ export function TryOnApp({
       </div>
       {config.poweredBy && (
         <p className="mt-10 flex items-center justify-center gap-2 text-xs text-muted">
-          <LookuviMark className="h-4 w-4" />
+          <LookuviMark className="h-5 w-5" />
           Powered by Lookuvi
         </p>
       )}
@@ -945,7 +953,7 @@ export function TryOnApp({
 
 function WhatsAppGlyph() {
   return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="#1F7A4D">
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="#25D366">
       <path d="M12 3a9 9 0 0 0-7.8 13.4L3 21l4.7-1.2A9 9 0 1 0 12 3zm5 12.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-.9.2-2.6-.6-2.2-.9-3.6-3.1-3.7-3.2-.1-.2-1-1.3-1-2.5s.6-1.8.9-2c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .5.4.2.6.7 1.8.7 1.9.1.2 0 .3-.1.5l-.3.4c-.1.1-.2.2-.1.4.2.3.7 1.1 1.5 1.8 1 .8 1.8 1.1 2.1 1.2.2.1.4.1.5-.1l.4-.5c.1-.2.3-.2.5-.1.2.1 1.4.7 1.6.8.2.1.4.2.4.3.1.2 0 .8-.2 1.3z" />
     </svg>
   );

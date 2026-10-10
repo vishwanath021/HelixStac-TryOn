@@ -92,6 +92,41 @@ textarea { min-height: 48px; }
   background: var(--selected);
   color: var(--aubergine);
 }
+.salon-bar {
+  color: #fff;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding-bottom: 0.75rem;
+}
+.salon-bar h1 {
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #fff;
+}
+.salon-bar :focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.btn.bar-book {
+  background: #fff;
+  color: #3e304b;
+  border-color: #fff;
+}
+.btn.bar-book:hover:not(:disabled),
+.btn.bar-book:active:not(:disabled) {
+  background: #f3f0f8;
+  color: #3e304b;
+}
+.btn.bar-chat {
+  background: transparent;
+  color: #fff;
+  border-color: #fff;
+}
+.btn.bar-chat:hover:not(:disabled),
+.btn.bar-chat:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
 .btn.on-photo {
   background: #ffffff;
   color: var(--ink);

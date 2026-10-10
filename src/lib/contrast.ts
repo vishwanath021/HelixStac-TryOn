@@ -66,6 +66,20 @@ export function brandButtonColors(brand: string) {
     : { background: lighter.background, color: INK };
 }
 
+const AUBERGINE = "#3e304b";
+const LOOKUVI_BAR = new Set(["#69517d", "#3e304b"]);
+
+/**
+ * Guest header bar. Lookuvi purple defaults use the same aubergine as Book Now.
+ * Any other salon color is kept when white text already clears WCAG AA, and darkened until it does.
+ */
+export function headerBarColor(brand: string) {
+  const color = normalize(brand);
+  if (LOOKUVI_BAR.has(color)) return AUBERGINE;
+  if (contrastRatio(color, "#ffffff") >= 4.5) return color;
+  return shiftUntil(color, "#000000", "#ffffff").background;
+}
+
 export function brandStyle(primary: string, accent?: string) {
   const button = brandButtonColors(primary);
   return {

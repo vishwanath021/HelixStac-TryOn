@@ -1,10 +1,11 @@
 import { copyFile, mkdir } from "node:fs/promises";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
-async function shot(page: Page, name: string) {
+async function shot(page: Page, name: string, locator?: Locator) {
   await mkdir("/tmp/lookuvi-shots", { recursive: true });
   const local = `/tmp/lookuvi-shots/${name}.png`;
-  await page.screenshot({ path: local });
+  if (locator) await locator.screenshot({ path: local });
+  else await page.screenshot({ path: local });
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await copyFile(local, `/opt/cursor/artifacts/${name}.png`);
@@ -44,10 +45,12 @@ async function waitForLiveFrame(page: Page) {
   });
 }
 
-test("tool pill stays one row at phone and tablet widths", async ({ page }, testInfo) => {
+test("tool pill stays one row and the brand bar stays readable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "the test sets its own widths");
   await page.goto("/s/demo-salon");
-  await expect(page.locator("header img")).toHaveAttribute("src", /lookuvi-mark\.svg/);
+  const mark = page.locator('header svg[viewBox="0 0 64 64"]');
+  await expect(mark).toBeVisible();
+  await expect(page.locator("header img")).toHaveCount(0);
   for (const width of [320, 360, 390, 430, 768, 1024, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     const pill = page.locator(".seg");
@@ -60,11 +63,75 @@ test("tool pill stays one row at phone and tablet widths", async ({ page }, test
       return tops.size;
     });
     expect(rows, `rows at ${width}`).toBe(1);
+    const header = page.locator("header");
+    const layout = await header.evaluate((el) => {
+      const paint = (node: Element) => {
+        const style = getComputedStyle(node);
+        return { color: style.color, background: style.backgroundColor, border: style.borderTopColor };
+      };
+      const name = el.querySelector("h1");
+      const book = [...el.querySelectorAll("a")].find((link) => link.textContent?.includes("Book Now"));
+      const chat = [...el.querySelectorAll("a")].find((link) => link.textContent?.includes("WhatsApp"));
+      const nameStyle = name ? getComputedStyle(name) : null;
+      const fade = getComputedStyle(document.querySelector(".seg-fade") as Element, "::before");
+      return {
+        bar: paint(el).background,
+        padTop: parseFloat(getComputedStyle(el).paddingTop),
+        name: nameStyle?.color,
+        clipped: name ? name.scrollWidth > name.clientWidth + 1 || name.scrollHeight > name.clientHeight + 1 : true,
+        clamp: nameStyle?.getPropertyValue("-webkit-line-clamp") || "none",
+        overflow: nameStyle?.textOverflow,
+        book: book ? paint(book) : null,
+        chat: chat ? paint(chat) : null,
+        fadeImage: fade.backgroundImage,
+        fadeOpacity: fade.opacity,
+        mark: (el.querySelector("svg")?.getBoundingClientRect().width ?? 0),
+      };
+    });
+    expect(layout.bar, `bar at ${width}`).toBe("rgb(62, 48, 75)");
+    expect(layout.name, `name at ${width}`).toBe("rgb(255, 255, 255)");
+    expect(layout.clipped, `name clipped at ${width}`).toBe(false);
+    expect(layout.clamp, `name clamp at ${width}`).not.toBe("2");
+    expect(layout.overflow, `name ellipsis at ${width}`).not.toBe("ellipsis");
+    expect(layout.padTop, `safe area padding at ${width}`).toBeGreaterThanOrEqual(12);
+    expect(layout.mark, `mark size at ${width}`).toBeGreaterThanOrEqual(30);
+    expect(layout.mark, `mark size at ${width}`).toBeLessThanOrEqual(40);
+    expect(layout.book?.background).toBe("rgb(255, 255, 255)");
+    expect(layout.book?.color).toBe("rgb(62, 48, 75)");
+    expect(layout.chat?.color).toBe("rgb(255, 255, 255)");
+    expect(layout.chat?.border).toBe("rgb(255, 255, 255)");
+    if (width < 768) {
+      expect(layout.fadeImage, `tab fade at ${width}`).toContain("gradient");
+      expect(layout.fadeOpacity, `tab fade at ${width}`).toBe("1");
+    }
+    const viewport = page.viewportSize()?.width ?? width;
+    for (const label of ["Book Now", "WhatsApp"]) {
+      const link = await header.getByRole("link", { name: label }).boundingBox();
+      expect(link, `${label} at ${width}`).toBeTruthy();
+      expect(link!.x >= -1 && link!.x + link!.width <= viewport + 1, `${label} inside ${width}`).toBe(true);
+      expect(link!.height, `${label} height at ${width}`).toBeGreaterThanOrEqual(44);
+    }
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await shot(page, "guest-tabs-phone");
+  await shot(page, "header-bar-phone", page.locator("header"));
   await page.setViewportSize({ width: 1280, height: 800 });
   await shot(page, "guest-tabs-desktop");
+  await shot(page, "header-bar-desktop", page.locator("header"));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator("header h1").evaluate((el) => {
+    el.textContent = "Naga Dhruv Premium Hair Studio and Colour Lounge";
+  });
+  const wrapped = await page.locator("header h1").evaluate((el) => {
+    const style = getComputedStyle(el);
+    const line = parseFloat(style.lineHeight);
+    return {
+      clipped: el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1,
+      lines: Math.round(el.getBoundingClientRect().height / line),
+    };
+  });
+  expect(wrapped.clipped).toBe(false);
+  expect(wrapped.lines).toBeGreaterThanOrEqual(2);
 });
 
 test("retake and try another each open a new camera frame", async ({ page }, testInfo) => {
@@ -187,7 +254,7 @@ test("an owner can replace the salon logo and restore the Lookuvi mark", async (
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("Settings saved.")).toBeVisible();
     await page.goto("/s/demo-salon");
-    await expect(page.locator('header svg[viewBox="0 0 120 176"]')).toBeVisible();
+    await expect(page.locator('header svg[viewBox="0 0 64 64"]')).toBeVisible();
     await expect(page.locator("header img")).toHaveCount(0);
   } finally {
     await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { logoUrl: before.logoUrl } });
