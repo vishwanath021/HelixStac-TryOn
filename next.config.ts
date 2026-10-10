@@ -3,6 +3,15 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.watchOptions = {
+        ...config.watchOptions,
+        ignored: ["**/.git/**", "**/node_modules/**", "**/.next/**", "**/prisma/**", "**/test-results/**", "**/docs/screenshots/**"],
+      };
+    }
+    return config;
+  },
   serverExternalPackages: ["sharp", "bcryptjs", "@prisma/client"],
   async headers() {
     return [

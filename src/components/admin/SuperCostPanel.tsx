@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Call = {
   id: string;
@@ -58,6 +58,8 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [draft, setDraft] = useState({ provider: "", model: "", from: "", to: "" });
+  const [ready, setReady] = useState(false);
+  const firstLoad = useRef(true);
 
   async function load(sessionStart: string, count: number, nextPage: number, filters = draft) {
     const params = new URLSearchParams({ imagesPerMonth: String(count), page: String(nextPage) });
@@ -81,8 +83,13 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
       sessionStorage.setItem(key, sessionStart);
     }
     setSince(sessionStart);
+    setReady(true);
+    if (firstLoad.current) {
+      firstLoad.current = false;
+      return;
+    }
     void load(sessionStart, images, 1, draft);
-    // The session stamp is read once. Filters and pages call load themselves.
+    // The first paint uses the server report. Later image-count edits reload page 1.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images]);
 
@@ -106,7 +113,7 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
   const pageCount = report.pageCount || 1;
 
   return (
-    <section className="card mt-6 grid gap-4 p-4 sm:p-5" aria-labelledby="image-costs-title">
+    <section id="image-costs" data-ready={ready ? "yes" : "no"} className="card mt-6 grid gap-4 p-4 sm:p-5" aria-labelledby="image-costs-title">
       <div>
         <h2 id="image-costs-title" className="font-serif text-2xl">Image costs</h2>
         <p className="mt-1 text-sm text-muted">Newest first. Twenty rows on each page. Totals follow the filters.</p>

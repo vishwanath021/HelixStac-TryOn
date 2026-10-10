@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { numberEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/ratelimit";
 
@@ -52,7 +53,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const parsed = credentialsSchema.safeParse(credentials);
         if (!parsed.success) return null;
         const email = parsed.data.email.toLowerCase();
-        const limit = rateLimit(`login:${email}`, 8, 15 * 60 * 1000);
+        const limit = rateLimit(`login:${email}`, numberEnv("LOGIN_LIMIT", 8), 15 * 60 * 1000);
         if (!limit.ok) return null;
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user) return null;

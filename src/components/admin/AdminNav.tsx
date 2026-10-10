@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SignOutButton } from "@/components/admin/SignOutButton";
 
 const LINKS = [
@@ -18,12 +18,14 @@ const LINKS = [
 
 export function AdminNav({ role, name, credits, slug, showAi }: { role: string; name: string; credits: number; slug: string; showAi: boolean }) {
   const [open, setOpen] = useState(false);
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
   return (
     <div>
-      <button className="btn secondary mb-3 w-full md:hidden" type="button" aria-expanded={open} aria-controls="salon-nav" onClick={() => setOpen((value) => !value)}>
+      <button className="btn secondary mb-3 w-full md:hidden" type="button" data-ready={ready ? "yes" : "no"} aria-expanded={open} aria-controls="salon-nav" onClick={() => setOpen((value) => !value)}>
         {open ? "Close menu" : "Menu"}
       </button>
-      <aside id="salon-nav" className={`${open ? "block" : "hidden"} nav-side h-fit rounded-[14px] p-4 md:block`}>
+      <aside id="salon-nav" data-ready={ready ? "yes" : "no"} className={`${open ? "block" : "hidden"} nav-side h-fit rounded-[14px] p-4 md:block`}>
         <p className="text-sm uppercase tracking-[0.14em] text-[#d8cbe4]">{role}</p>
         <p className="font-serif text-2xl leading-tight">{name}</p>
         <p className="text-sm text-[#d8cbe4]">{credits} credits</p>

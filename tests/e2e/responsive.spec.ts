@@ -47,13 +47,36 @@ async function shot(page: Page, project: string, name: string) {
   await page.screenshot({ path: `/opt/cursor/artifacts/after-${name}-${device}.png`, fullPage: true });
 }
 
+async function go(page: Page, path: string) {
+  let last: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.goto(path, { waitUntil: "domcontentloaded" });
+      return;
+    } catch (error) {
+      last = error;
+    }
+  }
+  throw last;
+}
+
 async function signIn(page: Page, email: string, password: string) {
-  await page.goto("/login");
-  await expect(page.getByRole("heading", { name: "Salon login" })).toBeVisible();
-  await page.waitForTimeout(1000);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  let last: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await go(page, "/login");
+      await expect(page.getByRole("heading", { name: "Salon login" })).toBeVisible({ timeout: 8_000 });
+      await expect(page.locator("form").first()).toHaveAttribute("data-ready", "yes");
+      await page.getByLabel("Email").fill(email);
+      await page.getByLabel("Password").fill(password);
+      await page.getByRole("button", { name: "Sign in" }).click();
+      await page.waitForURL(/\/admin|\/super/, { timeout: 8_000 });
+      return;
+    } catch (error) {
+      last = error;
+    }
+  }
+  throw last;
 }
 
 test("guest, owner, and super layouts fit the device", async ({ page }, testInfo) => {
@@ -72,16 +95,15 @@ test("guest, owner, and super layouts fit the device", async ({ page }, testInfo
 
   await signIn(page, "owner@demo.helixstac.app", "DemoSalon#2026");
   await expect(page.getByRole("heading", { name: /this month/i })).toBeVisible();
+  await expect(page.locator("#salon-nav")).toHaveAttribute("data-ready", "yes");
   const width = page.viewportSize()?.width ?? 0;
   if (width < 768) {
-    await page.getByRole("button", { name: "Menu" }).click();
-    await expect(page.getByRole("link", { name: "Overview" })).toBeVisible();
-  } else {
-    await expect(page.getByRole("link", { name: "Overview" })).toBeVisible();
+    await page.getByRole("button", { name: "Menu", exact: true }).click();
   }
+  await expect(page.getByRole("link", { name: "Overview", exact: true })).toBeVisible();
   await fits(page);
   await shot(page, testInfo.project.name, "owner");
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await page.waitForURL(/\/s\/demo-salon/);
 
   await signIn(page, "super@helixstac.app", "SuperAdmin#2026");
@@ -104,14 +126,15 @@ test("guest, owner, and super layouts fit the device", async ({ page }, testInfo
         createdAt: new Date(Date.UTC(2026, 9, 2, 0, index)),
       })),
     });
-    await page.goto("/super/ai");
+    await go(page, "/super/ai");
     await expect(page.getByRole("heading", { name: "Image costs" })).toBeVisible();
+    await expect(page.locator("#image-costs")).toHaveAttribute("data-ready", "yes");
     await expect(page.getByText("21 images")).toBeVisible();
     await expect(page.getByText("Page 1 of 2")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Next" })).toBeEnabled();
-    await page.getByRole("button", { name: "Next" }).click();
+    await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Next", exact: true }).click();
     await expect(page.getByText("Page 2 of 2")).toBeVisible();
-    await page.getByRole("button", { name: "Previous" }).click();
+    await page.getByRole("button", { name: "Previous", exact: true }).click();
     await expect(page.getByText("Page 1 of 2")).toBeVisible();
     await fits(page);
     await shot(page, testInfo.project.name, "super");

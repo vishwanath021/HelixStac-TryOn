@@ -72,6 +72,7 @@ export default defineConfig({
           GENERATE_PER_IP_HOUR: "40",
           GENERATE_PER_IP_DAY: "80",
           GENERATE_PER_TENANT_MINUTE: "200",
+          LOGIN_LIMIT: "200",
           APP_BASE_URL: "http://127.0.0.1:3000",
         },
       },

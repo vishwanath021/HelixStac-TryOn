@@ -1,13 +1,15 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function LoginForm() {
   const [email, setEmail] = useState("owner@demo.helixstac.app");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [magic, setMagic] = useState("");
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
 
   async function onPassword(event: React.FormEvent) {
     event.preventDefault();
@@ -42,7 +44,7 @@ export function LoginForm() {
     <div className="card mx-auto max-w-md p-6">
       <h1 className="page-title">Salon login</h1>
       <p className="mt-2 text-sm text-muted">Owners and staff use email and password. Magic link works when email is configured. In local dev the link can appear here.</p>
-      <form className="mt-4 space-y-3" onSubmit={onPassword}>
+      <form className="mt-4 space-y-3" data-ready={ready ? "yes" : "no"} onSubmit={onPassword}>
         <label className="block text-sm">Email
           <input className="field mt-1" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
         </label>

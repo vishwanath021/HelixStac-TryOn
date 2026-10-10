@@ -330,7 +330,9 @@ test("a renamed salon shows on the guest header and title", async ({ page }) => 
     await expect(page.getByRole("heading", { level: 1, name: "Indiranagar Studio" })).toBeVisible();
     await expect(page).toHaveTitle(/Indiranagar Studio/, { timeout: 15_000 });
     await page.goto("/admin");
-    await page.getByRole("button", { name: "Sign out" }).click();
+    const signOut = page.getByRole("button", { name: "Sign out", exact: true });
+    if (!(await signOut.isVisible())) await page.getByRole("button", { name: "Menu", exact: true }).click();
+    await signOut.click();
     await page.waitForURL(/\/s\/demo-salon/);
 
     await page.goto("/login");
@@ -523,8 +525,8 @@ test("super admin sees assumed COGS", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Image costs" })).toBeVisible();
   await expect(page.getByText("Estimate", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Actual", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Previous" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Next" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Previous", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeVisible();
   if ((page.viewportSize()?.width ?? 0) >= 768) {
     await expect(page.getByRole("columnheader", { name: "Estimate (reserved)" })).toBeVisible();
     await expect(page.getByRole("columnheader", { name: "Actual", exact: true })).toBeVisible();
