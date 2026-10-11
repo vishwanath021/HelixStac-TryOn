@@ -11,6 +11,7 @@ import { StyleCard } from "@/components/tryon/StyleCard";
 import { t } from "@/data/i18n";
 import { orderStylesForPicker, suggestStyles, type HairReading } from "@/lib/hair-suitability";
 import { captureShouldMirror, visiblePortraitCrop } from "@/lib/capture";
+import { alignGeneratedPhoto } from "@/lib/face/align-client";
 import { detectFaceLandmarks } from "@/lib/face/detect-client";
 import type { PlacementDebug } from "@/lib/face/pose";
 import { classifySkinPhoto } from "@/lib/hand-photo";
@@ -57,6 +58,10 @@ type Look = {
   shadeName: string | null;
   before: string;
   after: string;
+  /** Unaligned provider image. Present only for a signed-in super-admin. */
+  raw?: string;
+  alignMode?: "landmarks" | "cover";
+  eyeDelta?: number | null;
   serviceKeys: string[];
   tool: "style" | "brows" | "beard" | "nails" | "colour";
   demo?: boolean;
@@ -522,6 +527,7 @@ export function TryOnApp({
     if (active) {
       remember(active.before);
       remember(active.after);
+      remember(active.raw);
     }
     for (const url of blobs) URL.revokeObjectURL(url);
     setActive(null);
@@ -651,6 +657,7 @@ export function TryOnApp({
         return;
       }
       const out = await res.blob();
+      const aligned = await alignGeneratedPhoto(shot.blob, out, chosen.tool === "beard");
       const reason = res.headers.get("x-demo-reason") || "";
       const sample = reason === "no-key" || reason === "spend-cap" || reason === "failover" || reason === "placement";
       const warning = res.headers.get("x-placement-warning") || "";
@@ -671,7 +678,10 @@ export function TryOnApp({
         styleName: chosen.name,
         shadeName: chosen.tool === "style" ? shade?.name ?? null : chosen.tool === "colour" ? chosen.name : null,
         before: URL.createObjectURL(shot.blob),
-        after: URL.createObjectURL(out),
+        after: URL.createObjectURL(aligned.blob),
+        raw: poseDebug ? URL.createObjectURL(out) : undefined,
+        alignMode: aligned.mode,
+        eyeDelta: aligned.eyeDelta,
         serviceKeys: chosen.serviceKeys,
         tool: chosen.tool,
         demo: sample,
@@ -708,6 +718,7 @@ export function TryOnApp({
     if (active?.tool === "colour") {
       if (active.before.startsWith("blob:")) URL.revokeObjectURL(active.before);
       if (active.after.startsWith("blob:")) URL.revokeObjectURL(active.after);
+      if (active.raw?.startsWith("blob:")) URL.revokeObjectURL(active.raw);
       setActive(null);
       setStylePhase("pick");
     }
@@ -827,7 +838,14 @@ export function TryOnApp({
         <div className={busy || showResult ? "ai-photo-inner" : "contents"}>
         {showResult && active ? (
           <div>
-            <BeforeAfter before={active.before} after={active.after} beforeLabel={t(lang, "before")} afterLabel={t(lang, "after")} />
+            <BeforeAfter
+              before={active.before}
+              after={active.after}
+              beforeLabel={t(lang, "before")}
+              afterLabel={t(lang, "after")}
+              alignMode={active.alignMode}
+              eyeDelta={active.eyeDelta}
+            />
           </div>
         ) : (
           <div className="relative aspect-[3/4]">
@@ -955,6 +973,9 @@ export function TryOnApp({
         <div className="mt-4 grid gap-2">
           <h3 className="text-center font-serif text-2xl">{active.styleName}</h3>
           <button className="btn" type="button" onClick={() => void downloadLook()}>{t(lang, "downloadLook")}</button>
+          {poseDebug && active.raw && (
+            <a className="text-center text-sm underline" href={active.raw} target="_blank" rel="noreferrer" data-testid="provider-image">Provider image</a>
+          )}
           <button className="btn secondary" type="button" onClick={() => void book()}>{t(lang, "bookLook")}</button>
           <button className="btn secondary" type="button" onClick={() => resetForAnotherPhoto()}>{t(lang, "tryAnotherShort")}</button>
         </div>

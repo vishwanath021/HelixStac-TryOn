@@ -197,7 +197,7 @@ export function falUsdRange(
     return {
       lowUsd: usd,
       highUsd: usd,
-      detail: `$${FLUX3_USD_PER_OUTPUT_MEGAPIXEL} per output megapixel, one config value. The request leaves resolution at 1k, which fal bills as 1.00 megapixel. A downloaded 832×1248 frame is the same 1.00. The 8% buffer is applied to this figure. image_urls accepts 1–10 images. aspect_ratio is sent (2:3, 3:2, or 1:1).`,
+      detail: `$${FLUX3_USD_PER_OUTPUT_MEGAPIXEL} per output megapixel, one config value. The request leaves resolution at 1k, which fal bills as 1.00 megapixel. A downloaded 832×1248 frame is the same 1.00. The 8% buffer is applied to this figure. image_urls accepts 1–10 images. The schema has no width or height, so aspect_ratio is the closest published ratio to the selfie. Resolution stays at 1k.`,
     };
   }
   if (id === "fal-ai/nano-banana-pro/edit") {
@@ -290,6 +290,40 @@ export function falAspectRatio(size: EditSize) {
   return "1:1";
 }
 
+/** Published flux-3 aspect_ratio values. The edit schema has no custom width or height. `auto` is omitted so the request names a ratio. */
+const FLUX3_ASPECTS: { name: string; ratio: number }[] = [
+  { name: "21:9", ratio: 21 / 9 },
+  { name: "2:1", ratio: 2 },
+  { name: "16:9", ratio: 16 / 9 },
+  { name: "3:2", ratio: 3 / 2 },
+  { name: "7:5", ratio: 7 / 5 },
+  { name: "4:3", ratio: 4 / 3 },
+  { name: "5:4", ratio: 5 / 4 },
+  { name: "1:1", ratio: 1 },
+  { name: "4:5", ratio: 4 / 5 },
+  { name: "3:4", ratio: 3 / 4 },
+  { name: "5:7", ratio: 5 / 7 },
+  { name: "2:3", ratio: 2 / 3 },
+  { name: "9:16", ratio: 9 / 16 },
+  { name: "1:2", ratio: 1 / 2 },
+];
+
+/** Closest flux-3 aspect_ratio to the selfie. A 3:4 crop is "3:4", not the 2:3 size bucket. */
+export function closestFluxAspect(width: number, height: number) {
+  const ratio = Math.max(1, width) / Math.max(1, height);
+  const log = Math.log(ratio);
+  let best = FLUX3_ASPECTS[0];
+  let bestDelta = Infinity;
+  for (const aspect of FLUX3_ASPECTS) {
+    const delta = Math.abs(log - Math.log(aspect.ratio));
+    if (delta < bestDelta) {
+      best = aspect;
+      bestDelta = delta;
+    }
+  }
+  return best.name;
+}
+
 const ASPECT_ON_MINIMAL = new Set([
   "blackforestlabs/flux-3/edit-image",
   "fal-ai/nano-banana-pro/edit",
@@ -302,7 +336,15 @@ const IMAGE_SIZE_ON_MINIMAL = new Set([
 ]);
 
 /** JSON body for one edit. image_urls is selfie then the hairstyle reference. Seed, mask, and guidance are omitted. */
-export function buildFalEditBody(id: string, args: { prompt: string; selfieUrl: string; referenceUrl: string; size: EditSize }) {
+export function buildFalEditBody(id: string, args: {
+  prompt: string;
+  selfieUrl: string;
+  referenceUrl: string;
+  size: EditSize;
+  /** Selfie pixels. Flux-3 uses these for aspect_ratio. Sunburst and the size buckets stay on `size`. */
+  width?: number;
+  height?: number;
+}) {
   const row = falModel(id);
   if (!row) return null;
   if (row.maxInputs > 0 && row.maxInputs < 2) return null;
@@ -312,7 +354,11 @@ export function buildFalEditBody(id: string, args: { prompt: string; selfieUrl: 
       prompt: args.prompt,
       image_urls: [args.selfieUrl, args.referenceUrl],
     };
-    if (ASPECT_ON_MINIMAL.has(row.id)) minimal.aspect_ratio = falAspectRatio(args.size);
+    if (ASPECT_ON_MINIMAL.has(row.id)) {
+      minimal.aspect_ratio = row.id === "blackforestlabs/flux-3/edit-image" && args.width && args.height
+        ? closestFluxAspect(args.width, args.height)
+        : falAspectRatio(args.size);
+    }
     if (IMAGE_SIZE_ON_MINIMAL.has(row.id)) minimal.image_size = { width, height };
     if (row.id === "openai/gpt-image-2/edit") minimal.quality = "medium";
     return minimal;

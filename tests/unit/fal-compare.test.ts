@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { COMPARISON_MODELS, comparisonModel, quoteComparisonModel } from "@/lib/ai/compare-models";
 import { resolveFalKey, resolveOpenAIKey } from "@/lib/ai/credentials";
 import { BilledProviderError, UncertainBillingError } from "@/lib/ai/errors";
-import { FAL_NUMBERED_IMAGE_PROMPT, buildFalEditBody, falModel } from "@/lib/ai/fal-models";
+import { FAL_NUMBERED_IMAGE_PROMPT, buildFalEditBody, closestFluxAspect, falModel } from "@/lib/ai/fal-models";
 import { bufferedInr } from "@/lib/ai/tiers";
 import { falSubmitHeaders, falTimeoutMs, postFalReferenceEdit } from "@/lib/ai/fal-reference";
 import { productionModelNotice } from "@/lib/ai/model-notices";
@@ -165,6 +165,62 @@ describe("fal and shutdown catalogue", () => {
       expect(quote.estimateInr).toBe(bufferedInr(usd[id]!));
       expect(quote.estimateInr).toBeLessThanOrEqual(30);
     }
+    const portraitBody = buildFalEditBody("blackforestlabs/flux-3/edit-image", {
+      prompt: FAL_NUMBERED_IMAGE_PROMPT,
+      selfieUrl: "https://cdn.example/selfie.png",
+      referenceUrl: "https://cdn.example/reference.jpg",
+      size: "1024x1536",
+      width: 768,
+      height: 1024,
+    });
+    expect(portraitBody?.aspect_ratio).toBe("3:4");
+    expect(portraitBody).not.toHaveProperty("image_size");
+    expect(closestFluxAspect(1024, 1536)).toBe("2:3");
+    expect(closestFluxAspect(1536, 1024)).toBe("3:2");
+    expect(closestFluxAspect(1000, 1000)).toBe("1:1");
+  });
+
+  it("posts the selfie aspect for flux-3 when the size bucket is 2:3", async () => {
+    const selfie = await sharp({ create: { width: 9, height: 12, channels: 3, background: "#886655" } }).png().toBuffer();
+    let posted: { aspect_ratio?: string; image_size?: unknown } = {};
+    const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      if (href.includes("/storage/upload/initiate")) {
+        return json({ upload_url: "https://upload.example/put", file_url: "https://v3.fal.media/files/in.png" });
+      }
+      if (href.startsWith("https://upload.example")) return new Response(null, { status: 200 });
+      if (href.startsWith("https://queue.fal.run/") && !href.includes("/requests/") && init?.method === "POST") {
+        posted = JSON.parse(String(init.body)) as typeof posted;
+        return json({
+          request_id: "req-aspect",
+          status_url: "https://queue.fal.run/blackforestlabs/flux-3/requests/req-aspect/status",
+          response_url: "https://queue.fal.run/blackforestlabs/flux-3/requests/req-aspect/response",
+        });
+      }
+      if (href.includes("/req-aspect/status")) {
+        return json({ status: "COMPLETED", response_url: "https://queue.fal.run/blackforestlabs/flux-3/requests/req-aspect/response" });
+      }
+      if (href.endsWith("/req-aspect/response")) {
+        return json({ images: [{ url: "https://v3.fal.media/files/out.png", width: 9, height: 12 }] });
+      }
+      if (href.startsWith("https://v3.fal.media/")) return new Response(new Uint8Array(selfie), { status: 200 });
+      throw new Error(`unexpected ${href}`);
+    }) as typeof fetch;
+    await postFalReferenceEdit({
+      apiKey: "fal-test-key-123456",
+      endpointId: "blackforestlabs/flux-3/edit-image",
+      prompt: FAL_NUMBERED_IMAGE_PROMPT,
+      selfiePng: selfie,
+      referenceJpeg: selfie,
+      size: "1024x1536",
+      estimateUsd: 0.024,
+      fetchImpl,
+      deadlineMs: 30_000,
+      sleep: async () => undefined,
+    });
+    expect(posted.aspect_ratio).toBe("3:4");
+    expect(posted.image_size).toBeUndefined();
+    expect(Object.keys(posted).sort()).toEqual(["aspect_ratio", "image_urls", "prompt"]);
   });
 
   it("refuses a missing fal key before any request", async () => {

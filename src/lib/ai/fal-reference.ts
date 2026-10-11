@@ -165,7 +165,15 @@ export async function postFalReferenceEdit(args: {
   const sleep = args.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const selfieUrl = await uploadOne({ fetchImpl, apiKey: args.apiKey, bytes: args.selfiePng, fileName: "selfie.png", contentType: "image/png" });
   const referenceUrl = await uploadOne({ fetchImpl, apiKey: args.apiKey, bytes: args.referenceJpeg, fileName: "style-reference.jpg", contentType: "image/jpeg" });
-  const body = buildFalEditBody(row.id, { prompt: args.prompt, selfieUrl, referenceUrl, size: args.size });
+  const selfieMeta = await sharp(args.selfiePng, { failOn: "none" }).metadata();
+  const body = buildFalEditBody(row.id, {
+    prompt: args.prompt,
+    selfieUrl,
+    referenceUrl,
+    size: args.size,
+    width: selfieMeta.width,
+    height: selfieMeta.height,
+  });
   if (!body) throw new UnknownModelError(`${row.id} is not a configured fal edit. No other model was called.`);
   const started = now();
   const deadline = started + deadlineMs;

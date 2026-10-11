@@ -7,11 +7,15 @@ export function BeforeAfter({
   after,
   beforeLabel,
   afterLabel,
+  alignMode,
+  eyeDelta,
 }: {
   before: string;
   after: string;
   beforeLabel: string;
   afterLabel: string;
+  alignMode?: "landmarks" | "cover";
+  eyeDelta?: number | null;
 }) {
   const [pos, setPos] = useState(52);
   const box = useRef<HTMLDivElement>(null);
@@ -27,6 +31,9 @@ export function BeforeAfter({
     <div
       ref={box}
       className="relative aspect-[3/4] touch-none overflow-hidden bg-[#F3F0F8]"
+      data-testid="before-after"
+      data-align-mode={alignMode || undefined}
+      data-eye-delta={eyeDelta == null ? undefined : eyeDelta.toFixed(2)}
       onPointerDown={(event) => {
         if ((event.target as HTMLElement).tagName === "INPUT") return;
         box.current?.setPointerCapture(event.pointerId);
@@ -37,11 +44,11 @@ export function BeforeAfter({
         setFromClientX(event.clientX);
       }}
     >
-      <img src={after} alt={afterLabel} className="absolute inset-0 h-full w-full object-cover object-top" draggable={false} />
+      <img src={after} alt={afterLabel} className="absolute inset-0 h-full w-full object-cover object-center" draggable={false} />
       <img
         src={before}
         alt={beforeLabel}
-        className="absolute inset-0 h-full w-full object-cover object-top"
+        className="absolute inset-0 h-full w-full object-cover object-center"
         draggable={false}
         style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }}
       />
