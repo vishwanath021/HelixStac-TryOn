@@ -16,7 +16,23 @@ const LINKS = [
   ["/admin/settings", "Settings"],
 ];
 
-export function AdminNav({ role, name, credits, slug, showAi }: { role: string; name: string; credits: number; slug: string; showAi: boolean }) {
+export function AdminNav({
+  role,
+  name,
+  credits,
+  slug,
+  showAi,
+  salons = [],
+  currentTenantId = "",
+}: {
+  role: string;
+  name: string;
+  credits: number;
+  slug: string;
+  showAi: boolean;
+  salons?: { id: string; name: string }[];
+  currentTenantId?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
@@ -29,11 +45,33 @@ export function AdminNav({ role, name, credits, slug, showAi }: { role: string; 
         <p className="text-sm uppercase tracking-[0.14em] text-[#d8cbe4]">{role}</p>
         <p className="font-serif text-2xl leading-tight">{name}</p>
         <p className="text-sm text-[#d8cbe4]">{credits} credits</p>
+        {salons.length > 1 && (
+          <label className="mt-3 block text-xs text-[#d8cbe4]">Salon
+            <select
+              className="field mt-1 text-sm text-[#1b1224]"
+              aria-label="Switch salon"
+              value={currentTenantId}
+              onChange={(event) => {
+                const tenantId = event.target.value;
+                void fetch("/api/v1/admin/switch", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ tenantId }),
+                }).then(() => {
+                  window.location.href = "/admin";
+                });
+              }}
+            >
+              {salons.map((salon) => <option key={salon.id} value={salon.id}>{salon.name}</option>)}
+            </select>
+          </label>
+        )}
         <nav className="mt-3 grid text-sm" aria-label="Salon">
           {LINKS.map(([href, label]) => (
             <Link key={href} href={href} onClick={() => setOpen(false)}>{label}</Link>
           ))}
           {showAi && <Link href="/admin/ai" onClick={() => setOpen(false)}>AI settings</Link>}
+          {role === "OWNER" && <Link href="/admin/security" onClick={() => setOpen(false)}>Authenticator</Link>}
           <Link href={`/s/${slug}`} onClick={() => setOpen(false)}>View try-on</Link>
         </nav>
         <SignOutButton />

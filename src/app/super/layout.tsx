@@ -14,6 +14,7 @@ export default function SuperLayout({ children }: { children: React.ReactNode })
           <nav className="flex flex-wrap gap-1 text-sm" aria-label="Platform">
             <Link href="/super">Salons</Link>
             <Link href="/super/ai">AI settings</Link>
+            <Link href="/super/security">Authenticator</Link>
           </nav>
           <div className="ml-auto">
             <SignOutButton />

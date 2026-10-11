@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { CONSENT_HASH, CONSENT_VERSION } from "@/data/consent";
-import { exposeDevOtp, otpSender } from "@/lib/otp";
+import { exposeDevOtp, otpSender, phoneLoginConfigured } from "@/lib/otp";
 import { hashOtp, newOtpCode, normalizePhone } from "@/lib/preview-access";
 import { prisma } from "@/lib/prisma";
 import { requestClientIp, sharedRateLimit } from "@/lib/ratelimit";
@@ -11,6 +11,12 @@ const schema = z.object({ slug: z.string().min(1), phone: z.string().min(8).max(
 export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
+  if (!phoneLoginConfigured()) {
+    return NextResponse.json(
+      { error: "OTP_DISABLED", message: "Phone login is off until MSG91_AUTH_KEY and MSG91_TEMPLATE_ID are set and OTP_PROVIDER=msg91." },
+      { status: 503 },
+    );
+  }
   const phone = normalizePhone(parsed.data.phone);
   if (!phone) return NextResponse.json({ error: "PHONE", message: "Enter a mobile number with 10 digits, or include the country code." }, { status: 400 });
   const tenant = await prisma.tenant.findUnique({ where: { slug: parsed.data.slug } });
@@ -22,9 +28,13 @@ export async function POST(req: Request) {
   }
   const code = newOtpCode();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  try {
+    await otpSender().send(phone, code);
+  } catch {
+    return NextResponse.json({ error: "OTP_SEND", message: "The text message could not be sent. Try again shortly." }, { status: 502 });
+  }
   await prisma.otpChallenge.deleteMany({ where: { tenantId: tenant.id, phone } });
   await prisma.otpChallenge.create({ data: { tenantId: tenant.id, phone, codeHash: hashOtp(tenant.id, phone, code), expiresAt } });
-  await otpSender().send(phone, code);
   await prisma.consentLog.create({
     data: {
       tenantId: tenant.id,

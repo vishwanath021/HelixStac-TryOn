@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { GuestHub } from "@/components/guest/GuestHub";
+import { phoneLoginConfigured } from "@/lib/otp";
 import { loadTenantByHost, loadTenantBySlug, toSalonConfig } from "@/lib/salon";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ export default async function MePage({
       look={query.look}
       styleId={query.styleId}
       tool={query.tool}
+      phoneLogin={phoneLoginConfigured()}
     />
   );
 }

@@ -2,7 +2,7 @@
 export function csrfBlocked(req: { method: string; headers: { get(name: string): string | null }; nextUrl?: { pathname: string }; url?: string }) {
   if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return false;
   const pathname = req.nextUrl?.pathname || new URL(req.url || "http://localhost").pathname;
-  const guarded = pathname.startsWith("/api/v1/admin") || pathname.startsWith("/api/v1/super") || pathname.startsWith("/api/v1/auth");
+  const guarded = pathname.startsWith("/api/v1/admin") || pathname.startsWith("/api/v1/super") || pathname.startsWith("/api/v1/auth") || pathname.startsWith("/api/v1/account");
   if (!guarded) return false;
   const origin = req.headers.get("origin");
   if (!origin) return process.env.NODE_ENV === "production";

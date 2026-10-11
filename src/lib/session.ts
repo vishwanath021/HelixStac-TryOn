@@ -1,24 +1,41 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+
+export const SALON_COOKIE = "helix_salon";
+
+async function membershipFor(userId: string, sessionTenantId?: string) {
+  const jar = await cookies();
+  const picked = jar.get(SALON_COOKIE)?.value || "";
+  if (picked) {
+    const hit = await prisma.membership.findFirst({
+      where: { userId, tenantId: picked },
+      include: { tenant: true },
+    });
+    if (hit) return hit;
+  }
+  if (sessionTenantId) {
+    const hit = await prisma.membership.findFirst({
+      where: { userId, tenantId: sessionTenantId },
+      include: { tenant: true },
+    });
+    if (hit) return hit;
+  }
+  return prisma.membership.findFirst({
+    where: { userId },
+    include: { tenant: true },
+    orderBy: { role: "asc" },
+  });
+}
 
 export async function requireMembership() {
   const session = await auth();
   if (!session?.user?.id) {
     return { error: NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 }) };
   }
-  const preferred = session.user.tenantId;
-  const membership = preferred
-    ? await prisma.membership.findFirst({
-        where: { userId: session.user.id, tenantId: preferred },
-        include: { tenant: true },
-      })
-    : await prisma.membership.findFirst({
-        where: { userId: session.user.id },
-        include: { tenant: true },
-        orderBy: { role: "asc" },
-      });
+  const membership = await membershipFor(session.user.id, session.user.tenantId);
   if (!membership) {
     return { error: NextResponse.json({ error: "NO_TENANT" }, { status: 403 }) };
   }
@@ -39,10 +56,19 @@ export async function isSuperSession() {
   return Boolean(session?.user?.isSuperAdmin);
 }
 
+async function superNeedsTotp(userId: string) {
+  if (process.env.NODE_ENV !== "production") return false;
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { totpEnabled: true } });
+  return !user?.totpEnabled;
+}
+
 export async function requireSuper() {
   const session = await auth();
   if (!session?.user?.isSuperAdmin) {
     return { error: NextResponse.json({ error: "FORBIDDEN" }, { status: 403 }) };
+  }
+  if (await superNeedsTotp(session.user.id)) {
+    return { error: NextResponse.json({ error: "TOTP_REQUIRED", message: "Turn on an authenticator app before using the platform." }, { status: 403 }) };
   }
   return { session };
 }
@@ -50,17 +76,7 @@ export async function requireSuper() {
 export async function pageTenant() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
-  const preferred = session.user.tenantId;
-  const membership = preferred
-    ? await prisma.membership.findFirst({
-        where: { userId: session.user.id, tenantId: preferred },
-        include: { tenant: true },
-      })
-    : await prisma.membership.findFirst({
-        where: { userId: session.user.id },
-        include: { tenant: true },
-        orderBy: { role: "asc" },
-      });
+  const membership = await membershipFor(session.user.id, session.user.tenantId);
   if (!membership) {
     if (session.user.isSuperAdmin) redirect("/super");
     redirect("/login?error=no-salon");
@@ -68,8 +84,9 @@ export async function pageTenant() {
   return { session, membership, tenant: membership.tenant };
 }
 
-export async function pageSuper() {
+export async function pageSuper(options?: { allowEnrollment?: boolean }) {
   const session = await auth();
   if (!session?.user?.isSuperAdmin) redirect("/login");
+  if (!options?.allowEnrollment && (await superNeedsTotp(session.user.id))) redirect("/super/security");
   return session;
 }

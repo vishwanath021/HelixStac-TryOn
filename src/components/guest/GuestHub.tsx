@@ -28,12 +28,14 @@ export function GuestHub({
   look,
   styleId,
   tool,
+  phoneLogin = true,
 }: {
   config: SalonConfig;
   book?: boolean;
   look?: string;
   styleId?: string;
   tool?: string;
+  phoneLogin?: boolean;
 }) {
   const [lang, setLang] = useState<Locale>(isLocale(config.defaultLang) ? config.defaultLang : "en");
   const [tab, setTab] = useState<Tab>(book ? "bookings" : "home");
@@ -209,20 +211,24 @@ export function GuestHub({
       {!ready ? <p role="status">{t(lang, "progress")}</p> : !customer ? (
         <section className="card space-y-3 p-4" aria-labelledby="otp-title">
           <h2 id="otp-title" className="font-serif text-2xl">{t(lang, "hubLogin")}</h2>
-          <form className="space-y-2" onSubmit={sendCode}>
-            <label className="block text-sm">{t(lang, "hubPhone")}
-              <input className="field mt-1" type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={(event) => setPhone(event.target.value)} />
-            </label>
-            <button className="btn" type="submit">{t(lang, "hubSend")}</button>
-          </form>
-          {sent && (
-            <form className="space-y-2" onSubmit={verify}>
-              <label className="block text-sm">{t(lang, "hubCode")}
-                <input className="field mt-1" inputMode="numeric" autoComplete="one-time-code" pattern="\d{4,6}" maxLength={6} required value={code} onChange={(event) => setCode(event.target.value)} aria-label={t(lang, "hubCode")} />
-              </label>
-              {devCode && <p className="text-sm" data-testid="dev-otp">{t(lang, "hubDevCode")}: {devCode}</p>}
-              <button className="btn" type="submit">{t(lang, "hubVerify")}</button>
-            </form>
+          {!phoneLogin ? <p className="text-sm">Phone login is off until SMS is configured.</p> : (
+            <>
+              <form className="space-y-2" onSubmit={sendCode}>
+                <label className="block text-sm">{t(lang, "hubPhone")}
+                  <input className="field mt-1" type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={(event) => setPhone(event.target.value)} />
+                </label>
+                <button className="btn" type="submit">{t(lang, "hubSend")}</button>
+              </form>
+              {sent && (
+                <form className="space-y-2" onSubmit={verify}>
+                  <label className="block text-sm">{t(lang, "hubCode")}
+                    <input className="field mt-1" inputMode="numeric" autoComplete="one-time-code" pattern="\d{4,6}" maxLength={6} required value={code} onChange={(event) => setCode(event.target.value)} aria-label={t(lang, "hubCode")} />
+                  </label>
+                  {devCode && <p className="text-sm" data-testid="dev-otp">{t(lang, "hubDevCode")}: {devCode}</p>}
+                  <button className="btn" type="submit">{t(lang, "hubVerify")}</button>
+                </form>
+              )}
+            </>
           )}
         </section>
       ) : !customer.onboarded ? (

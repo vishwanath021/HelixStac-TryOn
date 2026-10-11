@@ -100,13 +100,17 @@ model Outlet {
 }
 
 model User {
-  id           String       @id @default(cuid())
-  email        String       @unique
-  name         String
-  passwordHash String
-  isSuperAdmin Boolean      @default(false)
-  createdAt    DateTime     @default(now())
-  memberships  Membership[]
+  id                  String       @id @default(cuid())
+  email               String       @unique
+  name                String
+  passwordHash        String
+  isSuperAdmin        Boolean      @default(false)
+  totpSecretCipher    String       @default("")
+  totpPendingCipher   String       @default("")
+  totpEnabled         Boolean      @default(false)
+  recoveryCodeHashes  String       @default("[]")
+  createdAt           DateTime     @default(now())
+  memberships         Membership[]
 }
 
 model Membership {

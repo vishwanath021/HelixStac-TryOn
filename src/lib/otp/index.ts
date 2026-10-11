@@ -3,6 +3,22 @@ export interface OtpSender {
   send(phone: string, code: string): Promise<void>;
 }
 
+/** Production phone login needs MSG91. Local dev may use the mock sender. */
+export function phoneLoginConfigured(env: NodeJS.ProcessEnv = process.env) {
+  const name = (env.OTP_PROVIDER || "mock").toLowerCase();
+  if (name === "msg91") return Boolean(env.MSG91_AUTH_KEY && env.MSG91_TEMPLATE_ID);
+  if (env.NODE_ENV === "production") return false;
+  return name === "mock" || name === "";
+}
+
+export function msg91Body(phone: string, code: string, templateId = process.env.MSG91_TEMPLATE_ID || "") {
+  return {
+    template_id: templateId,
+    mobile: phone.replace(/\D/g, ""),
+    otp: code,
+  };
+}
+
 class MockOtpSender implements OtpSender {
   name = "mock";
   async send(phone: string, code: string) {
@@ -14,26 +30,25 @@ class MockOtpSender implements OtpSender {
   }
 }
 
-class Msg91Stub implements OtpSender {
+class Msg91Sender implements OtpSender {
   name = "msg91";
-  async send() {
-    if (!process.env.MSG91_AUTH_KEY) throw new Error("MSG91_AUTH_KEY is not set");
-    throw new Error("MSG91 adapter is a stub. Set OTP_PROVIDER=mock until the live template is wired.");
-  }
-}
-
-class TwilioStub implements OtpSender {
-  name = "twilio";
-  async send() {
-    if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) throw new Error("Twilio keys are not set");
-    throw new Error("Twilio adapter is a stub. Set OTP_PROVIDER=mock until the live sender is wired.");
+  async send(phone: string, code: string) {
+    const authkey = process.env.MSG91_AUTH_KEY || "";
+    const body = msg91Body(phone, code);
+    if (!authkey || !body.template_id || !body.mobile) throw new Error("MSG91 is not configured");
+    const res = await fetch("https://control.msg91.com/api/v5/otp", {
+      method: "POST",
+      headers: { authkey, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error("MSG91 rejected the OTP request");
+    const data = (await res.json().catch(() => null)) as { type?: string } | null;
+    if (data?.type === "error") throw new Error("MSG91 rejected the OTP request");
   }
 }
 
 export function otpSender(): OtpSender {
-  const name = (process.env.OTP_PROVIDER || "mock").toLowerCase();
-  if (name === "msg91" && process.env.MSG91_AUTH_KEY) return new Msg91Stub();
-  if (name === "twilio" && process.env.TWILIO_ACCOUNT_SID) return new TwilioStub();
+  if (phoneLoginConfigured() && (process.env.OTP_PROVIDER || "mock").toLowerCase() === "msg91") return new Msg91Sender();
   return new MockOtpSender();
 }
 

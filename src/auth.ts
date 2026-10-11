@@ -3,12 +3,21 @@ import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { checkUserTotp } from "@/lib/account-totp";
 import { numberEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { requestClientIp, sharedRateLimit } from "@/lib/ratelimit";
 
 class LoginLimited extends CredentialsSignin {
   code = "rate_limit";
+}
+
+class TotpRequired extends CredentialsSignin {
+  code = "totp_required";
+}
+
+class TotpInvalid extends CredentialsSignin {
+  code = "totp_invalid";
 }
 
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
@@ -28,7 +37,14 @@ declare module "next-auth" {
 const credentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(200),
+  totp: z.string().max(40).optional(),
 });
+
+async function assertTotp(user: { id: string; totpEnabled: boolean; totpSecretCipher: string; recoveryCodeHashes: string }, code: string) {
+  const result = await checkUserTotp(user, code);
+  if (result === "missing") throw new TotpRequired();
+  if (result === "invalid") throw new TotpInvalid();
+}
 
 async function userToSession(email: string) {
   const user = await prisma.user.findUnique({ where: { email } });
@@ -61,6 +77,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        totp: { label: "Authenticator code", type: "text" },
       },
       authorize: async (credentials, request) => {
         const parsed = credentialsSchema.safeParse(credentials);
@@ -75,19 +92,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!user) return null;
         const ok = await compare(parsed.data.password, user.passwordHash);
         if (!ok) return null;
+        await assertTotp(user, parsed.data.totp || "");
         return userToSession(email);
       },
     }),
     Credentials({
       id: "magic",
       name: "Magic link",
-      credentials: { token: { label: "Token", type: "text" } },
+      credentials: {
+        token: { label: "Token", type: "text" },
+        totp: { label: "Authenticator code", type: "text" },
+      },
       authorize: async (credentials) => {
         const token = typeof credentials?.token === "string" ? credentials.token : "";
+        const totp = typeof credentials?.totp === "string" ? credentials.totp : "";
         if (token.length < 20) return null;
         const tokenHash = createHash("sha256").update(token).digest("hex");
         const link = await prisma.magicLink.findUnique({ where: { tokenHash } });
         if (!link || link.used || link.expiresAt.getTime() < Date.now()) return null;
+        const user = await prisma.user.findUnique({ where: { email: link.email.toLowerCase() } });
+        if (!user) return null;
+        await assertTotp(user, totp);
         await prisma.magicLink.update({ where: { id: link.id }, data: { used: true } });
         return userToSession(link.email.toLowerCase());
       },
