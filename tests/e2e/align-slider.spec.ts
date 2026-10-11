@@ -13,12 +13,12 @@ async function shiftedProvider() {
   const scaledW = Math.round(width * scale);
   const scaledH = Math.round(height * scale);
   const scaled = await sharp(input).resize(scaledW, scaledH, { fit: "fill" }).toBuffer();
-  const outW = 520;
-  const outH = 780;
+  const outW = scaledW + 96;
+  const outH = scaledH + 120;
   return sharp({
     create: { width: outW, height: outH, channels: 3, background: { r: 196, g: 168, b: 120 } },
   })
-    .composite([{ input: scaled, left: Math.round((outW - scaledW) / 2), top: 36 }])
+    .composite([{ input: scaled, left: 18, top: 88 }])
     .jpeg({ quality: 90 })
     .toBuffer();
 }
