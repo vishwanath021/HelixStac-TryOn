@@ -310,7 +310,9 @@ test("denied camera offers an upload fallback", async ({ page }) => {
   });
   await page.goto("/s/demo-salon");
   await page.getByRole("button", { name: "Take selfie" }).click();
-  await expect(page.getByText(/camera is not available/i)).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveText(/permission was denied/i);
+  await expect(page.getByText(/address bar/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use the phone camera" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Upload" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Styles" }).locator("img").first()).toBeVisible();
 });

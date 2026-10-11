@@ -275,13 +275,28 @@ export function TryOnApp({
   }
 
   function releaseStream() {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    const stream = streamRef.current;
     streamRef.current = null;
+    stream?.getTracks().forEach((track) => track.stop());
     const video = videoRef.current;
     if (!video) return;
     video.pause();
     video.srcObject = null;
-    video.load();
+  }
+
+  function logCamera(error: unknown) {
+    if (process.env.NODE_ENV === "production") return;
+    const name = error && typeof error === "object" && "name" in error ? String((error as { name?: string }).name) : "";
+    console.error(`[camera] ${name || "error"}`, error);
+  }
+
+  function messageForCamera(error: unknown) {
+    const name = error && typeof error === "object" && "name" in error ? String((error as { name?: string }).name) : "";
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") return t(lang, "cameraDenied");
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") return t(lang, "cameraMissing");
+    if (name === "NotReadableError" || name === "TrackStartError") return t(lang, "cameraBusy");
+    if (name === "SecurityError" || !window.isSecureContext) return t(lang, "cameraInsecure");
+    return t(lang, "cameraError");
   }
 
   function stopCamera() {
@@ -299,11 +314,32 @@ export function TryOnApp({
     else setFaceShot(null);
   }
 
-  async function startCamera(nextFacing: "user" | "environment" = facing) {
+  function startCamera(nextFacing: "user" | "environment" = facing) {
     const gen = cameraGen.current + 1;
     cameraGen.current = gen;
     clearPickers();
     releaseStream();
+    if (!window.isSecureContext) {
+      setCameraOn(false);
+      setCameraReady(false);
+      setVideoEl(null);
+      setCameraError(t(lang, "cameraInsecure"));
+      logCamera(new Error("insecure context"));
+      return;
+    }
+    const devices = navigator.mediaDevices;
+    if (!devices?.getUserMedia) {
+      setCameraOn(false);
+      setCameraReady(false);
+      setVideoEl(null);
+      setCameraError("");
+      pickFile(captureRef.current);
+      return;
+    }
+    // Ask in this click, before React paints, so the browser still treats it as the user gesture.
+    const pending = devices.getUserMedia({
+      video: { facingMode: nextFacing === "user" ? "user" : { ideal: "environment" } },
+    });
     flushSync(() => {
       setError("");
       setCameraError("");
@@ -313,26 +349,21 @@ export function TryOnApp({
       setCameraOn(true);
       dropLiveShot(nextFacing);
     });
-    const devices = navigator.mediaDevices;
-    if (!devices?.getUserMedia) {
-      if (cameraGen.current !== gen) return;
-      setCameraOn(false);
-      setCameraError(t(lang, "cameraError"));
-      return;
-    }
+    void attachCamera(pending, gen);
+  }
+
+  async function attachCamera(pending: Promise<MediaStream>, gen: number) {
     let stream: MediaStream;
     try {
-      stream = await devices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: nextFacing }, width: { ideal: 720 }, height: { ideal: 1280 } },
-      });
-    } catch {
+      stream = await pending;
+    } catch (error) {
       if (cameraGen.current !== gen) return;
+      logCamera(error);
       releaseStream();
       setCameraOn(false);
       setCameraReady(false);
       setVideoEl(null);
-      setCameraError(t(lang, "cameraError"));
+      setCameraError(messageForCamera(error));
       return;
     }
     if (cameraGen.current !== gen) {
@@ -342,11 +373,15 @@ export function TryOnApp({
     const video = videoRef.current;
     if (!video) {
       stream.getTracks().forEach((track) => track.stop());
+      logCamera(new Error("video element missing after getUserMedia"));
       setCameraOn(false);
       return;
     }
     try {
       video.muted = true;
+      video.defaultMuted = true;
+      video.playsInline = true;
+      video.autoplay = true;
       video.setAttribute("playsinline", "true");
       video.srcObject = stream;
       streamRef.current = stream;
@@ -365,8 +400,9 @@ export function TryOnApp({
       setVideoEl(video);
       setCameraReady(true);
       track("camera_started", {});
-    } catch {
+    } catch (error) {
       if (cameraGen.current !== gen) return;
+      logCamera(error);
       stream.getTracks().forEach((track) => track.stop());
       releaseStream();
       setCameraOn(false);
@@ -823,12 +859,7 @@ export function TryOnApp({
               <div className="absolute inset-0 grid content-center justify-items-center gap-3 px-6">
                 <button className="btn min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "takeSelfie")}</button>
                 <button className="btn secondary min-w-44" type="button" onClick={() => pickFile(fileRef.current)}>{t(lang, "uploadPhoto")}</button>
-                {cameraError && (
-                  <>
-                    <p className="text-center text-sm text-[var(--bad)]" role="alert">{cameraError}</p>
-                    <button className="btn on-photo min-w-44" type="button" onClick={() => pickFile(captureRef.current)}>Use the phone camera</button>
-                  </>
-                )}
+                {cameraError && <p className="text-center text-sm text-[var(--bad)]" role="alert">{cameraError}</p>}
               </div>
             )}
             {cameraOn && (
@@ -894,8 +925,9 @@ export function TryOnApp({
         type="file"
         accept="image/*"
         capture="user"
+        tabIndex={-1}
+        aria-hidden="true"
         data-photo="camera"
-        aria-label="Take a photo with the camera"
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
