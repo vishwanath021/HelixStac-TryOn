@@ -5,9 +5,11 @@ import { flushSync } from "react-dom";
 import { isPlatformLogo, LookuviMark } from "@/components/brand/LookuviMark";
 import { headerBarColor } from "@/lib/contrast";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
+import { BrowCard } from "@/components/tryon/BrowCard";
 import { ColourStage } from "@/components/tryon/ColourStage";
 import { HairTypePicker } from "@/components/tryon/HairTypePicker";
 import { StyleCard } from "@/components/tryon/StyleCard";
+import { BROW_COLOURS, BROW_THICKNESS, browsForAudience, type BrowColour, type BrowThickness } from "@/data/brows";
 import { t } from "@/data/i18n";
 import { orderStylesForPicker, suggestStyles, type HairReading } from "@/lib/hair-suitability";
 import { captureShouldMirror, visiblePortraitCrop } from "@/lib/capture";
@@ -128,6 +130,8 @@ export function TryOnApp({
   const [tool, setTool] = useState<TryTool>(firstTool(config, initialTool));
   const [gender, setGender] = useState<Audience>(config.showWomen ? "women" : config.showMen ? "men" : "kids");
   const [styleId, setStyleId] = useState("");
+  const [browThickness, setBrowThickness] = useState<BrowThickness>("natural");
+  const [browColour, setBrowColour] = useState<BrowColour>("natural");
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
   const [busy, setBusy] = useState(false);
   const [pickedDensity, setPickedDensity] = useState("");
@@ -191,6 +195,7 @@ export function TryOnApp({
   const shade = config.shades.find((item) => item.id === shadeId) ?? null;
   const activeShot = tool === "nails" ? handShot : faceShot;
   const styles = config.styles.filter((style) => style.gender === gender);
+  const browList = browsForAudience(config.brows, gender);
   const visibleStyles = config.hairPickerOn
     ? orderStylesForPicker(styles, { density: pickedDensity, texture: pickedTexture }, showAllStyles)
     : styles;
@@ -634,6 +639,10 @@ export function TryOnApp({
       body.set("sessionId", sid || sessionId());
       body.set("requestId", crypto.randomUUID());
       if (salonToken) body.set("salonToken", salonToken);
+      if (chosen.tool === "brows") {
+        body.set("browThickness", browThickness);
+        body.set("browColour", browColour);
+      }
       if (chosen.tool === "brows" || chosen.tool === "beard" || chosen.tool === "colour") {
         const detected = await detectFaceLandmarks(shot.blob).catch(() => null);
         if (detected) {
@@ -963,6 +972,20 @@ export function TryOnApp({
       {poseDebug && poseNote && (error || showResult) && <PoseReadout debug={poseNote} />}
       {notice && <p className="mt-3 text-center text-sm" role="status">{notice}</p>}
 
+      {!showResult && tool === "brows" && styleId && (
+        <div className="mt-4 grid gap-3">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Brow thickness">
+            {BROW_THICKNESS.map((item) => (
+              <button key={item.id} className="chip" type="button" aria-pressed={browThickness === item.id} onClick={() => setBrowThickness(item.id)}>{item.label}</button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Brow colour">
+            {BROW_COLOURS.map((item) => (
+              <button key={item.id} className="chip" type="button" aria-pressed={browColour === item.id} onClick={() => setBrowColour(item.id)}>{item.label}</button>
+            ))}
+          </div>
+        </div>
+      )}
       {!showResult && tool !== "colour" && styleId && (
         <button className="btn mt-4 w-full" type="button" disabled={busy} onClick={() => void tryLook()}>{t(lang, "tryThisLook")}</button>
       )}
@@ -1049,11 +1072,12 @@ export function TryOnApp({
 
         {tool === "brows" && (
           <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-2">
-            {config.brows.map((brow) => (
-              <button key={brow.id} type="button" aria-pressed={brow.id === styleId} className={pickClass(brow.id === styleId)} disabled={busy} onClick={() => selectLook({ id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" })}>
+            {browList.map((brow) => (
+              <button key={brow.id} type="button" aria-pressed={brow.id === styleId} className={`${pickClass(brow.id === styleId)} min-h-11`} disabled={busy} onClick={() => selectLook({ id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" })}>
                 <PickMark on={brow.id === styleId} />
-                <StyleCard id={brow.id} name={brow.name} folder="brows" />
-                <span className="block px-2 py-2 text-center text-sm font-medium">{brow.name}</span>
+                <BrowCard id={brow.id} name={brow.name} />
+                <span className="block px-2 pt-2 text-center text-sm font-medium leading-tight">{brow.name}</span>
+                <span className="block px-2 pb-2 text-center text-[11px] font-semibold uppercase tracking-wide text-muted">{brow.audience === "men" ? "Men" : brow.audience === "women" ? "Women" : "Unisex"}</span>
               </button>
             ))}
           </div>

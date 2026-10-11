@@ -53,8 +53,9 @@ describe("guest reference generation", () => {
     expect(ready.ok).toBe(true);
     if (!ready.ok) return;
     expect(ready.quote.model).toBe(GUEST_OPENAI_MODEL);
-    expect(ready.prompt).toContain("Image 1 is the customer selfie, image 2 is the reference.");
-    expect(ready.prompt).toContain("Change only the eyebrow shape and thickness to match image 2.");
+    expect(ready.prompt).toContain("Image 1 is the customer selfie. Image 2 is a brow-shape diagram, not a face to copy.");
+    expect(ready.prompt).toContain("Change only the eyebrows.");
+    expect(ready.prompt).toContain("Keep the face, identity, hair, skin, background and framing identical.");
     expect(ready.prompt).not.toContain(FAL_NUMBERED_IMAGE_PROMPT);
     expect(ready.prompt.toLowerCase()).not.toContain("mask");
     expect(ready.quote.estimateUsd).toBe(0.159714);

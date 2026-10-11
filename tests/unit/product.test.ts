@@ -143,21 +143,27 @@ describe("recommendations and concierge", () => {
 });
 
 describe("eyebrow catalogue", () => {
-  it("ships seven shapes and prompts that edit brows only", () => {
+  it("ships a shape for each brow and prompts that edit brows only", () => {
     expect(BROWS.map((brow) => brow.name)).toEqual([
       "Soft Arch",
-      "Straight Brow",
       "High Arch",
+      "Straight",
       "Rounded",
       "S-Shape",
       "Feathered",
       "Bold Natural",
+      "Angled",
+      "Flat Thick",
+      "Natural Groomed",
+      "Thin Defined",
+      "Tapered",
+      "Clean-up",
     ]);
     for (const brow of BROWS) {
       const prompt = buildBrowPrompt(brow);
-      expect(prompt).toContain("Image 1 is the customer selfie, image 2 is the reference.");
-      expect(prompt).toContain("Change only the eyebrow shape and thickness to match image 2.");
-      expect(prompt).toContain("Keep the eyes, eyelids, forehead, bindi, skin, hair, face, clothes and background the same.");
+      expect(prompt).toContain("Image 1 is the customer selfie. Image 2 is a brow-shape diagram, not a face to copy.");
+      expect(prompt).toContain("Change only the eyebrows.");
+      expect(prompt).toContain("Keep the face, identity, hair, skin, background and framing identical.");
       expect(prompt.toLowerCase()).not.toContain("mask");
       expect(brow.serviceKeys).toEqual(["eyebrow-threading", "eyebrow-shaping"]);
     }

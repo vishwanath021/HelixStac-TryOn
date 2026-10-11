@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
+import { parseBrowColour, parseBrowThickness } from "@/data/brows";
 import { claimGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
 import { BROWS_NEED_OPENAI, browsRoute, demoGuestPreview, engineForGuestTool, guestEngineReady, loadGuestReference, readGuestEngine, runGuestHairstyleIfReady, runGuestLookIfReady } from "@/lib/ai/guest-hairstyle";
 import { guestPreviewHeaders } from "@/lib/ai/guest-response";
@@ -59,6 +60,8 @@ export async function POST(req: Request) {
   const rawTool = String(form.get("tool") || "style");
   const tool = rawTool === "brows" || rawTool === "beard" || rawTool === "nails" || rawTool === "colour" ? rawTool : "style";
   const shadeId = form.get("shadeId") ? String(form.get("shadeId")) : null;
+  const browThickness = parseBrowThickness(form.get("browThickness"));
+  const browColour = parseBrowColour(form.get("browColour"));
   const photo = form.get("photo");
   if (!slug || !styleId || sessionId.length < 8 || !(photo instanceof File)) {
     return NextResponse.json({ error: "INVALID", message: "Photo, style, and session are required." }, { status: 400 });
@@ -144,7 +147,7 @@ export async function POST(req: Request) {
     const claim = await claimGenerationJob({
       tenantId: tenant.id,
       requestId,
-      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: tool === "style" ? shadeId || "" : "", mode: tool }),
+      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: tool === "brows" ? `${browThickness}:${browColour}` : tool === "style" ? shadeId || "" : "", mode: tool }),
     });
     if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
     if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
@@ -192,7 +195,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const guestLook = tool === "style" ? null : await loadGuestReference(tool, styleId);
+  const guestLook = tool === "style" ? null : await loadGuestReference(tool, styleId, tool === "brows" ? { thickness: browThickness, colour: browColour } : undefined);
   if (tool !== "style" && !guestLook) {
     await failGenerationJob(jobId, { outcome: "style", message: "That look is not on this salon's menu." });
     return NextResponse.json({ error: "STYLE", message: "That look is not on this salon's menu." }, { status: 400 });

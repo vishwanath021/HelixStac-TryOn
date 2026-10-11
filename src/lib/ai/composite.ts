@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { browDiagramJpeg } from "@/lib/ai/brow-diagram";
 import { readStyleThumbnail, type ThumbFolder } from "@/lib/ai/style-reference";
 
 function escapeXml(value: string) {
@@ -8,7 +9,7 @@ function escapeXml(value: string) {
 async function referenceCard(styleId: string, styleName: string, folder: ThumbFolder) {
   const cardW = 236;
   const cardH = 292;
-  const thumb = readStyleThumbnail(styleId, folder);
+  const thumb = folder === "brows" ? await browDiagramJpeg(styleId) : readStyleThumbnail(styleId, folder);
   const photo = thumb
     ? await sharp(thumb).resize(204, 204, { fit: "cover" }).jpeg().toBuffer()
     : null;

@@ -3,7 +3,6 @@ import path from "node:path";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { BEARDS } from "@/data/beards";
-import { BROWS } from "@/data/brows";
 import { NAILS } from "@/data/nails";
 import { CALIBRATION_CAP_INR, CALIBRATION_MAX_IMAGES, runCalibration } from "@/lib/ai/calibrate";
 import { paintFlat } from "@/lib/ai/flat-edit";
@@ -454,9 +453,8 @@ describe("region masks", () => {
     expect(portrait.face && portrait.face.cy).toBeLessThan(portrait.height * 0.75);
   });
 
-  it("ships a photo card for every brow, beard, and nail id", () => {
+  it("ships a photo card for every beard and nail id", () => {
     for (const [folder, rows] of [
-      ["brows", BROWS],
       ["beards", BEARDS],
       ["nails", NAILS],
     ] as const) {

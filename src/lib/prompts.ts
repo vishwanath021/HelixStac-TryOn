@@ -1,5 +1,5 @@
 import type { BeardDef } from "@/data/beards";
-import type { BrowDef } from "@/data/brows";
+import { browColourLine, browThicknessLine, parseBrowColour, parseBrowThickness, type BrowDef, type BrowVariation } from "@/data/brows";
 import type { NailDef } from "@/data/nails";
 import type { ShadeDef } from "@/data/shades";
 import { lengthCategoryFor, type StyleDef } from "@/data/styles";
@@ -63,13 +63,17 @@ export function buildReferencePrompt(style: StyleDef, colourName?: string, textu
   ].join(" ");
 }
 
-/** Guest brow edit. Image 2 is the brow photo. No mask sentence. */
-export function buildBrowPrompt(brow: BrowDef) {
+/** Guest brow edit. Image 2 is a shape diagram. No mask sentence. */
+export function buildBrowPrompt(brow: BrowDef, variation?: BrowVariation) {
+  const thickness = parseBrowThickness(variation?.thickness);
+  const colour = parseBrowColour(variation?.colour);
   return [
-    IMAGE_ROLES,
-    "Change only the eyebrow shape and thickness to match image 2.",
-    "Keep the eyes, eyelids, forehead, bindi, skin, hair, face, clothes and background the same.",
+    "Image 1 is the customer selfie. Image 2 is a brow-shape diagram, not a face to copy.",
+    "Change only the eyebrows.",
+    "Keep the face, identity, hair, skin, background and framing identical.",
     `The selected brow is ${brow.name}. ${brow.prompt}`,
+    browThicknessLine(thickness),
+    browColourLine(colour),
   ].join(" ");
 }
 

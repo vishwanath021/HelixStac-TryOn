@@ -1,9 +1,10 @@
 import sharp from "sharp";
 import { NextResponse } from "next/server";
 import { beardById } from "@/data/beards";
-import { browById } from "@/data/brows";
+import { browById, type BrowVariation } from "@/data/brows";
 import { nailById } from "@/data/nails";
 import { shadeById } from "@/data/shades";
+import { browDiagramJpeg } from "@/lib/ai/brow-diagram";
 import { demoStyleComposite } from "@/lib/ai/composite";
 import { resolveFalKey, resolveOpenAIKey } from "@/lib/ai/credentials";
 import { completeGenerationJob, failGenerationJob } from "@/lib/ai/dedupe";
@@ -99,8 +100,8 @@ async function shadeSwatch(hex: string) {
   return sharp({ create: { width: 512, height: 512, channels: 3, background: hex } }).jpeg({ quality: 90 }).toBuffer();
 }
 
-/** Image 2 for a guest look. Colour is a flat swatch. The others are catalogue JPEGs. */
-export async function loadGuestReference(tool: GuestLookTool, styleId: string) {
+/** Image 2 for a guest look. Colour is a flat swatch. Brows are a shape diagram. The others are catalogue JPEGs. */
+export async function loadGuestReference(tool: GuestLookTool, styleId: string, variation?: BrowVariation) {
   if (tool === "colour") {
     const shade = shadeById(styleId);
     if (!shade) return null;
@@ -110,13 +111,15 @@ export async function loadGuestReference(tool: GuestLookTool, styleId: string) {
       referenceFile: `${shade.id}-swatch.jpg`,
     };
   }
-  const reference = readHairstyleReference(styleId, thumbnailFolder(tool));
-  if (!reference) return null;
   if (tool === "brows") {
     const brow = browById(styleId);
     if (!brow) return null;
-    return { prompt: buildBrowPrompt(brow), reference, referenceFile: `${brow.id}.jpg` };
+    const reference = await browDiagramJpeg(brow.id);
+    if (!reference) return null;
+    return { prompt: buildBrowPrompt(brow, variation), reference, referenceFile: `${brow.id}.jpg` };
   }
+  const reference = readHairstyleReference(styleId, thumbnailFolder(tool));
+  if (!reference) return null;
   if (tool === "beard") {
     const beard = beardById(styleId);
     if (!beard) return null;
