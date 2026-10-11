@@ -21,6 +21,7 @@ services:
         condition: service_healthy
 
   app:
+    # Image command is docker-entrypoint.sh: prisma migrate deploy on Postgres, then node server.js.
     image: ${LOOKUVI_IMAGE:?set LOOKUVI_IMAGE}
     restart: unless-stopped
     env_file: .env.production

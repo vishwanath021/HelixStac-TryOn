@@ -25,11 +25,20 @@ function exclusive<T>(work: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/** Start of the current calendar month in Asia/Kolkata (UTC+5:30, no daylight saving). */
+export function kolkataMonthStart(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit" }).formatToParts(now);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  return new Date(Date.UTC(year, month - 1, 1, -5, -30));
+}
+
+/** Platform provider budget for the current Asia/Kolkata calendar month. Not an all-time sum. */
 export function spendCapInr() {
   return Math.max(0, numberEnv("AI_SPEND_CAP_INR", 500));
 }
 
-/** Per-salon provider budget. Unset outside production so local tests keep the global cap only. */
+/** Per-salon provider budget for the same month. Unset outside production so local tests keep the global cap only. */
 export function salonSpendCapInr() {
   const raw = process.env.AI_SALON_SPEND_CAP_INR;
   if (raw === undefined || raw === "") return Number.POSITIVE_INFINITY;
@@ -121,7 +130,7 @@ export function spendCapWhere() {
 
 export async function spendSummary() {
   const rows = await prisma.aiCall.findMany({
-    where: spendCapWhere(),
+    where: { ...spendCapWhere(), createdAt: { gte: kolkataMonthStart() } },
     select: { estimatePaise: true, costInrPaise: true, costSource: true, charged: true },
   });
   const known = rows.filter((row) => row.charged && actualIsKnown(row.costSource));
@@ -156,8 +165,9 @@ export async function beginPaidCall(args: {
       if ((process.env.DATABASE_URL || "").startsWith("postgres")) {
         await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(872163)");
       }
-      const spent = await sumCapPaise(tx.aiCall.findMany.bind(tx.aiCall));
-      const salonSpent = await sumCapPaise(tx.aiCall.findMany.bind(tx.aiCall), { tenantId: args.tenantId });
+      const month = { createdAt: { gte: kolkataMonthStart() } };
+      const spent = await sumCapPaise(tx.aiCall.findMany.bind(tx.aiCall), month);
+      const salonSpent = await sumCapPaise(tx.aiCall.findMany.bind(tx.aiCall), { ...month, tenantId: args.tenantId });
       if (spent + estimatePaise > capPaise || salonSpent + estimatePaise > salonCapPaise) {
         await tx.aiCall.create({
           data: {

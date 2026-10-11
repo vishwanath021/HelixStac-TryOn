@@ -26,7 +26,7 @@ From your laptop, after `doctl auth init`:
 doctl compute droplet create lookuvi \
   --region blr1 \
   --size s-2vcpu-4gb \
-  --image docker-20-04 \
+  --image ubuntu-24-04-x64 \
   --ssh-keys YOUR_SSH_KEY_FINGERPRINT
 ```
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isPlanId } from "@/data/plans";
 import { getBillingProvider } from "@/lib/billing";
+import { OWNER_PLAN_MESSAGE, ownerSelfServeBlocked } from "@/lib/billing/access";
 import { requireOwner } from "@/lib/session";
 
 const schema = z.discriminatedUnion("action", [
@@ -16,6 +17,9 @@ export async function POST(req: Request) {
   if (!("tenant" in access)) return NextResponse.json({ error: "NO_TENANT" }, { status: 403 });
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
+  if (ownerSelfServeBlocked()) {
+    return NextResponse.json({ error: "BILLING_DISABLED", message: OWNER_PLAN_MESSAGE }, { status: 403 });
+  }
   const billing = getBillingProvider();
   try {
     if (parsed.data.action === "subscribe") {

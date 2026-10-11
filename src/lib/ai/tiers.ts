@@ -207,9 +207,9 @@ export async function prepareTierInput(image: Buffer, mask: Buffer | undefined, 
 export function projectSalonMonth(avgInr: number, imagesPerMonth: number) {
   const images = Math.max(0, imagesPerMonth);
   const projectedInr = Math.round(avgInr * images * 100) / 100;
-  return (["STARTER", "PRO", "CHAIN"] as PlanId[]).map((id) => ({
+  return (["LITE", "STARTER", "PRO"] as PlanId[]).map((id) => ({
     id,
-    name: id === "CHAIN" ? "Chain" : PLANS[id].name,
+    name: PLANS[id].name,
     priceInr: PLANS[id].monthlyExGst,
     projectedInr,
     marginInr: Math.round((PLANS[id].monthlyExGst - projectedInr) * 100) / 100,

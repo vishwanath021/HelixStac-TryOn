@@ -2,7 +2,7 @@
 # Run this on the DigitalOcean droplet (region blr1, Bangalore), not on a laptop.
 # First droplet, from your own machine, after `doctl auth init`:
 #   doctl compute droplet create lookuvi \
-#     --region blr1 --size s-2vcpu-4gb --image docker-20-04 \
+#     --region blr1 --size s-2vcpu-4gb --image ubuntu-24-04-x64 \
 #     --ssh-keys <fingerprint>
 # This script does not call the DigitalOcean API and does not create DNS records.
 set -eu

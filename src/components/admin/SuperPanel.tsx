@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PLANS, type PlanId } from "@/data/plans";
 
 export type SuperRow = {
   id: string;
@@ -13,6 +14,23 @@ export type SuperRow = {
   tryOns: number;
   cogsInr: number;
 };
+
+function PlanAssign({ id, plan, onSave }: { id: string; plan: string; onSave: (id: string, body: Record<string, unknown>) => Promise<void> }) {
+  const [next, setNext] = useState<PlanId>(plan === "LITE" || plan === "STARTER" || plan === "PRO" ? plan : "STARTER");
+  const [delta, setDelta] = useState("50");
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <select className="field max-w-[12rem]" aria-label={`Plan for ${id}`} value={next} onChange={(event) => setNext(event.target.value as PlanId)}>
+        {Object.values(PLANS).map((item) => (
+          <option key={item.id} value={item.id}>{item.name} · {item.credits} tries</option>
+        ))}
+      </select>
+      <button className="btn secondary" type="button" onClick={() => void onSave(id, { plan: next })}>Set plan</button>
+      <input className="field max-w-[6rem]" aria-label={`Credit adjustment for ${id}`} type="number" value={delta} onChange={(event) => setDelta(event.target.value)} />
+      <button className="btn secondary" type="button" onClick={() => void onSave(id, { creditDelta: Number(delta) })}>Adjust credits</button>
+    </div>
+  );
+}
 
 function SalonNameField({ id, slug, initial, onSave }: { id: string; slug: string; initial: string; onSave: (id: string, body: Record<string, unknown>) => Promise<void> }) {
   const [name, setName] = useState(initial);
@@ -65,7 +83,9 @@ export function SuperPanel({
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    setMessage(res.ok ? "Updated." : "Could not update that salon.");
+    const data = await res.json().catch(() => ({}));
+    setMessage(res.ok ? (data.plan ? `Plan set to ${data.plan}. Included tries added.` : "Updated.") : data.message || "Could not update that salon.");
+    if (res.ok) window.location.reload();
   }
 
   return (
@@ -111,6 +131,7 @@ export function SuperPanel({
                   {row.name}
                   <span className="block text-xs text-muted">{row.slug} · {row.leads} leads</span>
                   <SalonNameField id={row.id} slug={row.slug} initial={row.name} onSave={update} />
+                  <PlanAssign id={row.id} plan={row.plan} onSave={update} />
                 </td>
                 <td>{row.plan}</td>
                 <td>{row.status}</td>

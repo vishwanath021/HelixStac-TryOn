@@ -1,6 +1,9 @@
 import { createHmac } from "node:crypto";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import sharp from "sharp";
+import { BillingPanel } from "@/components/admin/BillingPanel";
 import { describe, expect, it } from "vitest";
 import { BEARDS } from "@/data/beards";
 import { BROWS } from "@/data/brows";
@@ -19,7 +22,9 @@ import { sanitizeSelfie } from "@/lib/images";
 import { redact } from "@/lib/logger";
 import { annualExGst, assumedInr, breakEvenAccounts, previewCogsInr, withGst } from "@/lib/pricing";
 import { inputFidelityForModel, openAIQuality } from "@/lib/ai/openai";
-import { beginPaidCall, costPerCallInr, spendCapInr } from "@/lib/ai/spend";
+import { beginPaidCall, costPerCallInr, kolkataMonthStart, spendCapInr, spendSummary } from "@/lib/ai/spend";
+import { OWNER_PLAN_MESSAGE, ownerSelfServeBlocked } from "@/lib/billing/access";
+import { PLANS, planById } from "@/data/plans";
 import { prisma } from "@/lib/prisma";
 import { findSecrets, scanRepo } from "@/lib/secrets";
 import { ageYears, capForTier, signSalonToken, verifySalonToken } from "@/lib/preview-access";
@@ -248,6 +253,72 @@ describe("openai quality and spend cap", () => {
     delete process.env.AI_COST_PER_CALL_INR_OPENAI_MEDIUM;
     delete process.env.OPENAI_IMAGE_QUALITY;
     delete process.env.OPENAI_IMAGE_QUALITY_HD;
+  });
+
+  it("resets both spend caps on the first of the month in Asia/Kolkata", async () => {
+    expect(kolkataMonthStart(new Date("2026-09-30T18:29:00.000Z")).toISOString()).toBe("2026-08-31T18:30:00.000Z");
+    expect(kolkataMonthStart(new Date("2026-09-30T18:30:00.000Z")).toISOString()).toBe("2026-09-30T18:30:00.000Z");
+    expect(kolkataMonthStart(new Date("2026-10-31T18:30:00.000Z")).toISOString()).toBe("2026-10-31T18:30:00.000Z");
+    process.env.AI_SPEND_CAP_INR = "10";
+    process.env.AI_SALON_SPEND_CAP_INR = "10";
+    process.env.AI_COST_PER_CALL_INR_OPENAI_MEDIUM = "6";
+    await prisma.aiCall.deleteMany();
+    await prisma.aiCall.create({
+      data: {
+        provider: "openai",
+        quality: "medium",
+        model: "gpt-image-1",
+        estimatePaise: 1000,
+        costInrPaise: 1000,
+        tenantId: "month-salon",
+        status: "CHARGED",
+        charged: true,
+        costSource: "estimate",
+        createdAt: new Date("2020-01-15T00:00:00.000Z"),
+      },
+    });
+    const summary = await spendSummary();
+    expect(summary.spentInr).toBe(0);
+    const allowed = await beginPaidCall({ provider: "openai", quality: "medium", model: "gpt-image-1", tenantId: "month-salon", estimateInr: 6 });
+    expect(allowed.ok).toBe(true);
+    const blocked = await beginPaidCall({ provider: "openai", quality: "medium", model: "gpt-image-1", tenantId: "month-salon", estimateInr: 6 });
+    expect(blocked.ok).toBe(false);
+    expect(await prisma.aiCall.count({ where: { tenantId: "month-salon", status: "CHARGED", createdAt: { gte: kolkataMonthStart() } } })).toBe(1);
+    delete process.env.AI_SPEND_CAP_INR;
+    delete process.env.AI_SALON_SPEND_CAP_INR;
+    delete process.env.AI_COST_PER_CALL_INR_OPENAI_MEDIUM;
+  });
+});
+
+describe("plans and production mock billing", () => {
+  it("prices Lite, Starter, and Pro ex-GST and adds 18% GST", () => {
+    expect(PLANS.LITE).toMatchObject({ name: "Lite", monthlyExGst: 2999, credits: 300 });
+    expect(PLANS.STARTER).toMatchObject({ name: "Starter", monthlyExGst: 5999, credits: 900 });
+    expect(PLANS.PRO).toMatchObject({ name: "Pro", monthlyExGst: 10999, credits: 1800 });
+    expect(withGst(2999)).toEqual({ exGstInr: 2999, gstInr: 540, totalInr: 3539 });
+    expect(withGst(5999)).toEqual({ exGstInr: 5999, gstInr: 1080, totalInr: 7079 });
+    expect(withGst(10999)).toEqual({ exGstInr: 10999, gstInr: 1980, totalInr: 12979 });
+    expect(planById("CHAIN").id).toBe("PRO");
+    expect(ownerSelfServeBlocked({ NODE_ENV: "production", BILLING_PROVIDER: "mock" } as NodeJS.ProcessEnv)).toBe(true);
+    expect(ownerSelfServeBlocked({ NODE_ENV: "development", BILLING_PROVIDER: "mock" } as NodeJS.ProcessEnv)).toBe(false);
+    expect(ownerSelfServeBlocked({ NODE_ENV: "production", BILLING_PROVIDER: "razorpay", RAZORPAY_KEY_ID: "rk", RAZORPAY_KEY_SECRET: "rs" } as NodeJS.ProcessEnv)).toBe(false);
+    expect(OWNER_PLAN_MESSAGE).toBe("Contact Lookuvi to activate your plan");
+    expect(readFileSync("src/app/api/v1/admin/billing/route.ts", "utf8")).toContain("ownerSelfServeBlocked");
+    const assign = readFileSync("src/app/api/v1/super/tenants/[id]/route.ts", "utf8");
+    expect(assign).toContain('action: "PLAN_ASSIGN"');
+    expect(assign).toContain('action: "CREDIT_ADJUST"');
+    expect(readFileSync("docker-entrypoint.sh", "utf8")).toContain("npx prisma migrate deploy");
+    expect(readFileSync("docker-compose.prod.yml", "utf8")).toContain("prisma migrate deploy");
+    expect(readFileSync("Dockerfile", "utf8")).toContain('CMD ["./docker-entrypoint.sh"]');
+    expect(readFileSync("DEPLOY.md", "utf8")).toContain("ubuntu-24-04-x64");
+    const locked = renderToStaticMarkup(createElement(BillingPanel, { plan: "STARTER", status: "TRIAL", credits: 1, provider: "mock", locked: true }));
+    expect(locked).toContain("Contact Lookuvi to activate your plan");
+    expect(locked).not.toContain(">Choose<");
+    const open = renderToStaticMarkup(createElement(BillingPanel, { plan: "STARTER", status: "TRIAL", credits: 1, provider: "mock" }));
+    expect(open).toContain(">Choose<");
+    expect(open).toContain("Lite");
+    expect(open).toContain("Starter");
+    expect(open).toContain("Pro");
   });
 });
 

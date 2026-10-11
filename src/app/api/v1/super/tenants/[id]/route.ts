@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { isPlanId } from "@/data/plans";
+import { isPlanId, planById } from "@/data/plans";
 import { grantCredits } from "@/lib/credits";
 import { prisma } from "@/lib/prisma";
 import { requireSuper } from "@/lib/session";
@@ -23,24 +23,46 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const tenant = await prisma.tenant.findUnique({ where: { id } });
   if (!tenant) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   if (parsed.data.plan && !isPlanId(parsed.data.plan)) return NextResponse.json({ error: "PLAN" }, { status: 400 });
+  const plan = parsed.data.plan && isPlanId(parsed.data.plan) ? planById(parsed.data.plan) : null;
   await prisma.tenant.update({
     where: { id },
     data: {
       name: parsed.data.name,
       status: parsed.data.status,
-      plan: parsed.data.plan,
+      ...(plan ? { plan: plan.id, dailyCap: plan.credits } : {}),
     },
   });
-  if (parsed.data.creditDelta) {
-    await grantCredits(id, parsed.data.creditDelta, "ADJUSTMENT", "super");
+  if (plan) {
+    await grantCredits(id, plan.credits, "PLAN_ASSIGN", "super");
+    await prisma.auditLog.create({
+      data: {
+        actorId: access.session.user.id,
+        action: "PLAN_ASSIGN",
+        target: id,
+        meta: JSON.stringify({ plan: plan.id, credits: plan.credits }),
+      },
+    });
   }
-  await prisma.auditLog.create({
-    data: {
-      actorId: access.session.user.id,
-      action: "TENANT_UPDATE",
-      target: id,
-      meta: JSON.stringify(parsed.data),
-    },
-  });
-  return NextResponse.json({ ok: true });
+  if (parsed.data.creditDelta) {
+    const balance = await grantCredits(id, parsed.data.creditDelta, "ADJUSTMENT", "super");
+    await prisma.auditLog.create({
+      data: {
+        actorId: access.session.user.id,
+        action: "CREDIT_ADJUST",
+        target: id,
+        meta: JSON.stringify({ creditDelta: parsed.data.creditDelta, balanceAfter: balance }),
+      },
+    });
+  }
+  if (!plan && !parsed.data.creditDelta) {
+    await prisma.auditLog.create({
+      data: {
+        actorId: access.session.user.id,
+        action: "TENANT_UPDATE",
+        target: id,
+        meta: JSON.stringify(parsed.data),
+      },
+    });
+  }
+  return NextResponse.json({ ok: true, ...(plan ? { plan: plan.id, credits: plan.credits } : {}) });
 }

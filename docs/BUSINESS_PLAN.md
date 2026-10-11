@@ -24,14 +24,15 @@ EaseMySalon and Glowbook sell full salon suites around ₹199–999 a month and 
 
 ## Pricing
 
-| | Starter | Pro | Chain / white-label |
+| | Lite | Starter | Pro |
 |---|---|---|---|
-| Monthly ex-GST | ₹799 | ₹1,999 | ₹4,999 for 3 outlets |
-| Annual (2 months free) | ₹7,990 | ₹19,990 | ₹49,990 |
-| Setup | ₹0 | ₹2,999 | ₹9,999 |
-| AI previews | 100 | 300 | 600 pooled |
+| Monthly ex-GST | ₹2,999 | ₹5,999 | ₹10,999 |
+| Annual (2 months free) | ₹29,990 | ₹59,990 | ₹1,09,990 |
+| Setup | ₹0 | ₹0 | ₹0 |
+| AI previews | 300 | 900 | 1,800 |
 | Live colour | Unlimited | Unlimited | Unlimited |
-| Embed, custom domain, lead CSV, remove mark | No | Yes | Yes, plus outlets |
+| Embed, custom domain, lead CSV | No | Yes | Yes |
+| Remove mark, extra outlets | No | No | Yes, 3 outlets |
 
 GST on the invoice is 18%. **[Sourced: standard SaaS GST treatment; confirm with your CA]**
 
@@ -43,20 +44,20 @@ Why not ₹199: AI cost eats it. Why not much more: a whole salon suite is alrea
 
 **[Assumption]** unless noted. FX ₹96/USD (RBI reference near ₹95.99 on 1 Oct 2026). Standard preview ≈ $0.0336 → about ₹3.5 after an 8% retry allowance. HD ≈ $0.067 → about ₹7. List prices from Google's Gemini pricing page, 3 Oct 2026. The formula in code (`assumedInr`) rounds the HD figure to ₹6.9; the operating assumption used on the super-admin page is ₹7.
 
-Utilisation assumption: 50% / 60% / 70% of included credits on Starter / Pro / Chain. Infra ₹40 / ₹50 / ₹100. Payment fee 3.4% (Razorpay domestic plus a subscriptions loading — verify at signup).
+Utilisation assumption: 50% / 60% / 70% of included tries on Lite / Starter / Pro, at about ₹3.5 each. Infra ₹40 / ₹50 / ₹100. Payment fee 3.4% of the ex-GST price (Razorpay domestic plus a subscriptions loading — verify at signup).
 
-| | Starter | Pro | Chain |
+| | Lite | Starter | Pro |
 |---|---|---|---|
-| Revenue | ₹799 | ₹1,999 | ₹4,999 |
-| AI COGS at those utilisation rates | ₹175 | ₹630 | ₹1,470 |
-| Fees + infra | ~₹67 | ~₹118 | ~₹270 |
-| Gross profit | ~₹557 (70%) | ~₹1,251 (63%) | ~₹3,259 (65%) |
+| Revenue | ₹2,999 | ₹5,999 | ₹10,999 |
+| AI COGS at those utilisation rates | ₹525 | ₹1,890 | ₹4,410 |
+| Fees + infra | ~₹142 | ~₹254 | ~₹474 |
+| Gross profit | ~₹2,332 (78%) | ~₹3,855 (64%) | ~₹6,115 (56%) |
 
-Blended, if the mix is 60/35/5: about ₹1,430 ARPA and about ₹935 gross profit (65%).
+Blended, if the mix is 60/35/5: about ₹4,449 ARPA. Recalculate the blended gross profit before you use it in a forecast.
 
-A Pro salon that spends every credit on HD (300 previews × 2 credits, costed near ₹7) can wipe the margin. Mitigation: HD costs 2 credits, hard daily caps, and packs instead of unlimited AI.
+A Pro salon that spends all 1,800 tries as HD is 900 previews at about ₹7, near ₹6,300 of AI cost against ₹10,999 ex-GST. HD still costs 2 tries. Daily caps and packs stay in place.
 
-Break-even on fixed cost, ignoring CAC: about 16 salons at ₹15k fixed, 32 at ₹30k, 64 at ₹60k. `breakEvenAccounts(30000, 935)` is 33 because of rounding up.
+Break-even on fixed cost, using Lite gross profit and ignoring CAC: about 7 salons at ₹15k fixed, 13 at ₹30k, 26 at ₹60k. `breakEvenAccounts(30000, 2332)` is 13.
 
 CAC assumption ₹4,000 and 4% monthly churn → payback near 4 months and LTV/CAC above 5. At 8% churn and ₹6,000 CAC the model is barely alive. Churn is the number to watch.
 

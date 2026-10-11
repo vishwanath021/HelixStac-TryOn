@@ -16,7 +16,7 @@ One colour ticket in a month is the story for Starter. Confirm the salon's real 
 - Cut preview, about 10 seconds, a guide for the stylist.
 - Book opens WhatsApp with the look and your prices.
 - English, Hindi, Kannada, Tamil, Telugu, Marathi.
-- Starter ₹799/mo, Pro ₹1,999/mo, Chain ₹4,999/mo for 3 outlets. Ex-GST, plus 18% GST. Annual is two months free.
+- Lite ₹2,999/mo (300 tries), Starter ₹5,999/mo (900 tries), Pro ₹10,999/mo (1,800 tries). Ex-GST, plus 18% GST. Annual is two months free. Names and prices are in `src/data/plans.ts`.
 - 14-day trial. When preview credits run out, colour still works.
 
 ## Demo script (12 minutes)

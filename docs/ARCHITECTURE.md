@@ -43,7 +43,7 @@ flowchart LR
 
 **Redis.** Optional at 20 salons if you run one container: production rate limits then use the `RateBucket` table. Set `REDIS_URL` when you run more than one container. `sharedRateLimit` (`src/lib/ratelimit.ts`) increments a Redis key and, if Redis errors, uses Postgres. Do not put sessions in Redis. The JWT is already stateless.
 
-**Spend.** `beginPaidCall` takes a Postgres advisory lock so two instances cannot both pass the cap, and it enforces `AI_SPEND_CAP_INR` (platform) and `AI_SALON_SPEND_CAP_INR` (one salon). A paid guest preview also reserves one salon credit (`src/lib/credits.ts`) and refunds it if the provider call does not succeed. Demo previews with no API key do not spend a credit.
+**Spend.** `beginPaidCall` takes a Postgres advisory lock so two instances cannot both pass the cap, and it enforces `AI_SPEND_CAP_INR` (platform) and `AI_SALON_SPEND_CAP_INR` (one salon) for the current calendar month in Asia/Kolkata. The total starts again on the 1st at 00:00 IST. A paid guest preview also reserves one salon credit (`src/lib/credits.ts`) and refunds it if the provider call does not succeed. Demo previews with no API key do not spend a credit.
 
 ## Tenancy
 

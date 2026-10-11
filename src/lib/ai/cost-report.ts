@@ -1,6 +1,5 @@
-import { PLANS } from "@/data/plans";
 import { actualIsKnown, capPaise, costSourceLabel, KNOWN_ACTUAL_SOURCES } from "@/lib/ai/cost-source";
-import { spendCapInr, sumCapPaise } from "@/lib/ai/spend";
+import { kolkataMonthStart, spendCapInr, sumCapPaise } from "@/lib/ai/spend";
 import { parseTier, projectSalonMonth, tierRequest, type ImageProviderName } from "@/lib/ai/tiers";
 import { prisma } from "@/lib/prisma";
 
@@ -40,10 +39,6 @@ function startOfDay(now: Date) {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
-function startOfMonth(now: Date) {
-  return new Date(now.getFullYear(), now.getMonth(), 1);
-}
-
 async function chargedSince(from: Date) {
   const paise = await sumCapPaise(prisma.aiCall.findMany.bind(prisma.aiCall), { createdAt: { gte: from } });
   return inr(paise);
@@ -80,8 +75,8 @@ export async function costReport(args: {
     prisma.aiCall.findMany({ where: { billed: true }, select: { tool: true, tier: true, costInrPaise: true } }),
     chargedSince(since),
     chargedSince(startOfDay(now)),
-    chargedSince(startOfMonth(now)),
-    sumCapPaise(prisma.aiCall.findMany.bind(prisma.aiCall)),
+    chargedSince(kolkataMonthStart(now)),
+    sumCapPaise(prisma.aiCall.findMany.bind(prisma.aiCall), { createdAt: { gte: kolkataMonthStart(now) } }),
     prisma.aiCall.aggregate({ where, _sum: { estimatePaise: true } }),
     prisma.aiCall.aggregate({ where: { ...where, costSource: { in: [...KNOWN_ACTUAL_SOURCES] } }, _sum: { costInrPaise: true }, _count: true }),
     prisma.aiCall.findMany({ distinct: ["provider"], select: { provider: true }, orderBy: { provider: "asc" } }),
@@ -169,9 +164,6 @@ export async function costReport(args: {
       actualCount: actualSum._count,
     },
     imagesPerMonth,
-    plans: projectSalonMonth(avgInr, imagesPerMonth).map((plan) => ({
-      ...plan,
-      priceInr: plan.id === "STARTER" ? PLANS.STARTER.monthlyExGst : plan.id === "PRO" ? PLANS.PRO.monthlyExGst : PLANS.CHAIN.monthlyExGst,
-    })),
+    plans: projectSalonMonth(avgInr, imagesPerMonth),
   };
 }

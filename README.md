@@ -159,7 +159,7 @@ Prices checked 3 Oct 2026 against the [gpt-image-1-mini](https://developers.open
 
 Token rates used when usage is present: gpt-image-1-mini text input $2 / image input $2.50 / image output $8 per 1M tokens. gpt-image-1 text input $5 / image input $10 / image output $40 per 1M. Gemini flash-lite input $0.25, image output $30 per 1M (1120 tokens per 1K image). Gemini flash image input $0.50, image output $60 per 1M.
 
-`/super/ai` shows the model, quality, size, and INR estimate next to each tier. The calibration result card shows the same, plus the rupees charged for that image and a total. The cost panel on that page (super-admin only) shows the last image, session / day / month totals against `AI_SPEND_CAP_INR`, average cost by tool and tier, the last 50 calls, and projected monthly cost (`average × images per month`) beside Starter ₹799, Pro ₹1999, and Chain ₹4999.
+`/super/ai` shows the model, quality, size, and INR estimate next to each tier. The calibration result card shows the same, plus the rupees charged for that image and a total. The cost panel on that page (super-admin only) shows the last image, session / day / month totals against `AI_SPEND_CAP_INR`, average cost by tool and tier, the last 50 calls, and projected monthly cost (`average × images per month`) beside Lite ₹2,999, Starter ₹5,999, and Pro ₹10,999 (ex-GST; invoices add 18% GST). `AI_SPEND_CAP_INR` counts the current calendar month in Asia/Kolkata.
 
 Salon owner pages and the guest try-on do not receive model ids, provider cost, or those totals.
 
@@ -268,9 +268,9 @@ The second form runs 2 styles per photo. Outputs land in `ai-smoke/out/`, which 
 ### Razorpay
 
 1. Set `BILLING_PROVIDER=razorpay` and the three secrets.
-2. Create subscription plans in Razorpay for Starter, Pro, and Chain, monthly and yearly. Put the plan ids in `RAZORPAY_PLAN_STARTER_MONTHLY` and the matching variables.
+2. Create subscription plans in Razorpay for Lite, Starter, and Pro, monthly and yearly. Put the plan ids in `RAZORPAY_PLAN_LITE_MONTHLY` and the matching variables. Prices live in `src/data/plans.ts`.
 3. Point a webhook at `/api/webhooks/razorpay` for `subscription.charged`, `subscription.halted`, and `payment.captured`. The route checks `X-Razorpay-Signature`.
-4. With `BILLING_PROVIDER=mock`, choosing a plan or a pack in the admin writes the invoice and the credits immediately. Use that for demos.
+4. With `BILLING_PROVIDER=mock` outside production, choosing a plan or a pack in the admin writes the invoice and the credits immediately. Use that for demos. In production, mock billing hides those buttons and tells the owner to contact Lookuvi. A super-admin assigns the plan and credits from `/super`, and that write is stored in `AuditLog`.
 
 ## White-label a salon in about 10 minutes
 

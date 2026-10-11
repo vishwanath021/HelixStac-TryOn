@@ -1,4 +1,4 @@
-export type PlanId = "STARTER" | "PRO" | "CHAIN";
+export type PlanId = "LITE" | "STARTER" | "PRO";
 
 export type PlanDef = {
   id: PlanId;
@@ -15,14 +15,16 @@ export type PlanDef = {
   languages: number | null;
 };
 
-/** Prices are INR, exclusive of GST. GST is 18% and added on the invoice. Annual = 10× monthly (2 months free). */
+/** Price list. Edit this file to change names, ex-GST prices, and included tries.
+ *  Invoices add 18% GST. Annual = 10× monthly (2 months free).
+ */
 export const PLANS: Record<PlanId, PlanDef> = {
-  STARTER: {
-    id: "STARTER",
-    name: "Starter",
-    monthlyExGst: 799,
+  LITE: {
+    id: "LITE",
+    name: "Lite",
+    monthlyExGst: 2999,
     setupExGst: 0,
-    credits: 100,
+    credits: 300,
     styleLimit: 25,
     customDomain: false,
     leadExport: false,
@@ -31,26 +33,26 @@ export const PLANS: Record<PlanId, PlanDef> = {
     outlets: 1,
     languages: 2,
   },
-  PRO: {
-    id: "PRO",
-    name: "Pro",
-    monthlyExGst: 1999,
-    setupExGst: 2999,
-    credits: 300,
+  STARTER: {
+    id: "STARTER",
+    name: "Starter",
+    monthlyExGst: 5999,
+    setupExGst: 0,
+    credits: 900,
     styleLimit: null,
     customDomain: true,
     leadExport: true,
-    removeBranding: true,
+    removeBranding: false,
     embed: true,
     outlets: 1,
     languages: null,
   },
-  CHAIN: {
-    id: "CHAIN",
-    name: "Chain / White-label",
-    monthlyExGst: 4999,
-    setupExGst: 9999,
-    credits: 600,
+  PRO: {
+    id: "PRO",
+    name: "Pro",
+    monthlyExGst: 10999,
+    setupExGst: 0,
+    credits: 1800,
     styleLimit: null,
     customDomain: true,
     leadExport: true,
@@ -73,9 +75,11 @@ export const TRIAL_DAYS = 14;
 export const GST_RATE = 0.18;
 
 export function isPlanId(value: string): value is PlanId {
-  return value === "STARTER" || value === "PRO" || value === "CHAIN";
+  return value === "LITE" || value === "STARTER" || value === "PRO";
 }
 
 export function planById(id: string): PlanDef {
-  return isPlanId(id) ? PLANS[id] : PLANS.STARTER;
+  if (isPlanId(id)) return PLANS[id];
+  if (id === "CHAIN") return PLANS.PRO;
+  return PLANS.LITE;
 }
