@@ -24,9 +24,9 @@ function brow(draft: Omit<BrowDef, "serviceKeys"> & { serviceKeys?: string[] }):
 }
 
 export const BROW_THICKNESS: { id: BrowThickness; label: string; line: string }[] = [
-  { id: "thin", label: "Thin", line: "Stroke weight: a thin sparse brow." },
-  { id: "natural", label: "Natural", line: "Stroke weight: a natural medium brow." },
-  { id: "bold", label: "Bold", line: "Stroke weight: a bold dense brow." },
+  { id: "thin", label: "Thin", line: "Thickness scale: draw the head and the tail at 60% of the stated start thickness and tail thickness. Keep the stated arch position, arch height, and tail angle." },
+  { id: "natural", label: "Natural", line: "Thickness scale: draw the head and the tail at 100% of the stated start thickness and tail thickness. Keep the stated arch position, arch height, and tail angle." },
+  { id: "bold", label: "Bold", line: "Thickness scale: draw the head and the tail at 150% of the stated start thickness and tail thickness. Keep the stated arch position, arch height, and tail angle." },
 ];
 
 export const BROW_COLOURS: { id: BrowColour; label: string; line: string }[] = [
@@ -40,92 +40,89 @@ export const BROWS: BrowDef[] = [
     id: "soft-arch",
     name: "Soft Arch",
     audience: "women",
-    description: "A low, gentle arch with a soft tail.",
-    prompt: "Arch position: a low gentle rise just past the iris. Tail: a soft downward taper.",
+    description: "A low gentle arch with a soft tail.",
+    prompt:
+      "Arch position: the peak sits at 62% of the brow length from the inner head. Arch height: 8% of the brow length, a gentle rise with no sharp corner. Tail angle: 15 degrees down from horizontal. Start thickness: 7% of the brow length. Tail thickness: 4% of the brow length, ending in a soft point.",
   }),
   brow({
     id: "high-arch",
     name: "High Arch",
     audience: "women",
-    description: "A higher peak and a cleaner tail.",
-    prompt: "Arch position: a high peak above the outer iris. Tail: a steep descent after the peak.",
+    description: "A high peak and a steep tail.",
+    prompt:
+      "Arch position: the peak sits at 55% of the brow length from the inner head. Arch height: 22% of the brow length. Tail angle: 42 degrees down from horizontal. Start thickness: 6% of the brow length. Tail thickness: 2% of the brow length.",
   }),
   brow({
     id: "straight-brow",
     name: "Straight",
     audience: "unisex",
-    description: "A flatter brow with a short, level tail.",
-    prompt: "Arch position: almost no peak, the body stays level. Tail: short and level with the head.",
+    description: "A level brow with a short tail.",
+    prompt:
+      "Arch position: no peak; the top edge stays level from the inner head to the tip. Arch height: 1% of the brow length. Tail angle: 0 degrees, level with the inner head. Start thickness: 7% of the brow length. Tail thickness: 7% of the brow length, and the brow ends near the outer corner of the eye.",
   }),
   brow({
     id: "rounded",
     name: "Rounded",
     audience: "women",
-    description: "A smooth curve without a sharp peak.",
-    prompt: "Arch position: a smooth dome with no corner. Tail: a soft rounded end.",
-  }),
-  brow({
-    id: "s-shape",
-    name: "S-Shape",
-    audience: "women",
-    description: "A gentle S from a fuller head into a lifted tail.",
-    prompt: "Arch position: the head dips, then the body lifts into an S. Tail: a small upward flick.",
+    description: "A smooth dome with a rounded tip.",
+    prompt:
+      "Arch position: the peak sits at 50% of the brow length from the inner head, as a smooth dome with no corner. Arch height: 14% of the brow length. Tail angle: 18 degrees down from horizontal. Start thickness: 8% of the brow length. Tail thickness: 6% of the brow length, with a rounded tip rather than a point.",
   }),
   brow({
     id: "feathered",
     name: "Feathered",
     audience: "unisex",
-    description: "Brushed, feathery strokes with a light tail.",
-    prompt: "Arch position: a light brushed rise. Tail: hair strokes flatten and fade.",
+    description: "Hair strokes with a light fading tail.",
+    prompt:
+      "Arch position: the peak sits at 58% of the brow length from the inner head. Arch height: 6% of the brow length. Tail angle: 10 degrees down from horizontal. Start thickness: 6% of the brow length, drawn as separate hair strokes rather than a solid bar. Tail thickness: 1% of the brow length, fading into separated hairs.",
   }),
   brow({
     id: "bold-natural",
     name: "Bold Natural",
     audience: "unisex",
-    description: "A fuller natural brow with a modest arch.",
-    prompt: "Arch position: a modest low rise. Tail: stays wide instead of pinching to a line.",
-  }),
-  brow({
-    id: "angled",
-    name: "Angled",
-    audience: "unisex",
-    description: "A hard angle with a straight descending tail.",
-    prompt: "Arch position: two straight edges meet in a hard angle above the outer iris. Tail: a straight line dropping away from that corner.",
+    description: "A full brow with a low arch and a wide tail.",
+    prompt:
+      "Arch position: the peak sits at 57% of the brow length from the inner head. Arch height: 7% of the brow length. Tail angle: 12 degrees down from horizontal. Start thickness: 12% of the brow length. Tail thickness: 9% of the brow length, staying wide instead of pinching to a line.",
   }),
   brow({
     id: "flat-thick",
     name: "Flat Thick",
     audience: "men",
-    description: "A flat, heavy bar with no arch.",
-    prompt: "Arch position: no arch, a flat bar across the brow bone. Tail: squared off at the same height as the head.",
+    description: "A heavy flat bar with a squared end.",
+    prompt:
+      "Arch position: no peak; a flat bar along the brow bone. Arch height: 0% of the brow length. Tail angle: 0 degrees, the tail stays at the same height as the inner head. Start thickness: 16% of the brow length. Tail thickness: 16% of the brow length, with a squared end.",
   }),
   brow({
     id: "natural-groomed",
     name: "Natural Groomed",
     audience: "men",
-    description: "A short tidy brow that stops near the outer eye.",
-    prompt: "Arch position: a slight tidy rise that stops near the outer eye. Tail: short and cleaned, not extended.",
+    description: "A short tidy brow that stops at the outer eye.",
+    prompt:
+      "Arch position: the peak sits at 48% of the brow length from the inner head. Arch height: 6% of the brow length. Tail angle: 8 degrees down from horizontal. Start thickness: 9% of the brow length. Tail thickness: 7% of the brow length, and the brow stops at the outer corner of the eye.",
   }),
   brow({
     id: "thin-defined",
     name: "Thin Defined",
     audience: "women",
-    description: "A precise high peak with a long fine tail.",
-    prompt: "Arch position: a precise high peak. Tail: a long fine point.",
+    description: "A sharp high peak with a long fine tail.",
+    prompt:
+      "Arch position: the peak sits at 66% of the brow length from the inner head. Arch height: 26% of the brow length, a sharp corner rather than a dome. Tail angle: 38 degrees down from horizontal. Start thickness: 3% of the brow length. Tail thickness: 1% of the brow length, and the tail continues past the outer corner of the eye.",
   }),
   brow({
     id: "tapered",
     name: "Tapered",
     audience: "unisex",
-    description: "Fuller at the inner head, narrowing to a point.",
-    prompt: "Arch position: fuller at the inner head and steadily narrowing. Tail: a sharp point.",
+    description: "Full at the inner head, narrowing to a point.",
+    prompt:
+      "Arch position: the peak sits at 52% of the brow length from the inner head. Arch height: 5% of the brow length. Tail angle: 20 degrees down from horizontal. Start thickness: 11% of the brow length at the inner head. Tail thickness: 1.5% of the brow length, narrowing in a straight taper to a sharp point.",
   }),
   brow({
     id: "cleanup",
     name: "Clean-up",
     audience: "unisex",
     description: "Keep the current shape and only tidy stray hairs.",
-    prompt: "Arch position: keep the customer's current arch. Tail: keep the current tail. Only tidy stray hairs outside the existing shape.",
+    prompt:
+      "Arch position: keep the peak wherever it already sits on this face. Arch height: keep the current height. Tail angle: keep the current angle. Start thickness: keep the current thickness at the inner head. Tail thickness: keep the current thickness at the tip. Remove only stray hairs outside that existing outline.",
   }),
 ];
 
