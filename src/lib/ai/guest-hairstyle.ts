@@ -1,10 +1,17 @@
 import sharp from "sharp";
 import { NextResponse } from "next/server";
+import { beardById } from "@/data/beards";
+import { browById } from "@/data/brows";
+import { nailById } from "@/data/nails";
+import { shadeById } from "@/data/shades";
+import { demoStyleComposite } from "@/lib/ai/composite";
 import { resolveFalKey, resolveOpenAIKey } from "@/lib/ai/credentials";
 import { completeGenerationJob, failGenerationJob } from "@/lib/ai/dedupe";
 import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { executeReferenceEdit } from "@/lib/ai/reference-run";
+import { readHairstyleReference, thumbnailFolder } from "@/lib/ai/style-reference";
 import { prisma } from "@/lib/prisma";
+import { buildBeardPrompt, buildBrowPrompt, buildColourPrompt, buildNailPrompt } from "@/lib/prompts";
 
 /** Guest hairstyles. Model ids stay in this module so the guest route does not name them. */
 export const GUEST_FAL_MODEL = "blackforestlabs/flux-3/edit-image";
@@ -68,12 +75,41 @@ function guestMessage(outcome: string) {
   return "The preview did not finish. It was not started again.";
 }
 
-/**
- * Hairstyle path: selfie plus the style photo, raw provider image, one call.
- * Returns null when the selected engine has no key, so the caller can show a demo preview.
- * The guest response is a JPEG. Cost and model stay on the ledger.
- */
-export async function runGuestHairstyleIfReady(args: {
+export type GuestLookTool = "brows" | "beard" | "nails" | "colour";
+
+async function shadeSwatch(hex: string) {
+  return sharp({ create: { width: 512, height: 512, channels: 3, background: hex } }).jpeg({ quality: 90 }).toBuffer();
+}
+
+/** Image 2 for a guest look. Colour is a flat swatch. The others are catalogue JPEGs. */
+export async function loadGuestReference(tool: GuestLookTool, styleId: string) {
+  if (tool === "colour") {
+    const shade = shadeById(styleId);
+    if (!shade) return null;
+    return {
+      prompt: buildColourPrompt(shade),
+      reference: await shadeSwatch(shade.hex),
+      referenceFile: `${shade.id}-swatch.jpg`,
+    };
+  }
+  const reference = readHairstyleReference(styleId, thumbnailFolder(tool));
+  if (!reference) return null;
+  if (tool === "brows") {
+    const brow = browById(styleId);
+    if (!brow) return null;
+    return { prompt: buildBrowPrompt(brow), reference, referenceFile: `${brow.id}.jpg` };
+  }
+  if (tool === "beard") {
+    const beard = beardById(styleId);
+    if (!beard) return null;
+    return { prompt: buildBeardPrompt(beard), reference, referenceFile: `${beard.id}.jpg` };
+  }
+  const nail = nailById(styleId);
+  if (!nail) return null;
+  return { prompt: buildNailPrompt(nail), reference, referenceFile: `${nail.id}.jpg` };
+}
+
+type GuestEditArgs = {
   jpeg: Buffer;
   original: Buffer;
   styleId: string;
@@ -83,7 +119,17 @@ export async function runGuestHairstyleIfReady(args: {
   actorKey: string;
   jobId: string;
   requestId: string;
-}): Promise<NextResponse | null> {
+  tool: string;
+  kind: string;
+  guest?: { prompt: string; reference: Buffer; referenceFile: string };
+};
+
+/**
+ * Selfie plus image 2, raw provider image, one call.
+ * Returns null when the selected engine has no key, so the caller can show a demo preview.
+ * The guest response is a JPEG. Cost and model stay on the ledger.
+ */
+async function runGuestEdit(args: GuestEditArgs): Promise<NextResponse | null> {
   const { engine } = await readGuestEngine(args.tenantId);
   if (!(await guestEngineReady(engine))) return null;
   const executed = await executeReferenceEdit({
@@ -92,10 +138,12 @@ export async function runGuestHairstyleIfReady(args: {
     styleId: args.styleId,
     tenantId: args.tenantId,
     source: "tryon",
-    tool: "style",
+    tool: args.tool,
     modelId: guestEngineModel(engine),
     quality: "medium",
+    guest: args.guest,
   });
+  const kind = args.kind;
   if (!executed.ok) {
     await failGenerationJob(args.jobId, { outcome: executed.outcome, message: guestMessage(executed.outcome), callId: executed.callId });
     await prisma.tryOn.create({
@@ -103,7 +151,8 @@ export async function runGuestHairstyleIfReady(args: {
         tenantId: args.tenantId,
         sessionId: args.sessionId,
         styleId: args.styleId,
-        kind: "STYLE",
+        shadeId: kind === "COLOUR" ? args.styleId : null,
+        kind,
         tier: args.tier,
         actorKey: args.actorKey,
         quality: "standard",
@@ -119,7 +168,8 @@ export async function runGuestHairstyleIfReady(args: {
       tenantId: args.tenantId,
       sessionId: args.sessionId,
       styleId: args.styleId,
-      kind: "STYLE",
+      shadeId: kind === "COLOUR" ? args.styleId : null,
+      kind,
       tier: args.tier,
       actorKey: args.actorKey,
       quality: "standard",
@@ -141,5 +191,48 @@ export async function runGuestHairstyleIfReady(args: {
   return new NextResponse(new Uint8Array(jpegOut), {
     status: 200,
     headers: guestPreviewHeaders({ tryOnId: tryOn.id, creditsLeft: balance?.creditBalance ?? 0, demoReason: "" }),
+  });
+}
+
+export function runGuestHairstyleIfReady(args: Omit<GuestEditArgs, "tool" | "kind" | "guest">) {
+  return runGuestEdit({ ...args, tool: "style", kind: "STYLE" });
+}
+
+export function runGuestLookIfReady(args: Omit<GuestEditArgs, "guest"> & { prompt: string; reference: Buffer; referenceFile: string }) {
+  return runGuestEdit({
+    ...args,
+    guest: { prompt: args.prompt, reference: args.reference, referenceFile: args.referenceFile },
+  });
+}
+
+/** No engine key. A labelled card, not a provider call and not a masked paste. */
+export async function demoGuestPreview(args: Omit<GuestEditArgs, "guest" | "original"> & { styleName: string }) {
+  const image = await demoStyleComposite(args.jpeg, args.styleId, args.styleName, thumbnailFolder(args.tool));
+  const tryOn = await prisma.tryOn.create({
+    data: {
+      tenantId: args.tenantId,
+      sessionId: args.sessionId,
+      styleId: args.styleId,
+      shadeId: args.kind === "COLOUR" ? args.styleId : null,
+      kind: args.kind,
+      tier: args.tier,
+      actorKey: args.actorKey,
+      quality: "standard",
+      status: "DEMO",
+      credits: 0,
+    },
+  });
+  if (args.requestId) {
+    await completeGenerationJob(args.jobId, {
+      tenantId: args.tenantId,
+      requestId: args.requestId,
+      image,
+      demoReason: "no-key",
+    });
+  }
+  const balance = await prisma.tenant.findUnique({ where: { id: args.tenantId }, select: { creditBalance: true } });
+  return new NextResponse(new Uint8Array(image), {
+    status: 200,
+    headers: guestPreviewHeaders({ tryOnId: tryOn.id, creditsLeft: balance?.creditBalance ?? 0, demoReason: "no-key" }),
   });
 }

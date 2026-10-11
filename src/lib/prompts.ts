@@ -1,8 +1,11 @@
 import type { BeardDef } from "@/data/beards";
 import type { BrowDef } from "@/data/brows";
 import type { NailDef } from "@/data/nails";
+import type { ShadeDef } from "@/data/shades";
 import { lengthCategoryFor, type StyleDef } from "@/data/styles";
 import type { AskedTexture } from "@/lib/ai/reference-texture";
+
+const IMAGE_ROLES = "Image 1 is the customer selfie, image 2 is the reference.";
 
 export function buildStylePrompt(style: StyleDef, colourName?: string) {
   return [
@@ -60,32 +63,43 @@ export function buildReferencePrompt(style: StyleDef, colourName?: string, textu
   ].join(" ");
 }
 
+/** Guest brow edit. Image 2 is the brow photo. No mask sentence. */
 export function buildBrowPrompt(brow: BrowDef) {
   return [
-    `Edit the eyebrows only. New brow shape: ${brow.name}.`,
-    brow.prompt,
-    "Change only the eyebrows. Keep identity, face, eyes, nose, lips, jaw, skin tone, skin texture, moles, hair, hairline, expression, clothing, jewellery, background, lighting, camera angle, and pose unchanged.",
-    "Do not add or remove people. Do not add text, logos, or watermarks. Photorealistic brow hair that respects the density and growth already visible.",
-    "The result is a salon consultation preview, not a guarantee of the finished shape.",
+    IMAGE_ROLES,
+    "Change only the eyebrow shape and thickness to match image 2.",
+    "Keep the eyes, eyelids, forehead, bindi, skin, hair, face, clothes and background the same.",
+    `The selected brow is ${brow.name}. ${brow.prompt}`,
   ].join(" ");
 }
 
+/** Guest beard edit. Image 2 is the beard photo. Clean Shave still follows image 2. */
 export function buildBeardPrompt(beard: BeardDef) {
   return [
-    `Edit the facial hair only. New beard: ${beard.name}.`,
-    beard.prompt,
-    "Change only facial hair. Keep identity, face, eyes, brows, nose, lips, jaw shape, skin tone, skin texture, moles, scalp hair, hairline, expression, clothing, background, lighting, and pose unchanged.",
-    "Do not add or remove people. Do not add text, logos, or watermarks. Photorealistic, suitable for Indian facial-hair density.",
-    "The result is a consultation preview, not a guarantee of the finished shave or beard.",
+    IMAGE_ROLES,
+    "Change only the facial hair (beard, moustache, stubble) to match image 2.",
+    "Keep the lips, mouth shape, teeth, nose, jaw, skin, hair, clothes and background the same.",
+    "'Clean Shave' removes the facial hair.",
+    "If the person is a woman or has no facial hair, still follow image 2 and keep the face the same.",
+    `The selected beard is ${beard.name}. ${beard.prompt}`,
   ].join(" ");
 }
 
+/** Guest colour edit. Image 2 is a flat swatch of the selected shade. */
+export function buildColourPrompt(shade: ShadeDef) {
+  return [
+    IMAGE_ROLES,
+    `Recolour the existing hair to the selected shade. The selected shade is ${shade.name}.`,
+    "Keep the haircut, length, style and everything else the same.",
+  ].join(" ");
+}
+
+/** Guest nail edit. Image 2 is the nail photo. No mask sentence. */
 export function buildNailPrompt(nail: NailDef) {
   return [
-    `Edit the fingernails only. New nail design: ${nail.name}.`,
-    nail.prompt,
-    "Change only the polish or art on nails that are already visible. Keep identity, skin tone, hands, fingers, nail length, nail shape, jewellery, clothing, background, and pose unchanged.",
-    "Do not add extra fingers or nails. Do not add text, logos, or watermarks.",
-    "The result is a consultation preview, not a guarantee of the finished manicure.",
+    IMAGE_ROLES,
+    "Change only the polish or art on the visible fingernails to match image 2.",
+    "Keep the fingers, nail length, nail shape, skin, jewellery, clothes and background the same.",
+    `The selected design is ${nail.name}. ${nail.prompt}`,
   ].join(" ");
 }

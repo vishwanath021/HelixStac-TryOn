@@ -29,6 +29,13 @@ test("style, colour, brows, beard, and nails preview on this screen", async ({ p
   });
 
   await page.goto("/s/demo-salon");
+  await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
+  await page.getByRole("button", { name: "Take selfie" }).click();
+  await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
+  await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
+  await page.getByRole("tab", { name: "Brows" }).click();
+  await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
+  await page.getByRole("tab", { name: "Hair style" }).click();
   await expect(page.getByRole("tab")).toHaveCount(5);
   await usePhoto(page, "public/samples/portrait.jpg");
   await page.getByRole("checkbox", { name: /photo is used only/i }).check();
@@ -45,8 +52,19 @@ test("style, colour, brows, beard, and nails preview on this screen", async ({ p
   await page.getByRole("button", { name: "Honey Blonde" }).click();
   await expect(page.getByRole("region", { name: "Photo" }).locator("canvas")).toHaveAttribute("aria-label", "Honey Blonde");
   expect(posts.count).toBe(beforeColour);
+  await page.getByRole("button", { name: "Generate" }).click();
+  await expect(page.getByRole("heading", { name: "Honey Blonde", exact: true })).toBeVisible({ timeout: 20_000 });
+  const colourSlider = page.getByRole("slider", { name: /BEFORE \/ AFTER/i });
+  await expect(colourSlider).toBeVisible();
+  await colourSlider.fill("28");
+  await expect(colourSlider).toHaveValue("28");
+  await page.getByRole("button", { name: "Try another" }).click();
+  await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
+  await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
+  expect(posts.count).toBe(beforeColour + 1);
   await expect(page.getByText(/Too many/i)).toHaveCount(0);
 
+  await usePhoto(page, "public/samples/portrait.jpg");
   await look(page, "Brows", "Brows", "Soft Arch", posts);
   await usePhoto(page, "public/samples/portrait.jpg");
   await look(page, "Beard", "Beards", "Short Boxed", posts);
@@ -54,6 +72,6 @@ test("style, colour, brows, beard, and nails preview on this screen", async ({ p
   await usePhoto(page, "tests/fixtures/hand.jpg");
   await look(page, "Nails", "Nails", "Classic French", posts);
 
-  expect(posts.count).toBe(4);
+  expect(posts.count).toBe(5);
   expect(testInfo.project.name).toMatch(/android|iphone|desktop|tablet/);
 });

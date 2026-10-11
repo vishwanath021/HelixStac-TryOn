@@ -373,7 +373,10 @@ describe("salon reference switch", () => {
     const route = readFileSync("src/app/api/v1/tryon/generate/route.ts", "utf8");
     expect(page).not.toContain("showReferenceToggle");
     expect(route).toContain("runGuestHairstyleIfReady");
-    expect(route.indexOf("runGuestHairstyleIfReady")).toBeLessThan(route.indexOf("await generateWithFailover"));
+    expect(route).toContain("runGuestLookIfReady");
+    expect(route).toContain("poseGate");
+    expect(route).not.toContain("generateWithFailover");
+    expect(route).not.toContain("preflightPhoto");
     expect(route).not.toMatch(/gpt-image/);
   });
 

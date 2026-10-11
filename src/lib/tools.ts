@@ -56,16 +56,17 @@ export function maskToolFlags<T extends {
 
 const COLOUR_NOTE = " Live colour is still free.";
 
-export type PreviewTool = "style" | "brows" | "beard" | "nails";
+export type PreviewTool = "style" | "brows" | "beard" | "nails" | "colour";
 
 export function previewToolLabel(tool: PreviewTool) {
   if (tool === "brows") return "brow";
   if (tool === "nails") return "nail";
   if (tool === "beard") return "beard";
+  if (tool === "colour") return "colour";
   return "hairstyle";
 }
 
-/** The connection limit names the tool that was actually generated. Colour is not a generate. */
+/** The connection limit names the tool that was actually generated. Live colour on the phone is separate. */
 export function previewRateMessage(tool: PreviewTool) {
   return `Too many ${previewToolLabel(tool)} previews from this connection.`;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FACE_OVAL, JAW, LEFT_BROW, LIPS, RIGHT_BROW } from "@/lib/face/landmarks";
+import sharp from "sharp";
 import {
   FACE_TOO_PITCH,
   FACE_TOO_TILTED,
@@ -8,6 +9,7 @@ import {
   NO_FACE,
   BROWS_HIDDEN,
   analyzeRegion,
+  poseGate,
 } from "@/lib/face/region";
 import { HAIR, blank } from "@/lib/face/synthetic";
 import {
@@ -213,14 +215,30 @@ describe("landmark pose", () => {
     expect(glasses.ok).toBe(true);
   });
 
-  it("rejects brows that sit off the face and names the zone value", () => {
+  it("keeps a frontal brow when the brow points sit high", () => {
     const points = face();
     for (const index of [...RIGHT_BROW, ...LEFT_BROW]) points[index] = { x: points[index].x, y: 0.02, z: 0 };
     const off = check("brows", points);
-    expect(off.ok).toBe(false);
-    expect(off.message).toMatch(/don't line up/);
-    expect(off.debug?.failed).toBe("zone");
-    expect(off.debug?.value).not.toBeNull();
+    expect(off.ok).toBe(true);
+    expect(off.debug?.failed).toBeNull();
+  });
+
+  it("gates a paid edit on pose and lets a high brow band through", async () => {
+    const jpeg = await sharp({ create: { width: SIZE, height: SIZE, channels: 3, background: "#d7b59a" } }).jpeg().toBuffer();
+    const level = await poseGate(jpeg, "brows", face());
+    expect(level.ok).toBe(true);
+    expect(level.debug.failed).toBeNull();
+    const high = face();
+    for (const index of [...RIGHT_BROW, ...LEFT_BROW]) high[index] = { x: high[index].x, y: 0.02, z: 0 };
+    expect((await poseGate(jpeg, "brows", high)).ok).toBe(true);
+    const turned = await poseGate(jpeg, "colour", face({ yaw: 32 }));
+    expect(turned.ok).toBe(false);
+    expect(turned.message).toBe(FACE_TOO_TURNED);
+    const beard = await poseGate(jpeg, "beard", face({ yaw: 42 }));
+    expect(beard.ok).toBe(false);
+    expect(beard.message).toBe(JAW_NOT_VISIBLE);
+    expect((await poseGate(jpeg, "beard", face({ yaw: 30, roll: 12 }))).ok).toBe(true);
+    expect((await poseGate(jpeg, "colour", face({ roll: 12 }))).ok).toBe(true);
   });
 
   it("rejects a second face from the browser count and ignores a bad landmark payload", () => {

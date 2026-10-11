@@ -24,8 +24,8 @@ export default async function SuperAiPage() {
     <main className="mx-auto max-w-3xl px-4 py-8">
       <h1 className="page-title">AI settings</h1>
       <p className="mt-2 mb-4 max-w-xl text-base leading-6 text-muted">
-        Test is the default for a new key and for every calibration run. Medium turns on only after you approve it. High stays off until you enable it. Guests use Test until a salon or this page selects a higher tier that is allowed.
-        Guest Test and Medium still send gpt-image-1-mini, which shuts down on 1 Dec 2026. Guest High still sends gpt-image-1, which shuts down on 23 Oct 2026. Those prices and requests are unchanged. Move a tier only in a later change that updates the estimate and the request together, after the comparison dropdown has been checked. The proposed replacement for new edits is gpt-image-2.5-sunburst, with gpt-image-2.5-flare as the faster check. OpenRouter comparisons use their own key on this page. OpenRouter does not proxy fal.ai.
+        Test is the default for a new key and for every calibration run. Medium turns on only after you approve it. High stays off until you enable it.
+        Calibration Test and Medium still send gpt-image-1-mini, which shuts down on 1 Dec 2026. Calibration High still sends gpt-image-1, which shuts down on 23 Oct 2026. Guest try-on does not use those tiers. A guest preview sends the full photo and the selected reference to the engine chosen below: fal FLUX.3, or OpenAI gpt-image-2.5-sunburst at medium quality. OpenRouter comparisons use their own key on this page. OpenRouter does not proxy fal.ai.
       </p>
       <SuperAiForm initial={initial} salons={salons} />
       {squareQuote.ok && (

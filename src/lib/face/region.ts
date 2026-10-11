@@ -37,16 +37,8 @@ export const BROW_ROLL_LIMIT = 24;
 export const BROW_SYMMETRY_MIN = 0.86;
 /** Fringe across part of the brow band is allowed. A band that is mostly hair is not. */
 export const BROW_HAIR_MAX = 0.62;
-/**
- * Landmark brow masks are a thin ribbon, so a close-up face is still a small
- * share of the frame. The old 0.14 cap was the blob rectangle and rejected
- * straight-on selfies.
- */
-export const BROW_AREA_MIN = 0.0004;
+/** Kept so an old area failure still names a too-large brow band. Guest edits do not use it as a gate. */
 export const BROW_AREA_MAX = 0.28;
-/** Mask center as a fraction of face height. Real brows sit near 0.2. */
-export const BROW_ZONE_MIN = 0.06;
-export const BROW_ZONE_MAX = 0.55;
 
 export type RegionTool = "style" | "colour" | "brows" | "beard" | "nails";
 
@@ -107,8 +99,6 @@ export function judgeBrowPlacement(signals: BrowSignals): { ok: true } | { ok: f
   if (signals.faceHeight < MIN_FACE) return { ok: false, reason: "small", message: TRY_ANOTHER_PHOTO };
   if (signals.rollDeg > BROW_ROLL_LIMIT) return { ok: false, reason: "tilt", message: FACE_TOO_TILTED };
   if (signals.browHair > BROW_HAIR_MAX) return { ok: false, reason: "hair", message: BROWS_HIDDEN };
-  if (signals.maskFraction < 0.002 || signals.maskFraction > 0.14) return { ok: false, reason: "area", message: TRY_ANOTHER_PHOTO };
-  if (!signals.inBrowZone) return { ok: false, reason: "zone", message: TRY_ANOTHER_PHOTO };
   return { ok: true };
 }
 
@@ -748,15 +738,7 @@ function placeWithLandmarks(
       failed = "hair";
       value = hair;
     }
-    if (!failed && (maskArea < BROW_AREA_MIN || maskArea > BROW_AREA_MAX)) {
-      failed = "area";
-      value = maskArea;
-    }
-    if (!failed && zone != null && (zone < BROW_ZONE_MIN || zone > BROW_ZONE_MAX)) {
-      failed = "zone";
-      value = zone;
-    }
-  } else if (!jawVisible(points, width, height, pose.yaw) || maskArea < 0.001) {
+  } else if (!jawVisible(points, width, height, pose.yaw)) {
     failed = "jaw";
     value = maskArea;
   }
@@ -978,6 +960,49 @@ export function faceRegionDelta(original: Buffer, next: Buffer, face: FaceBox, w
   }
   if (!count) return 0;
   return sum / count;
+}
+
+/**
+ * Cheap pose check before a paid guest edit. Face count, face size, and head angle only.
+ * Mask area and brow zone do not apply once the provider edits the whole photo.
+ * Missing pose math returns ok so a failed landmark read does not block the edit.
+ */
+export async function poseGate(
+  jpeg: Buffer,
+  tool: "brows" | "beard" | "colour",
+  points: FaceLandmark[],
+  faceCount?: number,
+) {
+  const decoded = await decodeRgb(jpeg);
+  if (faceCount && faceCount >= 2) {
+    const debug = debugFromPose(null, { source: "landmarks", failed: "many" });
+    return { ok: false as const, message: messageFor("many"), debug };
+  }
+  const pose = poseFromLandmarks(points, decoded.width, decoded.height);
+  const face = faceBoxFromLandmarks(points, decoded.width, decoded.height);
+  if (!pose || !face) {
+    const debug = debugFromPose(null, { source: "landmarks", failed: null });
+    return { ok: true as const, message: "", debug };
+  }
+  if (face.h < MIN_FACE) {
+    const debug = debugFromPose(pose, { source: "landmarks", failed: "small" });
+    return { ok: false as const, message: NO_FACE, debug };
+  }
+  if (tool === "beard") {
+    if (!jawVisible(points, decoded.width, decoded.height, pose.yaw)) {
+      const debug = debugFromPose(pose, { source: "landmarks", failed: "jaw", value: round3(Math.abs(pose.yaw)) });
+      return { ok: false as const, message: JAW_NOT_VISIBLE, debug };
+    }
+  } else {
+    const failed = poseOutOfRange(pose);
+    if (failed) {
+      const value = failed === "yaw" ? round3(Math.abs(pose.yaw)) : failed === "roll" ? round3(Math.abs(pose.roll)) : round3(Math.abs(pose.pitch));
+      const debug = debugFromPose(pose, { source: "landmarks", failed, value });
+      return { ok: false as const, message: messageFor(failed, value), debug };
+    }
+  }
+  const debug = debugFromPose(pose, { source: "landmarks", failed: null });
+  return { ok: true as const, message: "", debug };
 }
 
 export async function preflightPhoto(jpeg: Buffer, tool: RegionTool, options?: RegionOptions) {

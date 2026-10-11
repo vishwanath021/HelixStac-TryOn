@@ -10,7 +10,7 @@ const bodySchema = z.object({
   slug: z.string().min(1),
   sessionId: z.string().min(8).max(80),
   styleId: z.string().min(1),
-  tool: z.enum(["style", "brows", "beard", "nails"]).optional(),
+  tool: z.enum(["style", "brows", "beard", "nails", "colour"]).optional(),
   shadeId: z.string().optional().nullable(),
   lang: z.string().default("en"),
   name: z.string().max(80).optional().nullable(),
@@ -31,9 +31,10 @@ export async function POST(req: Request) {
     tool === "brows" ? config.brows.some((item) => item.id === parsed.data.styleId) :
     tool === "beard" ? config.beards.some((item) => item.id === parsed.data.styleId) :
     tool === "nails" ? config.nails.some((item) => item.id === parsed.data.styleId) :
+    tool === "colour" ? config.shades.some((item) => item.id === parsed.data.styleId) :
     config.styles.some((item) => item.id === parsed.data.styleId);
   if (!look || !enabled) return NextResponse.json({ error: "STYLE" }, { status: 400 });
-  const shade = tool === "style" ? shadeById(parsed.data.shadeId) : null;
+  const shade = tool === "colour" ? shadeById(parsed.data.styleId) : tool === "style" ? shadeById(parsed.data.shadeId) : null;
   const keys = [...look.serviceKeys, ...(shade?.serviceKeys ?? [])];
   const services = servicesForLook(config, keys).map((service) => ({
     name: service.nameI18n[parsed.data.lang] || service.name,

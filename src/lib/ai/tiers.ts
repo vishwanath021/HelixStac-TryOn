@@ -179,7 +179,7 @@ export function usdFromTokenCounts(model: string, counts: { textIn: number; imag
 }
 
 export function ledgerTool(kind?: string, colour?: string | null): "hair" | "colour" | "brows" | "beard" | "nails" {
-  if (kind === "brows" || kind === "beard" || kind === "nails") return kind;
+  if (kind === "brows" || kind === "beard" || kind === "nails" || kind === "colour") return kind;
   return colour ? "colour" : "hair";
 }
 

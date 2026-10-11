@@ -1,13 +1,17 @@
 import { beardById } from "@/data/beards";
 import { browById } from "@/data/brows";
 import { nailById } from "@/data/nails";
-import { SHADES } from "@/data/shades";
+import { shadeById, SHADES } from "@/data/shades";
 import { styleById, type Gender } from "@/data/styles";
 import { recommendStyles } from "@/lib/recommendations";
 
-export type LookRef = { id: string; name: string; serviceKeys: string[]; tool: "style" | "brows" | "beard" | "nails"; gender?: Gender };
+export type LookRef = { id: string; name: string; serviceKeys: string[]; tool: "style" | "brows" | "beard" | "nails" | "colour"; gender?: Gender };
 
 export function resolveLook(tool: string, id: string): LookRef | null {
+  if (tool === "colour") {
+    const shade = shadeById(id);
+    return shade ? { id: shade.id, name: shade.name, serviceKeys: shade.serviceKeys, tool: "colour" } : null;
+  }
   if (tool === "brows") {
     const brow = browById(id);
     return brow ? { id: brow.id, name: brow.name, serviceKeys: brow.serviceKeys, tool: "brows" } : null;

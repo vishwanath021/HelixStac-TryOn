@@ -155,9 +155,10 @@ describe("eyebrow catalogue", () => {
     ]);
     for (const brow of BROWS) {
       const prompt = buildBrowPrompt(brow);
-      expect(prompt.toLowerCase()).toContain("eyebrows only");
-      expect(prompt.toLowerCase()).toContain("identity");
-      expect(prompt.toLowerCase()).toContain("skin tone");
+      expect(prompt).toContain("Image 1 is the customer selfie, image 2 is the reference.");
+      expect(prompt).toContain("Change only the eyebrow shape and thickness to match image 2.");
+      expect(prompt).toContain("Keep the eyes, eyelids, forehead, bindi, skin, hair, face, clothes and background the same.");
+      expect(prompt.toLowerCase()).not.toContain("mask");
       expect(brow.serviceKeys).toEqual(["eyebrow-threading", "eyebrow-shaping"]);
     }
   });
@@ -170,15 +171,19 @@ describe("beard and nail catalogues", () => {
     expect(BEARDS.map((item) => item.id)).toEqual(expect.arrayContaining(["light-stubble", "short-boxed", "full-beard", "goatee", "french-beard", "clean-shave"]));
     for (const beard of BEARDS) {
       const prompt = buildBeardPrompt(beard);
-      expect(prompt.toLowerCase()).toContain("facial hair only");
-      expect(prompt.toLowerCase()).toContain("identity");
-      expect(prompt.toLowerCase()).toContain("skin tone");
+      expect(prompt).toContain("Image 1 is the customer selfie, image 2 is the reference.");
+      expect(prompt).toContain("Change only the facial hair (beard, moustache, stubble) to match image 2.");
+      expect(prompt).toContain("Keep the lips, mouth shape, teeth, nose, jaw, skin, hair, clothes and background the same.");
+      expect(prompt).toContain("'Clean Shave' removes the facial hair.");
+      expect(prompt).toContain("If the person is a woman or has no facial hair, still follow image 2 and keep the face the same.");
+      expect(prompt.toLowerCase()).not.toContain("mask");
     }
     for (const nail of NAILS) {
       const prompt = buildNailPrompt(nail);
-      expect(prompt.toLowerCase()).toContain("fingernails only");
-      expect(prompt.toLowerCase()).toContain("identity");
-      expect(prompt.toLowerCase()).toContain("skin tone");
+      expect(prompt).toContain("Image 1 is the customer selfie, image 2 is the reference.");
+      expect(prompt).toContain("Change only the polish or art on the visible fingernails to match image 2.");
+      expect(prompt).toContain("Keep the fingers, nail length, nail shape, skin, jewellery, clothes and background the same.");
+      expect(prompt.toLowerCase()).not.toContain("mask");
     }
   });
 });

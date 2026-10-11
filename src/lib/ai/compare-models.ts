@@ -257,3 +257,72 @@ export async function prepareComparison(args: { jpeg: Buffer; styleId: string; c
     ...shared,
   };
 }
+
+/**
+ * Guest brows, beard, colour, and nails. The caller supplies the prompt and image 2.
+ * Fal keeps that prompt. The hairstyle numbered sentence is not substituted.
+ */
+export async function prepareGuestReference(args: {
+  jpeg: Buffer;
+  styleId: string;
+  modelId: string;
+  quality?: EditQuality;
+  prompt: string;
+  reference: Buffer;
+  referenceFile: string;
+}) {
+  const row = comparisonModel(args.modelId);
+  if (!row) {
+    return { ok: false as const, message: `${args.modelId} is not a configured comparison model. No other model was substituted.` };
+  }
+  const selfieMeta = await sharp(args.jpeg, { failOn: "none" }).rotate().metadata();
+  const referenceMeta = await sharp(args.reference, { failOn: "none" }).metadata();
+  const width = selfieMeta.width || 0;
+  const height = selfieMeta.height || 0;
+  if (!width || !height) return { ok: false as const, message: "The selfie could not be read." };
+  const quote = quoteComparisonModel(
+    row.id,
+    width,
+    height,
+    { width: referenceMeta.width || 512, height: referenceMeta.height || 512 },
+    args.quality,
+  );
+  if (!quote.ok) return quote;
+  const shared = {
+    style: { id: args.styleId },
+    quote,
+    reference: args.reference,
+    referenceFile: args.referenceFile,
+    referenceWidth: referenceMeta.width || 0,
+    referenceHeight: referenceMeta.height || 0,
+    texture: "natural" as const,
+    referenceTexture: "straight" as const,
+    textureWarning: "",
+    prompt: args.prompt,
+  };
+  if (row.provider === "gemini" || row.provider === "fal" || row.provider === "openrouter") {
+    const selfiePng = await sharp(args.jpeg, { failOn: "none" }).rotate().png().toBuffer();
+    return { ok: true as const, provider: row.provider, planned: null, selfiePng, fitted: null, ...shared };
+  }
+  const quality = quote.quality as EditQuality;
+  const planned = planImageEdit({
+    model: quote.model,
+    prompt: args.prompt,
+    quality,
+    size: quote.size as "1024x1024" | "1024x1536" | "1536x1024",
+    outputFormat: "png",
+    inputFidelity: quote.inputFidelity,
+    imageOrder: ["selfie.png", "style-reference.jpg"],
+    mask: false,
+  });
+  if (!planned.ok) return planned;
+  const fitted = await fitInsideCanvas(args.jpeg, planned.plan.size);
+  return {
+    ok: true as const,
+    provider: "openai" as const,
+    planned: planned.plan,
+    selfiePng: fitted.png,
+    fitted,
+    ...shared,
+  };
+}

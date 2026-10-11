@@ -180,8 +180,10 @@ test("retake and try another each open a new camera frame", async ({ page }, tes
 
   await page.goto("/s/demo-salon");
   await shot(page, `guest-header-${device}`);
+  await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await page.getByRole("button", { name: "Take selfie" }).click();
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
+  await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await waitForLiveFrame(page);
   await page.getByRole("button", { name: "Take photo" }).click();
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
@@ -193,6 +195,7 @@ test("retake and try another each open a new camera frame", async ({ page }, tes
   await page.getByRole("button", { name: "Retake" }).click();
   await expect(page.getByRole("button", { name: "Retake" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
+  await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await waitForLiveFrame(page);
   await shot(page, `retake-camera-${device}`);
   await page.getByRole("button", { name: "Take photo" }).click();
@@ -212,6 +215,7 @@ test("retake and try another each open a new camera frame", async ({ page }, tes
   await shot(page, `result-glow-${device}`);
   await page.getByRole("button", { name: "Try another" }).click();
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
+  await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await waitForLiveFrame(page);
   await page.getByRole("button", { name: "Take photo" }).click();
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();

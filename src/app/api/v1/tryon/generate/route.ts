@@ -1,33 +1,18 @@
-import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
-import { HD_CREDIT_COST, STANDARD_CREDIT_COST } from "@/data/plans";
-import { shadeById } from "@/data/shades";
-import { resolveProviderChoice } from "@/lib/ai/credentials";
-import { claimGenerationJob, completeGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
-import { guestEngineReady, readGuestEngine, runGuestHairstyleIfReady } from "@/lib/ai/guest-hairstyle";
-import { salonOutcome, guestPreviewHeaders } from "@/lib/ai/guest-response";
-import { generateWithFailover, selectProvider } from "@/lib/ai/router";
-import { readTierFlags } from "@/lib/ai/settings-store";
-import { resolveGuestTier } from "@/lib/ai/tiers";
-import type { GenerateInput } from "@/lib/ai/types";
-import { CreditError, refundStaleReserves, reserveCredits, settleCredits } from "@/lib/credits";
+import { claimGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
+import { demoGuestPreview, guestEngineReady, loadGuestReference, readGuestEngine, runGuestHairstyleIfReady, runGuestLookIfReady } from "@/lib/ai/guest-hairstyle";
+import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { auth } from "@/auth";
 import { consumePreviewRate, guestLimitMessage, toolEnabled, type PreviewTool, type ToolId } from "@/lib/tools";
 import { resolveLook } from "@/lib/guidance";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 import { sanitizeSelfie, ImageError } from "@/lib/images";
-import { hairExtentForStyle, logPlacementRejection, preflightPhoto, TRY_ANOTHER_PHOTO, type RegionTool } from "@/lib/face/region";
+import { logPlacementRejection, poseGate, TRY_ANOTHER_PHOTO } from "@/lib/face/region";
 import { parseLandmarks, type PlacementDebug } from "@/lib/face/pose";
-import { logError } from "@/lib/logger";
 import { AI_PREVIEW_KINDS, actorKeyFor, capForTier, hashIp, readGuestToken, verifySalonToken, type PreviewTier } from "@/lib/preview-access";
 import { prisma } from "@/lib/prisma";
-import { buildBeardPrompt, buildBrowPrompt, buildNailPrompt, buildStylePrompt } from "@/lib/prompts";
-import { beardById } from "@/data/beards";
-import { browById } from "@/data/brows";
-import { nailById } from "@/data/nails";
-import { styleById } from "@/data/styles";
 import { clientIp } from "@/lib/ratelimit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,7 +57,7 @@ export async function POST(req: Request) {
   const sessionId = String(form.get("sessionId") || "");
   const consentId = String(form.get("consentId") || "");
   const rawTool = String(form.get("tool") || "style");
-  const tool = rawTool === "brows" || rawTool === "beard" || rawTool === "nails" ? rawTool : "style";
+  const tool = rawTool === "brows" || rawTool === "beard" || rawTool === "nails" || rawTool === "colour" ? rawTool : "style";
   const shadeId = form.get("shadeId") ? String(form.get("shadeId")) : null;
   const photo = form.get("photo");
   if (!slug || !styleId || sessionId.length < 8 || !(photo instanceof File)) {
@@ -110,7 +95,7 @@ export async function POST(req: Request) {
   const platformTool: ToolId = tool === "style" ? "hairstyle" : tool;
   const toolOn =
     toolEnabled(platformTool) &&
-    (tool === "brows" ? tenant.toolBrows : tool === "beard" ? tenant.toolBeard : tool === "nails" ? tenant.toolNails : tenant.toolStyle);
+    (tool === "brows" ? tenant.toolBrows : tool === "beard" ? tenant.toolBeard : tool === "nails" ? tenant.toolNails : tool === "colour" ? tenant.toolColour : tenant.toolStyle);
   if (!toolOn) return NextResponse.json({ error: "TOOL", message: "That try-on is turned off for this salon." }, { status: 403 });
   if (!look) return NextResponse.json({ error: "STYLE", message: "That look is not on this salon's menu." }, { status: 400 });
   if (tool === "style") {
@@ -153,14 +138,13 @@ export async function POST(req: Request) {
     }
   }
 
-  const hairstyle = tool === "style" && !shadeId;
   const requestId = String(form.get("requestId") || "");
   let jobId = "";
   if (requestId) {
     const claim = await claimGenerationJob({
       tenantId: tenant.id,
       requestId,
-      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: hairstyle ? "" : shadeId || "", mode: hairstyle ? "hairstyle" : "production" }),
+      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: tool === "style" ? shadeId || "" : "", mode: tool }),
     });
     if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
     if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
@@ -192,42 +176,15 @@ export async function POST(req: Request) {
     return null;
   };
 
-  if (hairstyle) {
-    const { engine } = await readGuestEngine(tenant.id);
-    if (await guestEngineReady(engine)) {
-      const limited = await takePreviewSlot();
-      if (limited) return limited;
-    }
-    const styled = await runGuestHairstyleIfReady({
-      jpeg,
-      original,
-      styleId,
-      tenantId: tenant.id,
-      sessionId,
-      tier,
-      actorKey,
-      jobId,
-      requestId,
-    });
-    if (styled) return styled;
-  }
-
-  const shade = tool === "style" ? shadeById(shadeId) : null;
-  const region: RegionTool = tool === "nails" ? "nails" : tool === "brows" ? "brows" : tool === "beard" ? "beard" : shade ? "colour" : "style";
-  const lookStyle = tool === "style" ? styleById(styleId) : null;
-  const choice = await resolveProviderChoice(tenant.id);
   const landmarks = parseLandmarks(form.get("landmarks"));
   const faceCount = Number(form.get("faceCount") || 0);
-  const providerName = selectProvider(choice.name, choice.apiKey).name;
   let placementDebug: PlacementDebug | undefined;
-  let placementWarning = "";
-  if (providerName !== "mock" || landmarks) {
-    const placement = await preflightPhoto(jpeg, region, { hairExtent: hairExtentForStyle(lookStyle, region), landmarks, faceCount });
+  if ((tool === "brows" || tool === "beard" || tool === "colour") && landmarks) {
+    const placement = await poseGate(jpeg, tool, landmarks, faceCount);
     placementDebug = placement.debug;
-    placementWarning = placement.warning || "";
     if (!placement.ok) {
       const message = placement.message || TRY_ANOTHER_PHOTO;
-      logPlacementRejection(region, placement.debug);
+      logPlacementRejection(tool, placement.debug);
       await failGenerationJob(jobId, { outcome: "placement", message });
       const body: { error: string; message: string; debug?: PlacementDebug } = { error: "PLACEMENT", message };
       if (await viewerIsSuper()) body.debug = placement.debug;
@@ -235,126 +192,67 @@ export async function POST(req: Request) {
     }
   }
 
+  const guestLook = tool === "style" ? null : await loadGuestReference(tool, styleId);
+  if (tool !== "style" && !guestLook) {
+    await failGenerationJob(jobId, { outcome: "style", message: "That look is not on this salon's menu." });
+    return NextResponse.json({ error: "STYLE", message: "That look is not on this salon's menu." }, { status: 400 });
+  }
+
   const limited = await takePreviewSlot();
   if (limited) return limited;
 
-  const flags = await readTierFlags(tenant.id);
-  const modelTier = resolveGuestTier({ ...flags, purpose: "guest" });
-  const quality = modelTier === "high" ? "hd" : "standard";
-  const credits = modelTier === "high" ? HD_CREDIT_COST : STANDARD_CREDIT_COST;
-  const refId = randomUUID();
-  await refundStaleReserves(tenant.id);
-  try {
-    await reserveCredits(tenant.id, credits, refId);
-  } catch (error) {
-    if (error instanceof CreditError && error.code === "INSUFFICIENT") {
-      const creditsMessage = guestLimitMessage("credits");
-      await failGenerationJob(jobId, { outcome: "credits", message: creditsMessage });
-      return NextResponse.json(
-        { error: "CREDITS", message: creditsMessage },
-        { status: 402 },
-      );
+  const kind = tool === "brows" ? "BROWS" : tool === "beard" ? "BEARD" : tool === "nails" ? "NAILS" : tool === "colour" ? "COLOUR" : "STYLE";
+  const { engine } = await readGuestEngine(tenant.id);
+  const superUser = placementDebug ? await viewerIsSuper() : false;
+  const withPose = (response: NextResponse) => {
+    if (response.status === 200 && placementDebug && superUser) {
+      response.headers.set("x-placement-debug", JSON.stringify(placementDebug));
     }
-    await failGenerationJob(jobId, { outcome: "suspended", message: "This salon's try-on is paused." });
-    return NextResponse.json({ error: "SUSPENDED", message: "This salon's try-on is paused." }, { status: 403 });
+    return response;
+  };
+  if (await guestEngineReady(engine)) {
+    const styled = tool === "style" || !guestLook
+      ? await runGuestHairstyleIfReady({
+          jpeg,
+          original,
+          styleId,
+          tenantId: tenant.id,
+          sessionId,
+          tier,
+          actorKey,
+          jobId,
+          requestId,
+        })
+      : await runGuestLookIfReady({
+          jpeg,
+          original,
+          styleId,
+          tenantId: tenant.id,
+          sessionId,
+          tier,
+          actorKey,
+          jobId,
+          requestId,
+          tool,
+          kind,
+          prompt: guestLook.prompt,
+          reference: guestLook.reference,
+          referenceFile: guestLook.referenceFile,
+        });
+    if (styled) return withPose(styled);
   }
 
-  const kind = tool === "brows" ? "BROWS" : tool === "beard" ? "BEARD" : tool === "nails" ? "NAILS" : "STYLE";
-  const style = lookStyle;
-  const prompt =
-    tool === "brows" ? buildBrowPrompt(browById(styleId)!) :
-    tool === "beard" ? buildBeardPrompt(beardById(styleId)!) :
-    tool === "nails" ? buildNailPrompt(nailById(styleId)!) :
-    buildStylePrompt(style!, shade?.name);
-  const tryOn = await prisma.tryOn.create({
-    data: {
-      tenantId: tenant.id,
-      sessionId,
-      styleId,
-      shadeId: shade?.id,
-      kind,
-      tier,
-      actorKey,
-      quality,
-      status: "PENDING",
-      credits,
-    },
-  });
-
-  try {
-    const input: GenerateInput = {
-      image: jpeg,
-      styleId,
-      gender: style?.gender ?? "women",
-      prompt,
-      colour: shade?.name,
-      tenantId: tenant.id,
-      quality,
-      tier: modelTier,
-      kind: tool,
-      styleName: look.name,
-      landmarks: landmarks ?? undefined,
-    };
-    const result = await generateWithFailover(input, choice);
-    const outcome = salonOutcome(result.demoReason);
-    if (outcome.placement) {
-      await settleCredits(tenant.id, refId, "REFUND");
-      await prisma.tryOn.update({ where: { id: tryOn.id }, data: { status: "FAILED" } });
-      const message = result.placementMessage || TRY_ANOTHER_PHOTO;
-      logPlacementRejection(region, result.placementDebug);
-      await failGenerationJob(jobId, { outcome: "placement", message, callId: result.callId });
-      const body: { error: string; message: string; debug?: PlacementDebug } = { error: "PLACEMENT", message };
-      if (await viewerIsSuper()) body.debug = result.placementDebug;
-      return NextResponse.json(body, { status: 422 });
-    }
-    await settleCredits(tenant.id, refId, outcome.commit ? "COMMIT" : "REFUND");
-    const balance = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { creditBalance: true } });
-    await prisma.tryOn.update({
-      where: { id: tryOn.id },
-      data: {
-        status: outcome.status,
-        latencyMs: result.latencyMs,
-      },
-    });
-    await prisma.usageEvent.create({
-      data: {
-        tenantId: tenant.id,
-        sessionId,
-        name: outcome.commit ? "generate_succeeded" : "generate_demo",
-        props: JSON.stringify({ styleId, demo: Boolean(result.demoReason) }),
-      },
-    });
-    if (requestId) {
-      await completeGenerationJob(jobId, {
-        tenantId: tenant.id,
-        requestId,
-        image: result.image,
-        demoReason: result.demoReason,
-        callId: result.callId,
-      });
-    }
-    const headers: Record<string, string> = {
-      ...guestPreviewHeaders({
-        tryOnId: tryOn.id,
-        creditsLeft: balance?.creditBalance ?? 0,
-        demoReason: result.demoReason || "",
-      }),
-    };
-    if (placementWarning) headers["x-placement-warning"] = placementWarning;
-    if (placementDebug && (await viewerIsSuper())) headers["x-placement-debug"] = JSON.stringify(placementDebug);
-    return new NextResponse(new Uint8Array(result.image), {
-      status: 200,
-      headers,
-    });
-  } catch (error) {
-    await settleCredits(tenant.id, refId, "REFUND");
-    await prisma.tryOn.update({ where: { id: tryOn.id }, data: { status: "FAILED" } });
-    const uncertain = error instanceof Error && error.name === "UncertainBillingError";
-    const message = uncertain
-      ? "The provider may have billed this attempt. It was not started again. The salon credit was returned."
-      : "The preview did not finish. The salon credit was returned. No automatic retry was made.";
-    await failGenerationJob(jobId, { outcome: uncertain ? "uncertain" : "provider", message });
-    logError("generate failed", { tryOnId: tryOn.id, tenantId: tenant.id, message: error instanceof Error ? error.message : "error" });
-    return NextResponse.json({ error: uncertain ? "UNCERTAIN" : "PROVIDER", message }, { status: uncertain ? 504 : 502 });
-  }
+  return withPose(await demoGuestPreview({
+    jpeg,
+    styleId,
+    styleName: look.name,
+    tenantId: tenant.id,
+    sessionId,
+    tier,
+    actorKey,
+    jobId,
+    requestId,
+    tool,
+    kind,
+  }));
 }

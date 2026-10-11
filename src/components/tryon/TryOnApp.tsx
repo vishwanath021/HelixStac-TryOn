@@ -58,7 +58,7 @@ type Look = {
   before: string;
   after: string;
   serviceKeys: string[];
-  tool: "style" | "brows" | "beard" | "nails";
+  tool: "style" | "brows" | "beard" | "nails" | "colour";
   demo?: boolean;
 };
 
@@ -197,7 +197,7 @@ export function TryOnApp({
         serviceKeys: row.style.serviceKeys ?? [],
       }))
     : [];
-  const showResult = tool !== "colour" && stylePhase === "result" && active?.tool === tool && !busy;
+  const showResult = stylePhase === "result" && active?.tool === tool && !busy;
   useEffect(() => {
     if (!showResult || !active?.id) return;
     setFreshGlow(true);
@@ -320,23 +320,32 @@ export function TryOnApp({
       setCameraError(t(lang, "cameraError"));
       return;
     }
-    const pending = devices.getUserMedia({
-      audio: false,
-      video: { facingMode: { ideal: nextFacing }, width: { ideal: 720 }, height: { ideal: 1280 } },
-    });
+    let stream: MediaStream;
     try {
-      const stream = await pending;
-      if (cameraGen.current !== gen) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      const video = videoRef.current;
-      if (!video) {
-        stream.getTracks().forEach((track) => track.stop());
-        setCameraOn(false);
-        setCameraError(t(lang, "cameraError"));
-        return;
-      }
+      stream = await devices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: nextFacing }, width: { ideal: 720 }, height: { ideal: 1280 } },
+      });
+    } catch {
+      if (cameraGen.current !== gen) return;
+      releaseStream();
+      setCameraOn(false);
+      setCameraReady(false);
+      setVideoEl(null);
+      setCameraError(t(lang, "cameraError"));
+      return;
+    }
+    if (cameraGen.current !== gen) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    const video = videoRef.current;
+    if (!video) {
+      stream.getTracks().forEach((track) => track.stop());
+      setCameraOn(false);
+      return;
+    }
+    try {
       video.muted = true;
       video.setAttribute("playsinline", "true");
       video.srcObject = stream;
@@ -358,11 +367,11 @@ export function TryOnApp({
       track("camera_started", {});
     } catch {
       if (cameraGen.current !== gen) return;
+      stream.getTracks().forEach((track) => track.stop());
       releaseStream();
       setCameraOn(false);
       setCameraReady(false);
       setVideoEl(null);
-      setCameraError(t(lang, "cameraError"));
     }
   }
 
@@ -583,7 +592,7 @@ export function TryOnApp({
       body.set("sessionId", sid || sessionId());
       body.set("requestId", crypto.randomUUID());
       if (salonToken) body.set("salonToken", salonToken);
-      if (chosen.tool === "brows" || chosen.tool === "beard") {
+      if (chosen.tool === "brows" || chosen.tool === "beard" || chosen.tool === "colour") {
         const detected = await detectFaceLandmarks(shot.blob).catch(() => null);
         if (detected) {
           body.set("landmarks", JSON.stringify(detected.landmarks));
@@ -624,7 +633,7 @@ export function TryOnApp({
         id: res.headers.get("x-tryon-id") || crypto.randomUUID(),
         styleId: chosen.id,
         styleName: chosen.name,
-        shadeName: chosen.tool === "style" ? shade?.name ?? null : null,
+        shadeName: chosen.tool === "style" ? shade?.name ?? null : chosen.tool === "colour" ? chosen.name : null,
         before: URL.createObjectURL(shot.blob),
         after: URL.createObjectURL(out),
         serviceKeys: chosen.serviceKeys,
@@ -651,9 +660,21 @@ export function TryOnApp({
     await preview({ id: chosen.id, name: chosen.name, serviceKeys: chosen.serviceKeys ?? [], tool });
   }
 
+  async function generateColour() {
+    if (!shade || busy) return;
+    await preview({ id: shade.id, name: shade.name, serviceKeys: shade.serviceKeys ?? [], tool: "colour" });
+  }
+
   function pickShade(id: string) {
     setShadeId(id);
     setTool("colour");
+    setError("");
+    if (active?.tool === "colour") {
+      if (active.before.startsWith("blob:")) URL.revokeObjectURL(active.before);
+      if (active.after.startsWith("blob:")) URL.revokeObjectURL(active.after);
+      setActive(null);
+      setStylePhase("pick");
+    }
     track("colour_selected", { shade: id });
     if (!faceShot && !cameraOn) needPhoto();
   }
@@ -668,7 +689,7 @@ export function TryOnApp({
         sessionId: sid || sessionId(),
         styleId: active.styleId,
         tool: active.tool,
-        shadeId: active.tool === "style" ? shadeId || null : null,
+        shadeId: active.tool === "colour" ? active.styleId : active.tool === "style" ? shadeId || null : null,
         lang,
         src: embed ? "embed" : "tryon",
       }),
@@ -749,7 +770,7 @@ export function TryOnApp({
             role="tab"
             aria-selected={tool === item.id}
             aria-label={item.name}
-            onClick={() => { setTool(item.id); setError(""); }}
+            onClick={() => { setTool(item.id); setError(""); setCameraError(""); }}
           >
             <ToolGlyph name={item.icon} />
             {item.label}
@@ -894,6 +915,9 @@ export function TryOnApp({
 
       {!showResult && tool !== "colour" && styleId && (
         <button className="btn mt-4 w-full" type="button" disabled={busy} onClick={() => void tryLook()}>{t(lang, "tryThisLook")}</button>
+      )}
+      {!showResult && tool === "colour" && shadeId && faceShot && (
+        <button className="btn mt-4 w-full" type="button" disabled={busy} onClick={() => void generateColour()}>{t(lang, "generateColour")}</button>
       )}
       {showResult && active && (
         <div className="mt-4 grid gap-2">

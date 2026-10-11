@@ -141,7 +141,7 @@ export function SuperAiForm({
       return;
     }
     applyView(data);
-    setMessage("Medium quality is approved. Guests stay on Test until that tier is selected.");
+    setMessage("Medium quality is approved for calibration. Guest try-on uses the model above.");
   }
 
   async function calibrate() {
@@ -226,7 +226,7 @@ export function SuperAiForm({
     >
       <fieldset className="grid gap-3 border-b border-line pb-4" aria-label="Salon hairstyle model">
         <legend className="text-base font-semibold">Salon hairstyle model</legend>
-        <p className="text-sm text-muted">Guests use this model. Comparison stays on this page.</p>
+        <p className="text-sm text-muted">Hair style, colour, brows, beard, and nails send the full photo and the reference to this model. Comparison stays on this page.</p>
         <label className="flex min-h-11 items-center gap-2 text-sm">
           <input type="radio" name="guest-engine" checked={guestEngine === "fal"} onChange={() => setGuestEngine("fal")} />
           fal FLUX.3 (default)
@@ -327,7 +327,7 @@ export function SuperAiForm({
         <input type="checkbox" checked={highEnabled} onChange={(event) => setHighEnabled(event.target.checked)} />
         Enable high quality
       </label>
-      <p className="text-xs text-muted">High stays off until this is checked. Guests never use it unless it is enabled and selected.</p>
+      <p className="text-xs text-muted">High stays off until this is checked. Guest try-on does not use these tiers.</p>
       <label className="text-sm">
         Provider key
         <input

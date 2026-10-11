@@ -3,7 +3,7 @@ import { rm } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { benchmarkDir, prepareBenchmark, restoredFromProvider, writeBenchmarkStages } from "@/lib/ai/benchmark";
-import { prepareComparison } from "@/lib/ai/compare-models";
+import { prepareComparison, prepareGuestReference } from "@/lib/ai/compare-models";
 import type { AskedTexture } from "@/lib/ai/reference-texture";
 import { reviewProviderFace } from "@/lib/face/compose-hair";
 import type { DriftReport } from "@/lib/face/hair-composite";
@@ -100,12 +100,24 @@ export async function executeReferenceEdit(args: {
   hairTexture?: AskedTexture;
   modelId?: string;
   quality?: EditQuality;
+  /** Set for brows, beard, colour, and nails so the hairstyle prompt is not substituted. */
+  guest?: { prompt: string; reference: Buffer; referenceFile: string };
 }): Promise<ReferenceSuccess | ReferenceFailure> {
   await purgeOldBenchmarks().catch(() => undefined);
   const requestedModel = args.modelId?.trim() || "";
-  const prepared = requestedModel
-    ? await prepareComparison({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture, modelId: requestedModel, quality: args.quality })
-    : await prepareBenchmark({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture });
+  const prepared = args.guest
+    ? await prepareGuestReference({
+        jpeg: args.jpeg,
+        styleId: args.styleId,
+        modelId: requestedModel,
+        quality: args.quality,
+        prompt: args.guest.prompt,
+        reference: args.guest.reference,
+        referenceFile: args.guest.referenceFile,
+      })
+    : requestedModel
+      ? await prepareComparison({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture, modelId: requestedModel, quality: args.quality })
+      : await prepareBenchmark({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture });
   if (!prepared.ok) {
     return { ok: false, httpStatus: 400, error: "QUOTE", message: prepared.message, outcome: "quote" };
   }
