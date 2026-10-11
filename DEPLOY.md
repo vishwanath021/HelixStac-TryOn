@@ -1,144 +1,217 @@
 # Deploy Lookuvi
 
-Production is stateless Next.js containers, Postgres, and private object storage. Details and the diagram are in `docs/ARCHITECTURE.md`. This file is the first deploy.
+Follow the steps in order. Each step says what to create and what “done” looks like. Diagram and sizing notes are in `docs/ARCHITECTURE.md`.
 
-Do not set `SEED_DEMO`. The container refuses it. Demo passwords in `prisma/seed.ts` are for `npm run seed` on a development SQLite file.
+Demo passwords in `prisma/seed.ts` are for `npm run seed` on a laptop. The production container refuses `SEED_DEMO`.
 
-## 1. Accounts
+## 1. Create the accounts
 
-- A Mumbai compute target: a VM with Docker, or Fly.io region `bom`, or Railway with the region closest to Mumbai.
-- Postgres 16 in Mumbai with point-in-time recovery. Create a database and a user. Note a **direct** URL and, if you use Neon or PgBouncer, a **pooled** URL.
-- A private Cloudflare R2 or S3 bucket. Block public access. Add a lifecycle rule that expires objects under `generations/` after 2 days.
-- Redis if you will run more than one app container. One container can use the Postgres rate-limit table instead.
-- A DNS name and a TLS certificate on the load balancer or Cloudflare.
-- An SMTP URL if salon owners will reset passwords by email. Without it, reset links are not sent in production. You can still set passwords with the admin script.
+Do this before the server exists.
 
-## 2. Image
+1. A DigitalOcean account. You will create one droplet in **Bangalore** (`blr1`).
+2. A domain name you control (for example `lookuvi.in`).
+3. A Cloudflare R2 bucket (or S3 in `ap-south-1`). Block public access. Add a lifecycle rule that deletes objects under `generations/` after 2 days. Keep `backups/` longer.
+4. An email sender: a [Resend](https://resend.com) API key **or** an SMTP URL. Verify the domain so `EMAIL_FROM` is allowed to send.
+5. Optional: an MSG91 account, an auth key, and an OTP template whose body contains `##OTP##`. Phone login stays off until this exists.
+6. Optional: a Sentry project if you want error reports.
+7. A GitHub repository secret set, added later in step 10: `SSH_HOST`, `SSH_USER`, `SSH_KEY`. `SSH_PORT` only if SSH is not on port 22.
 
-From a clean tree, on the build machine:
+You do not need an OpenAI or fal key to boot. Guests get a labelled sample until you save a key on `/super/ai`.
+
+## 2. Create the droplet
+
+From your laptop, after `doctl auth init`:
 
 ```bash
-docker build -t lookuvi:$(git rev-parse --short HEAD) .
+doctl compute droplet create lookuvi \
+  --region blr1 \
+  --size s-2vcpu-4gb \
+  --image docker-20-04 \
+  --ssh-keys YOUR_SSH_KEY_FINGERPRINT
 ```
 
-The image runs `scripts/prepare-prisma.mjs`, `prisma generate`, and `prisma migrate deploy` before `node server.js`. It does not seed users.
-
-## 3. Environment
-
-Set these on the host. The process exits before it serves traffic if a required value is missing (`src/instrumentation.ts`).
-
-Required:
-
-| Variable | Value |
-|---|---|
-| `NODE_ENV` | `production` |
-| `DATABASE_URL` | Pooled Postgres URL used by the running app |
-| `DIRECT_URL` | Direct Postgres URL used only by `prisma migrate deploy`. Omit if `DATABASE_URL` is already direct. |
-| `AUTH_SECRET` | `openssl rand -base64 32` (at least 16 characters). Do not rotate it after AI keys are saved, or set `AI_KEY_SALT` first and keep that stable instead. |
-| `AUTH_TRUST_HOST` | `true` |
-| `APP_BASE_URL` | Public `https://` origin, no trailing slash |
-| `TRUST_PROXY` | `true`. The load balancer must overwrite `X-Forwarded-For` and send `X-Forwarded-Host`. Allow traffic only from that proxy. |
-| `AI_SPEND_CAP_INR` | Platform provider budget in INR estimates. Pick the number you can afford. |
-| `AI_SALON_SPEND_CAP_INR` | Per-salon provider budget in INR estimates. |
-| `CRON_SECRET` | `openssl rand -base64 32` |
-| `OBJECT_STORAGE` | `s3` (or `local` only on a single VM with a persistent disk mounted at `var/objects`) |
-| `S3_BUCKET` | Bucket name, when `OBJECT_STORAGE=s3` |
-| `S3_ACCESS_KEY_ID` | R2 or IAM access key |
-| `S3_SECRET_ACCESS_KEY` | R2 or IAM secret |
-| `S3_ENDPOINT` | R2: `https://<account>.r2.cloudflarestorage.com`. Omit for AWS if the SDK default endpoint is correct. |
-| `S3_REGION` | `auto` for R2, or `ap-south-1` for S3 Mumbai |
-| `ROOT_DOMAIN` | Apex you use for salon subdomains, for example `lookuvi.in` |
-
-Leave unset or `false`:
-
-- `ALLOW_DEV_MAGIC_LINK`
-- `ALLOW_DEV_OTP`
-- `SEED_DEMO`
-
-Recommended:
-
-| Variable | Value |
-|---|---|
-| `AI_PROVIDER` | `mock` until a key is saved on `/super/ai` |
-| `BILLING_PROVIDER` | `mock` until Razorpay keys are set |
-| `REDIS_URL` | `rediss://...` when more than one container is running |
-| `SENTRY_DSN` | Sentry project DSN, or unset |
-| `SUPPORT_EMAIL` | Grievance address shown on `/privacy` |
-| `EMAIL_FROM` | `Lookuvi <login@your-domain>` |
-| `SMTP_URL` | `smtp://user:pass@smtp-host:587` |
-| `GENERATION_JOB_TTL_HOURS` | `24` |
-| `BENCHMARK_RETENTION_HOURS` | `72` |
-| `GENERATE_PER_IP_HOUR` | `6` |
-| `GENERATE_PER_IP_DAY` | `20` |
-| `GENERATE_PER_TENANT_MINUTE` | `30` |
-| `LOGIN_LIMIT` | `8` |
-| `LOGIN_IP_LIMIT` | `30` |
-| `TRUSTED_PROXY_HOPS` | `1` unless two proxies append to `X-Forwarded-For` |
-| `AI_KEY_SALT` | A random string chosen once, before the first provider key is saved |
-| `FX_INR_PER_USD` | `96` or the rate you want on the ledger |
-
-Provider keys (`OPENAI_API_KEY`, `FAL_KEY`, and the others) may stay in the secret store as a fallback. The supported path is to paste them on `/super/ai`, where they are encrypted at rest.
-
-The load balancer must allow requests longer than a provider call. Guest generate sets `maxDuration` to 3600. If the proxy times out sooner, the provider may still bill and the guest sees a failure.
-
-## 4. Database and first operator
-
-Start the container. The entrypoint applies `prisma/migrations`.
-
-Create the operator. Run this once, with the production `DATABASE_URL` (direct is fine) and a password you store in a password manager. It refuses the three demo passwords.
+`s-2vcpu-4gb` is a safe start for one salon group. SSH in as root. The deploy script installs Docker if it is missing. It does not create the droplet for you.
 
 ```bash
-SUPER_ADMIN_EMAIL="you@your-domain" SUPER_ADMIN_PASSWORD="a-long-unique-password" \
-  DATABASE_URL="postgresql://..." \
+mkdir -p /opt/lookuvi
+```
+
+## 3. Point DNS at the droplet
+
+At your DNS host, create:
+
+| Name | Type | Value |
+|---|---|---|
+| `lookuvi.example` | A | droplet IPv4 |
+| `www.lookuvi.example` | A or CNAME | the same |
+| `*.try.lookuvi.example` | A | the same |
+
+Replace `lookuvi.example` with your domain. Salon sites are `https://<slug>.try.<your-domain>`.
+
+Caddy gets a certificate per hostname (HTTP-01). It does **not** get one wildcard certificate. A real `*.try.example` wildcard needs DNS-01 and a custom Caddy image, which this repo does not ship. The ask endpoint `GET /api/caddy/ask` returns 200 only for your apex, a salon slug that exists, or a verified custom domain. Strangers do not get a certificate.
+
+Wait until the A records resolve to the droplet before you expect a padlock.
+
+## 4. Fill in the environment file
+
+On the droplet:
+
+```bash
+# copy .env.production.example from this repo to /opt/lookuvi/.env.production
+nano /opt/lookuvi/.env.production
+```
+
+Every variable is listed and commented in `.env.production.example`. These must be real before the app will stay up:
+
+- `DATABASE_URL` and `DIRECT_URL` (use host `db`, the compose service)
+- `AUTH_SECRET` (`openssl rand -base64 32`)
+- `AUTH_TRUST_HOST=true`
+- `APP_BASE_URL` starting with `https://`
+- `APP_DOMAIN` and `ROOT_DOMAIN`
+- `TRUST_PROXY=true`
+- `AI_SPEND_CAP_INR` and `AI_SALON_SPEND_CAP_INR`
+- `CRON_SECRET`
+- `OBJECT_STORAGE=s3` plus `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`
+- `POSTGRES_PASSWORD` and `REDIS_PASSWORD` matching the URLs
+- `RESEND_API_KEY` or `SMTP_URL`, and `EMAIL_FROM`, if owners will reset passwords
+- `OTP_PROVIDER=msg91`, `MSG91_AUTH_KEY`, `MSG91_TEMPLATE_ID` if guests will get SMS codes
+
+Leave `SEED_DEMO`, `ALLOW_DEV_MAGIC_LINK`, and `ALLOW_DEV_OTP` as `false`.
+
+Set `AI_KEY_SALT` once, before the first provider key. Changing `AUTH_SECRET` or `AI_KEY_SALT` later makes saved keys unreadable.
+
+## 5. Start the stack the first time
+
+Copy these files to the droplet (the GitHub workflow does this on later deploys):
+
+- `docker-compose.prod.yml`
+- `deploy/Caddyfile`
+- `deploy/backup.cron`
+- `scripts/backup-postgres.sh`, `scripts/restore-postgres.sh`, `scripts/backup-object.mjs`
+- `scripts/deploy/droplet.sh`
+
+Build and push an image once (or run the GitHub workflow in step 10), then on the droplet:
+
+```bash
+cd /opt/lookuvi
+export LOOKUVI_IMAGE=ghcr.io/YOUR_GITHUB_USER/lookuvi:THE_GIT_SHA
+sh scripts/deploy/droplet.sh
+```
+
+The image runs as user `nextjs` (uid 1001), not root. It migrates Postgres, then `node server.js`. It does not load demo passwords. Docker’s health check calls `GET /api/health`. Compose waits on `GET /api/ready`, which checks Postgres.
+
+Done when:
+
+```bash
+curl -fsS https://lookuvi.example/api/ready
+```
+
+returns `{"ok":true,"db":true}`.
+
+## 6. Create the super-admin and turn on the authenticator
+
+On the droplet, with the production `DATABASE_URL` (the compose network hostname `db` works only inside a container; from the host use a one-off container or `127.0.0.1` if you opened Postgres). Easiest:
+
+```bash
+cd /opt/lookuvi
+docker compose -f docker-compose.prod.yml exec -T app \
+  env SUPER_ADMIN_EMAIL="you@your-domain" SUPER_ADMIN_PASSWORD="a-long-unique-password" \
   node scripts/create-super-admin.mjs
 ```
 
-Inside the image the script is at `scripts/create-super-admin.mjs`.
+The password must be at least 12 characters and must not be a demo password.
 
-Sign in at `https://<APP_BASE_URL>/login`. You land on `/admin` if that user also has a salon membership, or open `/super` directly. Create each salon from the super-admin screen. Send the owner their own email and a password they set with **Forgot password** (needs `SMTP_URL`) or by running the same script pattern only for the super-admin and then inviting staff from **Team** (owners set staff passwords there).
+1. Open `https://<APP_BASE_URL>/login` and sign in.
+2. You are sent to `/super/security` until an authenticator is on. Production requires this for the super-admin. Salon owners can turn it on from **Authenticator** in the salon menu; they are not forced.
+3. Scan the QR in an authenticator app, enter the 6-digit code, and save the recovery codes. They are shown once. Each code works a single time.
+4. Sign out and sign in again with the password and a fresh code.
 
-Staff passwords created in the team form are bcrypt hashes. There is no shared default password.
+A magic link does not skip the authenticator once it is on.
 
-## 5. Retention, health, readiness
+## 7. Create the first salon
 
-- Liveness: `GET /api/health` returns `{ "ok": true }` and does not touch the database.
-- Readiness: `GET /api/ready` returns `{ "ok": true, "db": true }` or 503.
-- Schedule `POST /api/cron/retention` every hour with `Authorization: Bearer $CRON_SECRET`. The process also runs the same job every 15 minutes.
+On `/super`, use **New salon**. Set a name, a lowercase slug, the owner’s email, and a password of at least 12 characters. The owner can belong to more than one salon. When they do, the salon menu shows a switcher.
 
-Point the load balancer's health check at `/api/ready`.
+Open `https://<slug>.try.<ROOT_DOMAIN>` after DNS has the wildcard A record. The first visit asks Caddy for a certificate. That succeeds only if the salon exists.
 
-## 6. TLS and headers
+## 8. Email and SMS
 
-Terminate HTTPS at the proxy. `APP_BASE_URL` must be `https://` so the production session cookie is `Secure` and `httpOnly`. The app sends HSTS, `nosniff`, a referrer policy, `X-Frame-Options`, and a Content-Security-Policy on non-embed routes. `/embed` allows any parent frame so a salon site can iframe the try-on.
+- Forgot password and magic link call Resend when `RESEND_API_KEY` is set, otherwise SMTP when `SMTP_URL` is set.
+- If neither is set, the reset page says email is not configured. It does not pretend a message was sent.
+- Phone login on the guest page is hidden, and `POST /api/v1/guest/otp` returns 503, until `OTP_PROVIDER=msg91` and both MSG91 variables are set. The code is sent to MSG91 and is not written to the log.
 
-## 7. Backups
+## 9. Retention and backups
 
-- Turn on Postgres PITR before the first salon. Confirm you can restore to a new instance.
-- R2 and S3 are durable. The retention job and the bucket lifecycle delete previews. They are not a backup of leads. Leads are in Postgres.
-- Take a manual snapshot before a schema migration.
+Retention of preview files runs in two places:
 
-## 8. Rollback
+- Inside the app, every 15 minutes.
+- The `retention` service in `docker-compose.prod.yml`, which calls `POST /api/cron/retention` every hour with `Authorization: Bearer $CRON_SECRET`.
 
-1. Keep the previous image tag.
-2. Point the service back at that tag and restart.
-3. Migrations in this repo are forward-only. Rolling back the image does not undo a migration that the new image already applied. If a migration ran, restore the database from the snapshot or PITR taken before the deploy, then start the old image.
-4. `GET /api/ready` should be 200 before the load balancer sends traffic.
+A DigitalOcean scheduled job can call the same URL if you prefer that to the sidecar.
 
-## 9. Local Docker
-
-`docker compose up` reads secrets from the shell, not from the file:
+Backups:
 
 ```bash
-export POSTGRES_PASSWORD="$(openssl rand -base64 24)"
-export REDIS_PASSWORD="$(openssl rand -base64 24)"
-export AUTH_SECRET="$(openssl rand -base64 32)"
-export CRON_SECRET="$(openssl rand -base64 32)"
-export AI_SPEND_CAP_INR=5000
-export AI_SALON_SPEND_CAP_INR=2000
-export APP_BASE_URL=https://localhost:3000
-docker compose up --build
+# daily at 00:30 IST, installed on the droplet
+crontab /opt/lookuvi/deploy/backup.cron
+# or once, by hand
+cd /opt/lookuvi && ./scripts/backup-postgres.sh
 ```
 
-`APP_BASE_URL` must be `https` because the container sets `NODE_ENV=production`. For a laptop without TLS, do not use this compose file. Use `npm run dev` and SQLite instead.
+That runs `pg_dump` in the Postgres container and uploads `backups/lookuvi-<timestamp>.dump` to the same R2 bucket.
 
-Checked behaviour of the entrypoint: it does not run `prisma db push --accept-data-loss` and it does not load demo passwords.
+Restore (stop the app first so nothing writes during the restore):
+
+```bash
+docker compose -f docker-compose.prod.yml stop app
+./scripts/restore-postgres.sh backups/lookuvi-YYYYMMDDTHHMMSSZ.dump
+docker compose -f docker-compose.prod.yml start app
+```
+
+`pg_restore --clean` drops objects that are in the dump. Take a fresh dump before you try a restore.
+
+Also turn on the host’s disk snapshots or Postgres point-in-time recovery if the database is not the Docker volume (a managed database is better once you have more than a trial).
+
+## 10. Later deploys from GitHub
+
+In the GitHub repo, **Settings → Secrets and variables → Actions**, add:
+
+| Secret | Value |
+|---|---|
+| `SSH_HOST` | droplet IP or DNS |
+| `SSH_USER` | `root` or a sudo user that can run Docker |
+| `SSH_KEY` | private key that can SSH in |
+| `SSH_PORT` | only if SSH is not 22 |
+
+Actions → Deploy → Run workflow. It builds the image, pushes `ghcr.io/<owner>/lookuvi:<git sha>` to GHCR, copies the compose files, and runs `scripts/deploy/droplet.sh`.
+
+The workflow does not run on push. If the SSH secrets are missing, it stops and does not deploy.
+
+The image must be pullable by the droplet. The script logs in to GHCR with the token the workflow passes. If the package is private, that token needs `read:packages` on the server side; the workflow’s `GITHUB_TOKEN` is passed as `GHCR_TOKEN` for the login.
+
+## 11. Check the site
+
+1. `https://<APP_DOMAIN>/api/health` returns `{"ok":true}`.
+2. `https://<APP_DOMAIN>/api/ready` returns `{"ok":true,"db":true}`.
+3. Super-admin sign-in asks for an authenticator code.
+4. A new salon loads on its `*.try.` host.
+5. A guest preview with no provider key shows a labelled sample, not a paid generation.
+6. Forgot password either sends mail or shows the not-configured message.
+
+## 12. Headers
+
+Production script policy is a per-request nonce plus `strict-dynamic` and `wasm-unsafe-eval`. Next.js stamps its own scripts with that nonce. MediaPipe’s vision bundle does not call `eval` or `new Function`; it compiles WASM from `/mediapipe/wasm`, which is why `wasm-unsafe-eval` is there, and it may start a `blob:` worker. `unsafe-eval` is not in the production policy. The dev server (`next dev`) still allows `unsafe-eval` because React Fast Refresh needs it.
+
+`style-src` keeps `'unsafe-inline'` because React style attributes are not covered by a style nonce.
+
+`/embed` only sets `frame-ancestors *` so a salon site can frame the try-on.
+
+## 13. Roll back
+
+1. Set `LOOKUVI_IMAGE` to the previous `ghcr.io/.../lookuvi:<sha>` and run `scripts/deploy/droplet.sh` again.
+2. Migrations are forward-only. If the new image already migrated, restore the database from the dump taken before the deploy, then start the old image.
+3. Wait until `GET /api/ready` is 200 before you send traffic.
+
+## 14. Laptop without a droplet
+
+`npm run dev` uses SQLite and does not force the authenticator. `docker compose up` (the file without `.prod`) is a production-mode container and needs `APP_BASE_URL` to be `https://` even on a laptop, because the process refuses to boot otherwise. For day-to-day work, use `npm run dev`.
