@@ -4,22 +4,13 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { BROW_COLOURS, BROW_THICKNESS, BROWS, browById, browsForAudience, parseBrowColour, parseBrowThickness } from "@/data/brows";
-import { BROW_CARD_PHOTO_IDS, browCardPhoto } from "@/data/brow-cards";
+import { BROW_CARD_CUES, BROW_CARD_PHOTO_IDS, browCardPhoto } from "@/data/brow-cards";
 import { BROW_SHAPES } from "@/data/brow-shapes";
 import { browDiagramJpeg } from "@/lib/ai/brow-diagram";
 import { buildBrowPrompt } from "@/lib/prompts";
 
 const ONLY = "Change only the eyebrows.";
 const KEEP = "Keep the face, identity, hair, skin, background and framing identical.";
-const MEASURES = ["Arch position:", "Arch height:", "Tail angle:", "Start thickness:", "Tail thickness:"];
-
-function measureSignature(prompt: string) {
-  return MEASURES.map((label) => {
-    const start = prompt.indexOf(label);
-    const sentence = prompt.slice(start, prompt.indexOf(".", start) + 1);
-    return sentence;
-  }).join("|");
-}
 
 describe("brow prompts", () => {
   it("gives each type and variation a distinct prompt", () => {
@@ -32,7 +23,6 @@ describe("brow prompts", () => {
           expect(prompt, `${brow.id} ${thickness.id} ${colour.id}`).toContain(ONLY);
           expect(prompt).toContain(KEEP);
           expect(prompt).toContain("brow-shape diagram, not a face to copy");
-          expect(prompt).toContain("Do not lighten the brows unless the pigment line asks for a tint.");
           expect(prompt).toContain(brow.prompt);
           expect(prompt).toContain(thickness.line);
           expect(prompt).toContain(colour.line);
@@ -43,28 +33,28 @@ describe("brow prompts", () => {
       }
     }
     expect(prompts.size).toBe(BROWS.length * BROW_THICKNESS.length * BROW_COLOURS.length);
-    const signatures = BROWS.map((brow) => measureSignature(brow.prompt));
-    expect(new Set(signatures).size).toBe(BROWS.length);
+    expect(browById("soft-arch")?.prompt).toBe("Arch position: a low gentle rise just past the iris. Tail: a soft downward taper.");
+    expect(browById("high-arch")?.prompt).toBe("Arch position: a high peak above the outer iris. Tail: a steep descent after the peak.");
+    expect(browById("angled")?.prompt).toBe("Arch position: two straight edges meet in a hard angle above the outer iris. Tail: a straight line dropping away from that corner.");
+    const sShape = browById("s-shape")?.prompt ?? "";
+    const defined = browById("thin-defined")?.prompt ?? "";
+    expect(sShape).toContain("the head dips, then the body lifts into an S");
+    expect(sShape).toContain("upward flick");
+    expect(sShape).toContain("not a thin high arch");
+    expect(defined).toContain("a precise high peak");
+    expect(defined).toContain("long fine point");
+    expect(defined).toContain("does not flick upward");
+    expect(sShape).not.toBe(defined);
+    expect(buildBrowPrompt(browById("s-shape")!)).not.toBe(buildBrowPrompt(browById("thin-defined")!));
+    const cues = BROWS.map((brow) => BROW_CARD_CUES[brow.id]);
+    expect(cues.every(Boolean)).toBe(true);
+    expect(new Set(cues).size).toBe(BROWS.length);
     for (const brow of BROWS) {
-      for (const label of MEASURES) expect(brow.prompt, brow.id).toContain(label);
+      expect(buildBrowPrompt(brow)).not.toContain(BROW_CARD_CUES[brow.id]);
     }
-    const soft = browById("soft-arch");
-    const defined = browById("thin-defined");
-    expect(soft?.prompt).toContain("Arch height: 8% of the brow length, a gentle rise with no sharp corner.");
-    expect(soft?.prompt).toContain("Start thickness: 7% of the brow length.");
-    expect(soft?.prompt).toContain("Tail thickness: 4% of the brow length, ending in a soft point.");
-    expect(defined?.prompt).toContain("Arch height: 26% of the brow length, a sharp corner rather than a dome.");
-    expect(defined?.prompt).toContain("Tail angle: 38 degrees down from horizontal.");
-    expect(defined?.prompt).toContain("Start thickness: 3% of the brow length.");
-    expect(defined?.prompt).toContain("Tail thickness: 1% of the brow length, and the tail continues past the outer corner of the eye.");
-    const softThin = buildBrowPrompt(soft!, { thickness: "thin" });
-    const definedThin = buildBrowPrompt(defined!, { thickness: "thin" });
-    expect(softThin).toContain("Arch height: 8% of the brow length, a gentle rise with no sharp corner.");
-    expect(definedThin).toContain("Arch height: 26% of the brow length, a sharp corner rather than a dome.");
-    expect(softThin).toContain("60% of the stated start thickness");
-    expect(definedThin).toContain("60% of the stated start thickness");
-    expect(BROWS.map((brow) => brow.id)).not.toContain("s-shape");
-    expect(BROWS.map((brow) => brow.id)).not.toContain("angled");
+    expect(BROW_CARD_CUES["s-shape"]).toContain("flicks upward");
+    expect(BROW_CARD_CUES["thin-defined"]).toContain("descends past the outer eye");
+    expect(BROW_CARD_CUES.angled).toContain("hard sharp corner");
   });
 
   it("falls back to natural thickness and colour", () => {
@@ -93,6 +83,7 @@ describe("brow prompts", () => {
       "soft-arch",
       "high-arch",
       "rounded",
+      "s-shape",
       "thin-defined",
     ]);
   });
@@ -128,9 +119,10 @@ describe("brow prompts", () => {
       expect(browCardPhoto(id)).toBe(`/brows/cards/${id}.webp`);
     }
     expect(browCardPhoto("missing-brow")).toBeNull();
-    expect(BROW_CARD_PHOTO_IDS).not.toContain("s-shape");
-    expect(BROW_CARD_PHOTO_IDS).not.toContain("angled");
+    expect(Object.keys(BROW_CARD_CUES)).toEqual(BROWS.map((brow) => brow.id));
     const script = readFileSync("scripts/generate-brow-cards.ts", "utf8");
+    expect(script).toContain("BROW_CARD_CUES");
+    expect(script).toContain("Exaggerate this brow shape");
     expect(script).toContain('const MODEL = "gpt-image-2.5-sunburst"');
     expect(script).toContain("const CAP_INR = 40");
     expect(script).toContain("OPENAI_API_KEY is not set");

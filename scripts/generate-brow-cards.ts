@@ -3,7 +3,8 @@
  *
  * Draws one Indian woman and one Indian man, then edits only the brows so every
  * card of that person shares the face, lighting, and crop. Men's catalogue types
- * use the man. Women and unisex types use the woman.
+ * use the man. Women and unisex types use the woman. The edit uses BROW_CARD_CUES,
+ * which exaggerate each shape for a small card. Guest try-on keeps brow.prompt.
  *
  *   OPENAI_API_KEY=... npm run brows:cards
  *
@@ -11,10 +12,11 @@
  * (FX_INR_PER_USD, default 96). A missing key exits before any request.
  * Existing public/brows/cards/<id>.webp files are skipped unless BROW_CARDS_FORCE=1.
  */
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import { BROWS, type BrowDef } from "../src/data/brows";
+import { BROW_CARD_CUES } from "../src/data/brow-cards";
 import { costUsdFromUsage, type UsageNumbers } from "../src/lib/ai/tiers";
 
 const MODEL = "gpt-image-2.5-sunburst";
@@ -47,11 +49,13 @@ function modelFor(brow: BrowDef) {
 }
 
 function editPrompt(brow: BrowDef) {
+  const cue = BROW_CARD_CUES[brow.id];
+  if (!cue) throw new Error(`No card cue for ${brow.id}. No image was requested.`);
   return [
     "Change only the eyebrows of this same person.",
     "Keep the face, identity, eyes, skin, hair, lighting, crop, and plain background identical.",
-    "Do not lighten the brows.",
-    brow.prompt,
+    "Exaggerate this brow shape so a customer can tell it apart at thumbnail size. Keep the brows a natural dark brown-black.",
+    cue,
   ].join(" ");
 }
 
@@ -101,19 +105,13 @@ async function cardWebp(jpeg: Buffer) {
 
 function writePhotoList(ids: string[]) {
   const body = ids.map((id) => `  "${id}",`).join("\n");
-  const source = `/** Close-up card photos at /brows/cards/<id>.webp.
- *  \`npm run brows:cards\` fills this list. An id missing here keeps the line diagram.
- */
-export const BROW_CARD_PHOTO_IDS: readonly string[] = [
-${body}
-];
-
-export function browCardPhoto(id: string) {
-  if (!BROW_CARD_PHOTO_IDS.includes(id)) return null;
-  return \`/brows/cards/\${id}.webp\`;
-}
-`;
-  writeFileSync(LIST_FILE, source);
+  const source = readFileSync(LIST_FILE, "utf8");
+  const next = source.replace(
+    /export const BROW_CARD_PHOTO_IDS: readonly string\[\] = \[[\s\S]*?\];/,
+    `export const BROW_CARD_PHOTO_IDS: readonly string[] = [\n${body}\n];`,
+  );
+  if (next === source) throw new Error("Could not update BROW_CARD_PHOTO_IDS.");
+  writeFileSync(LIST_FILE, next);
 }
 
 async function postJson(apiKey: string, prompt: string) {

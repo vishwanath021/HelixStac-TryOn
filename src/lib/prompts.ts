@@ -71,7 +71,6 @@ export function buildBrowPrompt(brow: BrowDef, variation?: BrowVariation) {
     "Image 1 is the customer selfie. Image 2 is a brow-shape diagram, not a face to copy.",
     "Change only the eyebrows.",
     "Keep the face, identity, hair, skin, background and framing identical.",
-    "Follow the arch position, arch height, tail angle, start thickness, and tail thickness below. Do not lighten the brows unless the pigment line asks for a tint.",
     `The selected brow is ${brow.name}. ${brow.prompt}`,
     browThicknessLine(thickness),
     browColourLine(colour),
