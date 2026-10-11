@@ -106,7 +106,7 @@ export async function runLockedEdit(args: {
     if (!registered.registration.ok) {
       return { ok: false, calls, reason: "face-guard", message: TRY_ANOTHER_PHOTO, callId: last.callId, detail: registered.registration.detail };
     }
-    edited = registered.rgb;
+    edited = registered.rgb as typeof edited;
   }
   const locked = args.skipLock ? edited : compositeLocked(decoded.data, edited, report.feather);
   const outside = await outsideMaskDelta(decoded.data, locked, report.feather);
