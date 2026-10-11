@@ -43,7 +43,7 @@ Docker (Postgres):
 docker compose up --build
 ```
 
-The container runs `prisma db push` and the seed on startup. The same demo logins work.
+Local `npm run seed` creates the demo logins. The production container runs `prisma migrate deploy` and does not seed those passwords.
 
 ### Demo logins
 
@@ -293,11 +293,9 @@ The script adds a button and an iframe to `/embed/{slug}` with `allow="camera"`.
 
 ## Deploy
 
-- **Vercel:** Next.js app, `DATABASE_URL` on Neon or another Postgres, `AUTH_SECRET`, and the provider flags. Set the function timeout with `maxDuration` in mind: AI calls can take 10–20 seconds. Do not enable the dev magic link.
-- **Railway:** same env, Postgres plugin, start command `npm run start` after `prisma db push` and seed on a release phase.
-- **VPS:** `docker compose up --build` on a machine with Postgres. Put Caddy or another proxy in front for TLS. Wildcard `*.try.yourdomain` should reach the app so middleware can read the host.
+Production deploy steps, environment variables, the first super-admin, backups, and rollback are in `DEPLOY.md`. The target layout for 20 salons and beyond is in `docs/ARCHITECTURE.md`.
 
-Back up the database. There is no image bucket to back up.
+Back up Postgres (PITR). Preview images live in object storage, not in the database.
 
 ## Product map
 

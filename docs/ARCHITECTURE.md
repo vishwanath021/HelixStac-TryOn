@@ -1,75 +1,88 @@
-# Architecture
+# Lookuvi production architecture
 
-HelixStac TryOn is a multi-tenant Next.js app. A salon gets a branded page, a QR standee, and (on Pro and Chain) a one-line embed. Guests recolour hair on their own phone and can request an AI hairstyle, eyebrow, beard, or nail preview that spends the salon's credits. Each tool is a tenant flag. Try-on does not require an account. A separate guest cookie (not Auth.js) is only for the booking hub.
+This is the target for about 20 Indian salons now, and the same shape at 500+. The app stays a multi-tenant Next.js service. A salon is a `Tenant` row. Guests, leads, bookings, and previews are stored with that tenant's id.
+
+## Request path
+
+Guests and salon staff hit a CDN, then a TLS load balancer, then one or more stateless Next.js containers. Containers share no disk. Sessions are JWTs (`src/auth.ts`), so any instance can serve `/admin` and `/super`. The guest cookie `helix_guest` is an HMAC signed with `AUTH_SECRET`, also valid on every instance.
+
+A preview is still a request/response. The browser uploads a selfie, the server calls fal or OpenAI, and the JPEG is returned on that same request. A queue is not required for 20 salons: one container can wait on the provider (`maxDuration` is 3600 on the generate route) and the load balancer timeout must be at least that long. Add a job queue when provider calls regularly outlive the proxy timeout or when you want to shed load instead of holding HTTP workers. The queue would store the job id in Postgres and the worker would write the result to object storage. The browser would poll. Do not add that until a proxy is actually cutting requests off.
 
 ```mermaid
 flowchart LR
-  guest[Guest phone]
-  page["/s/slug or embed"]
-  mp[MediaPipe hair segmenter]
-  api[Next.js route handlers]
-  db[(SQLite or Postgres)]
-  ai[ImageStyleProvider]
-  wa[WhatsApp]
+  phone[Guest or owner browser]
+  cdn[CDN]
+  lb[Load balancer TLS Mumbai]
+  app1[Next.js container]
+  app2[Next.js container]
+  redis[(Redis)]
+  pg[(Postgres via pooler)]
+  r2[(Private R2 or S3)]
+  ai[fal and OpenAI]
+  cron[Retention cron]
 
-  guest --> page
-  page --> mp
-  page -->|selfie + styleId after consent| api
-  api --> db
-  api --> ai
-  ai -->|mock, Gemini, or Replicate/fal stub| api
-  api -->|jpeg, no-store| page
-  page -->|book this look| wa
-  api -->|Lead row, no photo| db
+  phone --> cdn --> lb
+  lb --> app1
+  lb --> app2
+  app1 --> redis
+  app2 --> redis
+  app1 --> pg
+  app2 --> pg
+  app1 --> r2
+  app2 --> r2
+  app1 --> ai
+  app2 --> ai
+  cron --> app1
 ```
+
+## Data plane
+
+**Postgres.** Managed Postgres 16 in Mumbai (Neon, RDS, or Cloud SQL). The app uses a pooled URL (`DATABASE_URL`: Neon pooler or PgBouncer). Migrations use a direct URL (`DIRECT_URL`) because `prisma migrate deploy` in `docker-entrypoint.sh` must not run through a transaction-mode pooler. Prisma's client is the only query layer. There is no SQLite in production. The committed schema stays SQLite so local `npm test` can `db push`; `scripts/prepare-prisma.mjs` switches the provider when `DATABASE_URL` is Postgres.
+
+**Object storage.** Selfies are not kept. The generated preview is stored under `generations/{tenantId}/{requestId}/result.jpg` for `GENERATION_JOB_TTL_HOURS` (default 24) so a repeated request id is not billed again (`src/lib/ai/dedupe.ts`). Benchmark selfies, which are super-admin only, go under `benchmarks/{id}/` and expire after `BENCHMARK_RETENTION_HOURS` (default 72). `OBJECT_STORAGE=local` writes `var/objects` for development. `OBJECT_STORAGE=s3` uses the S3 API (`src/lib/storage/s3.ts`) against Cloudflare R2 or Amazon S3. The bucket is private. Guests receive the JPEG in the HTTP response. A signed URL (`signedGetUrl`, or `/api/v1/media` for local disk) is for operators and short-lived fetches, not a public gallery. Put a lifecycle rule on the bucket that deletes `generations/` after 2 days as a backstop to the app job.
+
+**Redis.** Optional at 20 salons if you run one container: production rate limits then use the `RateBucket` table. Set `REDIS_URL` when you run more than one container. `sharedRateLimit` (`src/lib/ratelimit.ts`) increments a Redis key and, if Redis errors, uses Postgres. Do not put sessions in Redis. The JWT is already stateless.
+
+**Spend.** `beginPaidCall` takes a Postgres advisory lock so two instances cannot both pass the cap, and it enforces `AI_SPEND_CAP_INR` (platform) and `AI_SALON_SPEND_CAP_INR` (one salon). A paid guest preview also reserves one salon credit (`src/lib/credits.ts`) and refunds it if the provider call does not succeed. Demo previews with no API key do not spend a credit.
 
 ## Tenancy
 
-A salon is a `Tenant`: slug, name, logo, colours, languages, WhatsApp, address, plan, status, credit balance. Public pages live at `/s/[slug]`.
+Every admin query uses `access.tenant.id` from the signed-in membership, not an id in the body (`src/lib/session.ts`). The JWT is refreshed from the database on each session read, so a demotion applies on the next request. `/super/*` is `isSuperAdmin` and may address any tenant. Guest routes are public and scoped by salon slug. Middleware redirects `/admin` and `/super` to `/login` when the session cookie is missing, and rejects cross-site POSTs to `/api/v1/admin`, `/api/v1/super`, and `/api/v1/auth`.
 
-`src/middleware.ts` reads the `Host` header:
+Client IP is the right-most `X-Forwarded-For` hop, or `CF-Connecting-IP`, and only when `TRUST_PROXY=true`. The origin must accept traffic only from the load balancer, which overwrites the forwarded headers.
 
-- `localhost`, the root domain, `www`, and `app` stay on the platform.
-- `{slug}.localhost` and `{slug}.try.{ROOT_DOMAIN}` rewrite to `/s/{slug}`.
-- Any other host rewrites to `/s/by-host`, and the page looks up a verified `Domain` row.
+## Observability
 
-Reserved slugs (`admin`, `api`, `embed`, …) are not treated as salons.
+`logInfo` / `logError` print one JSON-ish line after `redact()` strips photo fields, long strings, and key-shaped values (`src/lib/logger.ts`). `SENTRY_DSN` turns `logError` into a Sentry envelope. Leave it unset and nothing is sent. `GET /api/health` is liveness (`{ ok: true }`). `GET /api/ready` is readiness and returns 503 when the process is draining or Postgres does not answer. Point an uptime check at `/api/ready` from outside the VPC. On `SIGTERM` the process stops reporting ready, disconnects Prisma, and exits.
 
-## Customer flow
+## Backups
 
-1. Consent is a standalone notice: purpose, on-device colour, transient style processing, no photo storage, deletion, withdrawal, and an age line. `ConsentLog` stores the decision, session id, language, text version, and hash. It does not store the photo.
-2. Camera (`getUserMedia`) or an upload. The browser redraws uploads onto a canvas, which drops EXIF. The server runs the bytes through `sharp` again, checks magic bytes and size (2 MB), and re-encodes JPEG.
-3. Live colour uses MediaPipe Tasks `ImageSegmenter` with `hair_segmenter.tflite` (category 1 = hair). WASM and the model are served from `/public/mediapipe`. The canvas composites three passes: `color` at 0.85, `soft-light` at 0.55, and `screen` at the shade's lift. This does not upload.
-4. Style preview sends `photo`, `styleId`, `quality`, `consentId`, and `sessionId`. The prompt stays in `src/data/styles.ts` on the server. Credits are reserved, then committed or refunded. The JPEG response is `Cache-Control: no-store`.
-5. The guest can compare up to four looks kept in tab memory, then Book. That writes a `Lead` and opens `wa.me` with the look, colour, and services mapped from the style.
+Enable point-in-time recovery on Postgres (Neon history, or RDS automated backups plus WAL). Restore drills belong on a staging database, not production. The bucket is durable. Deleting a preview before the lifecycle is the retention job: `POST /api/cron/retention` with `Authorization: Bearer $CRON_SECRET`, also started every 15 minutes inside the process.
 
-## Providers
+## Secrets
 
-`ImageStyleProvider.generate({ image, styleId, gender, colour, tenantId, quality })`.
+`AUTH_SECRET` signs sessions, guest cookies, and object URLs, and derives the AES-256-GCM key for provider keys (`src/lib/crypto/secret.ts`). `AI_KEY_SALT` defaults to `helix-ai-key` and must not change after the first key is saved. Provider keys are ciphertext in Postgres. The browser receives a last-4 hint. Set secrets in the host's secret store (Fly secrets, Railway variables, or AWS SSM). Do not bake them into the image. `.env` is gitignored.
 
-| Adapter | When |
-|---|---|
-| `MockProvider` | Default when no key is set. A style preview keeps the guest photo and overlays the chosen style portrait with a demo banner. Brows, beard, and nails stay on a labelled sample illustration. |
-| `GeminiProvider` | `AI_PROVIDER=gemini` and `GEMINI_API_KEY`. Standard model `gemini-3.1-flash-lite-image`, HD `gemini-3.1-flash-image`. Both env-overridable. Paid tier only. |
-| `OpenAIProvider` | `AI_PROVIDER=openai` and `OPENAI_API_KEY`, or a key saved on AI settings. Image edit on the gpt-image family. The guest photo and the style prompt are the input. The style thumbnail is not sent unless `OPENAI_SEND_STYLE_REFERENCE=true`. |
-| `ReplicateStubProvider` | `replicate` or `fal` plus a token. Posts to that vendor's HTTP API. Inactive without a key. |
+## CI/CD and environments
 
-If a paid call throws, the router does not start another generation and does not return the labelled sample as a success. A timeout stays on the ledger as an uncertain bill. A global estimate cap (`AI_SPEND_CAP_INR`, default ₹500) refuses further paid calls and can return a labelled sample. Each attempt is a row in `AiCall`. The photo is not in that row. Billed failures and uncertain rows stay inside the cap.
+| Environment | Database | Storage | AI |
+|---|---|---|---|
+| dev | SQLite `file:./dev.db` | local disk | mock |
+| staging | Postgres, Mumbai, small | R2 bucket `lookuvi-staging` | mock, or a capped real key |
+| prod | Postgres PITR, Mumbai | R2 bucket `lookuvi-prod` | keys saved in `/super/ai` |
 
-`BillingProvider` is `mock` (grants the plan or pack immediately and writes an invoice) or `razorpay` (subscriptions, orders, webhook HMAC). Prices are stored ex-GST. Invoices add 18%.
+GitHub Actions (`.github/workflows/ci.yml`) runs secret scan, lint, typecheck, unit tests, and `next build` on every push and pull request. Pull requests also `docker build`. Promote by deploying an image tag that passed CI. There is no automatic production deploy in the repo.
 
-## Credits and limits
+## Hosting in India
 
-Balance lives on the tenant. A generation does `RESERVE` (decrement), then `COMMIT` (zero-delta audit) or `REFUND`. Reserves older than five minutes without a settlement are refunded on the next attempt. Standard costs 1 credit, HD costs 2. Live colour costs 0. There is a per-tenant daily cap and in-memory per-IP / per-tenant rate limits. At zero credits the API returns a plain message; colour still works.
+Run the containers and Postgres in **Mumbai** (`ap-south-1` / `bom`). Guests are on Indian mobile networks. Latency to a Singapore or US region shows up on the first byte, and image providers are called from the app, so the app region also affects provider RTT.
 
-## What is stored
+A practical first stack:
 
-`TryOn` and `UsageEvent` store ids, style, quality, status, latency, and an assumed cost. They have no image columns. Logs pass through `redact()`, which drops photo-like fields and long strings.
+- **Compute:** a small Mumbai VM (2 vCPU, 4 GB RAM) or Fly.io `bom` / Railway with the Dockerfile. Start with one container. Add a second only after Redis or the Postgres rate-limit path is in use (it is, in production).
+- **Postgres:** Neon (Mumbai, if offered on the project) or RDS `ap-south-1` with a pooler. 20 salons fit in a small instance. 500 salons still fit a modest instance if previews are the heavy work and they happen on the app, not in SQL.
+- **Objects:** Cloudflare R2 with the S3 API. No egress fee to the app. Region hint close to India.
+- **CDN and TLS:** Cloudflare in front, Mumbai anycast, HTTPS only. Cache `/brand` and `/_next/static`. Do not cache `/s/*` or `/api/*` (the app already sends `private, no-store` on `/s/*`).
+- **Redis:** Upstash or a small Redis 7 on the same network, once you run two app instances.
 
-## Auth
-
-Auth.js (next-auth v5) credentials: email + password, plus a magic-link provider. Sessions are JWTs. Roles are `OWNER` and `STAFF`. `User.isSuperAdmin` opens `/super`.
-
-## i18n
-
-`src/data/i18n.ts` is a dictionary for English, Hindi, Kannada, Tamil, Telugu, and Marathi. The customer try-on uses it. Admin stays in English.
+Do not use the committed `docker-compose.yml` passwords. It requires `POSTGRES_PASSWORD`, `AUTH_SECRET`, spend caps, and `CRON_SECRET` from the environment.
