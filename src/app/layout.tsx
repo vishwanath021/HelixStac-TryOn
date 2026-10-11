@@ -25,11 +25,12 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // Reading the nonce forces dynamic rendering so Next can stamp it on scripts.
-  // A statically prerendered page cannot carry a per-request nonce, and strict-dynamic would block it.
-  const nonce = (await headers()).get("x-nonce") || undefined;
+  // Reading the request headers opts the document into dynamic rendering.
+  // Next then copies the nonce from the request Content-Security-Policy onto its script tags.
+  // The nonce is not placed on <html>: that mismatched during hydration and lit the dev error badge.
+  void (await headers()).get("x-nonce");
   return (
-    <html lang="en" nonce={nonce}>
+    <html lang="en">
       <body className={`${sans.variable} ${display.variable} ${deva.variable} ${knda.variable} ${taml.variable} ${telu.variable}`}>
         <TapFeel />
         <a className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:bg-white focus:px-3 focus:py-2" href="#main">Skip to content</a>
