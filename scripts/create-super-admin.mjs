@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { hash } from "bcryptjs";
+import bcrypt from "bcryptjs";
 
 const DEMO = new Set(["DemoSalon#2026", "DemoStaff#2026", "SuperAdmin#2026"]);
 const email = (process.env.SUPER_ADMIN_EMAIL || "").toLowerCase().trim();
@@ -11,7 +11,7 @@ if (!email.includes("@") || password.length < 12 || DEMO.has(password)) {
 }
 
 const prisma = new PrismaClient();
-const passwordHash = await hash(password, 12);
+const passwordHash = await bcrypt.hash(password, 12);
 await prisma.user.upsert({
   where: { email },
   update: { passwordHash, isSuperAdmin: true, name: "Lookuvi Admin" },

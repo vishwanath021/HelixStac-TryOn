@@ -10,6 +10,10 @@
  * `wasm-unsafe-eval`, and it may start a blob: worker (`worker-src`).
  * `unsafe-eval` is not in the production policy.
  *
+ * The root layout reads `x-nonce` so the document is rendered per request. Next then
+ * stamps that nonce on its script tags. A prerendered page cannot carry a per-request
+ * nonce, and `strict-dynamic` would block those scripts.
+ *
  * Development keeps `unsafe-eval` and `unsafe-inline` because React Fast Refresh
  * evaluates code. `next dev` (Playwright) uses that policy. `next start` does not.
  *

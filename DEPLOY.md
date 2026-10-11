@@ -200,7 +200,7 @@ The image must be pullable by the droplet. The script logs in to GHCR with the t
 
 ## 12. Headers
 
-Production script policy is a per-request nonce plus `strict-dynamic` and `wasm-unsafe-eval`. Next.js stamps its own scripts with that nonce. MediaPipe’s vision bundle does not call `eval` or `new Function`; it compiles WASM from `/mediapipe/wasm`, which is why `wasm-unsafe-eval` is there, and it may start a `blob:` worker. `unsafe-eval` is not in the production policy. The dev server (`next dev`) still allows `unsafe-eval` because React Fast Refresh needs it.
+Production script policy is a per-request nonce plus `strict-dynamic` and `wasm-unsafe-eval`. The root layout reads that nonce, so HTML is rendered per request and Next stamps every script tag. A prerendered page cannot carry a fresh nonce, and `strict-dynamic` would block it. MediaPipe’s vision bundle does not call `eval` or `new Function`; it compiles WASM from `/mediapipe/wasm`, which is why `wasm-unsafe-eval` is there, and it may start a `blob:` worker. `unsafe-eval` is not in the production policy. The dev server (`next dev`) still allows `unsafe-eval` because React Fast Refresh needs it.
 
 `style-src` keeps `'unsafe-inline'` because React style attributes are not covered by a style nonce.
 

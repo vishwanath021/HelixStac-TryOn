@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { Cormorant_Garamond, Inter, Noto_Sans_Devanagari, Noto_Sans_Kannada, Noto_Sans_Tamil, Noto_Sans_Telugu } from "next/font/google";
 import { TapFeel } from "@/components/brand/TapFeel";
 import "./globals.css";
@@ -23,9 +24,12 @@ export const metadata: Metadata = {
   icons: { icon: "/brand/lookuvi-app-icon.png", apple: "/brand/lookuvi-app-icon.png" },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Reading the nonce forces dynamic rendering so Next can stamp it on scripts.
+  // A statically prerendered page cannot carry a per-request nonce, and strict-dynamic would block it.
+  const nonce = (await headers()).get("x-nonce") || undefined;
   return (
-    <html lang="en">
+    <html lang="en" nonce={nonce}>
       <body className={`${sans.variable} ${display.variable} ${deva.variable} ${knda.variable} ${taml.variable} ${telu.variable}`}>
         <TapFeel />
         <a className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:bg-white focus:px-3 focus:py-2" href="#main">Skip to content</a>
