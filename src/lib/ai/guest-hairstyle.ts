@@ -11,8 +11,10 @@ import { completeGenerationJob, failGenerationJob } from "@/lib/ai/dedupe";
 import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { executeReferenceEdit } from "@/lib/ai/reference-run";
 import { readHairstyleReference, thumbnailFolder } from "@/lib/ai/style-reference";
+import { CreditError, reserveCredits, settleCredits } from "@/lib/credits";
 import { prisma } from "@/lib/prisma";
 import { buildBeardPrompt, buildBrowPrompt, buildColourPrompt, buildNailPrompt } from "@/lib/prompts";
+import { guestLimitMessage } from "@/lib/tools";
 
 /** Guest hairstyles. Model ids stay in this module so the guest route does not name them. */
 export const GUEST_FAL_MODEL = "blackforestlabs/flux-3/edit-image";
@@ -154,19 +156,36 @@ async function runGuestEdit(args: GuestEditArgs): Promise<NextResponse | null> {
   const selected = (await readGuestEngine(args.tenantId)).engine;
   const engine = engineForGuestTool(args.tool, selected);
   if (!(await guestEngineReady(engine))) return null;
-  const executed = await executeReferenceEdit({
-    jpeg: args.jpeg,
-    original: args.original,
-    styleId: args.styleId,
-    tenantId: args.tenantId,
-    source: "tryon",
-    tool: args.tool,
-    modelId: guestEngineModel(engine),
-    quality: "medium",
-    guest: args.guest,
-  });
+  const creditRef = `guest:${args.tenantId}:${args.requestId || args.jobId || "preview"}`;
+  try {
+    await reserveCredits(args.tenantId, 1, creditRef);
+  } catch (error) {
+    if (error instanceof CreditError) {
+      await failGenerationJob(args.jobId, { outcome: "credits", message: guestLimitMessage("credits") });
+      return NextResponse.json({ error: "CREDITS", message: guestLimitMessage("credits") }, { status: 402 });
+    }
+    throw error;
+  }
+  let executed: Awaited<ReturnType<typeof executeReferenceEdit>>;
+  try {
+    executed = await executeReferenceEdit({
+      jpeg: args.jpeg,
+      original: args.original,
+      styleId: args.styleId,
+      tenantId: args.tenantId,
+      source: "tryon",
+      tool: args.tool,
+      modelId: guestEngineModel(engine),
+      quality: "medium",
+      guest: args.guest,
+    });
+  } catch (error) {
+    await settleCredits(args.tenantId, creditRef, "REFUND");
+    throw error;
+  }
   const kind = args.kind;
   if (!executed.ok) {
+    await settleCredits(args.tenantId, creditRef, "REFUND");
     await failGenerationJob(args.jobId, { outcome: executed.outcome, message: guestMessage(executed.outcome), callId: executed.callId });
     await prisma.tryOn.create({
       data: {
@@ -197,9 +216,10 @@ async function runGuestEdit(args: GuestEditArgs): Promise<NextResponse | null> {
       quality: "standard",
       status: "SUCCEEDED",
       latencyMs: executed.latencyMs,
-      credits: 0,
+      credits: 1,
     },
   });
+  await settleCredits(args.tenantId, creditRef, "COMMIT");
   if (args.requestId) {
     await completeGenerationJob(args.jobId, {
       tenantId: args.tenantId,

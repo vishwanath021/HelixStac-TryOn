@@ -1,22 +1,8 @@
 import { NextResponse } from "next/server";
-import { aiProviderName, billingProviderName } from "@/lib/env";
-import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+/** Liveness. Does not touch the database or name providers. */
 export async function GET() {
-  let db = false;
-  try {
-    await prisma.tenant.count();
-    db = true;
-  } catch {
-    db = false;
-  }
-  return NextResponse.json({
-    ok: db,
-    db,
-    ai: aiProviderName(),
-    billing: billingProviderName(),
-    time: new Date().toISOString(),
-  });
+  return NextResponse.json({ ok: true });
 }

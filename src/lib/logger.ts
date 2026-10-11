@@ -46,5 +46,9 @@ export function logProviderCall(entry: {
 }
 
 export function logError(message: string, meta?: unknown) {
-  console.error(message, meta ? redact(meta) : "");
+  const safe = meta ? redact(meta) : "";
+  console.error(message, safe);
+  void import("@/lib/sentry")
+    .then((mod) => mod.captureException(message, safe))
+    .catch(() => undefined);
 }

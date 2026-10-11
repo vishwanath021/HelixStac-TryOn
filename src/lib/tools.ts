@@ -1,5 +1,5 @@
 import { numberEnv } from "@/lib/env";
-import { rateLimit } from "@/lib/ratelimit";
+import { rateLimit, sharedRateLimit } from "@/lib/ratelimit";
 
 export const TOOL_IDS = ["hairstyle", "colour", "brows", "nails", "beard"] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
@@ -83,6 +83,19 @@ export function consumePreviewRate(input: { tool: PreviewTool; staff: boolean; b
   if (!day.ok) return { ok: false as const, message: previewRateMessage(input.tool) };
   const minuteKey = input.staff ? `gen:${input.tool}:m:${input.bucket}` : `gen:${input.tool}:m:${input.tenantId}`;
   const minute = rateLimit(minuteKey, limits.minute, 60 * 1000, input.now);
+  if (!minute.ok) return { ok: false as const, message: previewRateMessage(input.tool) };
+  return { ok: true as const };
+}
+
+/** Same buckets as consumePreviewRate, stored in Redis or Postgres when this process is one of many. */
+export async function consumePreviewRateShared(input: { tool: PreviewTool; staff: boolean; bucket: string; tenantId: string }) {
+  const limits = previewRateLimits(input.staff);
+  const hour = await sharedRateLimit(`gen:${input.tool}:h:${input.bucket}`, limits.hour, 60 * 60 * 1000);
+  if (!hour.ok) return { ok: false as const, message: previewRateMessage(input.tool) };
+  const day = await sharedRateLimit(`gen:${input.tool}:d:${input.bucket}`, limits.day, 24 * 60 * 60 * 1000);
+  if (!day.ok) return { ok: false as const, message: previewRateMessage(input.tool) };
+  const minuteKey = input.staff ? `gen:${input.tool}:m:${input.bucket}` : `gen:${input.tool}:m:${input.tenantId}`;
+  const minute = await sharedRateLimit(minuteKey, limits.minute, 60 * 1000);
   if (!minute.ok) return { ok: false as const, message: previewRateMessage(input.tool) };
   return { ok: true as const };
 }

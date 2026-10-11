@@ -3,6 +3,7 @@ import { z } from "zod";
 import { shadeById } from "@/data/shades";
 import { resolveLook } from "@/lib/guidance";
 import { loadTenantBySlug, servicesForLook, toSalonConfig } from "@/lib/salon";
+import { tooMany } from "@/lib/http/guard";
 import { prisma } from "@/lib/prisma";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 
@@ -20,6 +21,8 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
+  const limited = await tooMany(req, "leads", 30, 60 * 60 * 1000);
+  if (limited) return limited;
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
   const tenant = await loadTenantBySlug(parsed.data.slug);

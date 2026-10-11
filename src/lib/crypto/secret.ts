@@ -6,7 +6,7 @@ function keyMaterial() {
   const secret = process.env.AUTH_SECRET || "";
   if (secret.length < 8) throw new Error("AUTH_SECRET is too short to store an AI key");
   if (cache?.secret === secret) return cache.key;
-  const key = scryptSync(secret, "helix-ai-key", 32);
+  const key = scryptSync(secret, process.env.AI_KEY_SALT || "helix-ai-key", 32);
   cache = { secret, key };
   return key;
 }

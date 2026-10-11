@@ -29,6 +29,14 @@ export function spendCapInr() {
   return Math.max(0, numberEnv("AI_SPEND_CAP_INR", 500));
 }
 
+/** Per-salon provider budget. Unset outside production so local tests keep the global cap only. */
+export function salonSpendCapInr() {
+  const raw = process.env.AI_SALON_SPEND_CAP_INR;
+  if (raw === undefined || raw === "") return Number.POSITIVE_INFINITY;
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.max(0, value) : Number.POSITIVE_INFINITY;
+}
+
 /** Configurable estimate. Not an invoice from the provider. */
 export function costPerCallInr(provider: string, quality: string) {
   const key = `AI_COST_PER_CALL_INR_${provider.toUpperCase()}_${quality.toUpperCase()}`;
@@ -57,7 +65,7 @@ type CapRow = { estimatePaise: number; costInrPaise: number; costSource: string;
 
 export async function sumCapPaise(
   findMany: (args: object) => Promise<CapRow[]>,
-  extra?: { createdAt?: { gte: Date } },
+  extra?: { createdAt?: { gte: Date }; tenantId?: string },
 ) {
   const rows = await findMany({
     where: { ...spendCapWhere(), ...extra },
@@ -142,10 +150,15 @@ export async function beginPaidCall(args: {
   const estimateInr = args.estimateInr ?? costPerCallInr(args.provider, args.quality);
   const estimatePaise = Math.round(estimateInr * 100);
   const capPaise = Math.round(spendCapInr() * 100);
+  const salonCapPaise = Number.isFinite(salonSpendCapInr()) ? Math.round(salonSpendCapInr() * 100) : Number.POSITIVE_INFINITY;
   return exclusive(() =>
     prisma.$transaction(async (tx) => {
+      if ((process.env.DATABASE_URL || "").startsWith("postgres")) {
+        await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(872163)");
+      }
       const spent = await sumCapPaise(tx.aiCall.findMany.bind(tx.aiCall));
-      if (spent + estimatePaise > capPaise) {
+      const salonSpent = await sumCapPaise(tx.aiCall.findMany.bind(tx.aiCall), { tenantId: args.tenantId });
+      if (spent + estimatePaise > capPaise || salonSpent + estimatePaise > salonCapPaise) {
         await tx.aiCall.create({
           data: {
             provider: args.provider,

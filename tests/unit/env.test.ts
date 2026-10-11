@@ -7,6 +7,14 @@ const good = {
   AUTH_SECRET: "test-secret-not-for-production-use-32",
   AUTH_TRUST_HOST: "true",
   APP_BASE_URL: "https://lookuvi.example",
+  TRUST_PROXY: "true",
+  AI_SPEND_CAP_INR: "5000",
+  AI_SALON_SPEND_CAP_INR: "2000",
+  CRON_SECRET: "cron-secret-at-least-16",
+  OBJECT_STORAGE: "s3",
+  S3_BUCKET: "lookuvi-previews",
+  S3_ACCESS_KEY_ID: "key",
+  S3_SECRET_ACCESS_KEY: "secret",
 };
 
 describe("production env", () => {

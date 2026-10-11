@@ -5,6 +5,7 @@ import { actualHeading, actualIsKnown, costSourceLabel } from "@/lib/ai/cost-sou
 import { resolveOpenAIKey } from "@/lib/ai/credentials";
 import { runHairSuggest } from "@/lib/ai/hair-suggest";
 import { resolveSuggestModel } from "@/lib/ai/suggest-models";
+import { tooMany } from "@/lib/http/guard";
 import { ImageError, sanitizeSelfie } from "@/lib/images";
 import { loadTenantBySlug, toSalonConfig } from "@/lib/salon";
 import { prisma } from "@/lib/prisma";
@@ -22,6 +23,8 @@ function photoDigest(jpeg: Buffer) {
 }
 
 export async function POST(req: Request) {
+  const limited = await tooMany(req, "suggest", 10, 60 * 60 * 1000);
+  if (limited) return limited;
   const form = await req.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: "INVALID", message: "Send the selfie that is already on screen." }, { status: 400 });
   const slug = String(form.get("slug") || "");

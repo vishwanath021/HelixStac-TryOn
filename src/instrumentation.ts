@@ -6,4 +6,10 @@ export async function register() {
     console.error(`Lookuvi will not start. ${problems.join(" ")}`);
     process.exit(1);
   }
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { installShutdown } = await import("@/lib/lifecycle");
+    const { startRetentionLoop } = await import("@/lib/retention");
+    installShutdown();
+    startRetentionLoop();
+  }
 }

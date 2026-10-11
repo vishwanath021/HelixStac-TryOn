@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { answerConcierge } from "@/lib/concierge";
+import { tooMany } from "@/lib/http/guard";
 import { loadTenantBySlug, toSalonConfig } from "@/lib/salon";
 
 const bodySchema = z.object({
@@ -10,6 +11,8 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
+  const limited = await tooMany(req, "concierge", 30, 60 * 60 * 1000);
+  if (limited) return limited;
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
   const tenant = await loadTenantBySlug(parsed.data.slug);

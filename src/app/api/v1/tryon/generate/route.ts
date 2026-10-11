@@ -6,7 +6,7 @@ import { claimGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/
 import { BROWS_NEED_OPENAI, browsRoute, demoGuestPreview, engineForGuestTool, guestEngineReady, loadGuestReference, readGuestEngine, runGuestHairstyleIfReady, runGuestLookIfReady } from "@/lib/ai/guest-hairstyle";
 import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { auth } from "@/auth";
-import { consumePreviewRate, guestLimitMessage, toolEnabled, type PreviewTool, type ToolId } from "@/lib/tools";
+import { consumePreviewRateShared, guestLimitMessage, toolEnabled, type PreviewTool, type ToolId } from "@/lib/tools";
 import { resolveLook } from "@/lib/guidance";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 import { sanitizeSelfie, ImageError } from "@/lib/images";
@@ -14,7 +14,7 @@ import { logPlacementRejection, poseGate, TRY_ANOTHER_PHOTO } from "@/lib/face/r
 import { parseLandmarks, type PlacementDebug } from "@/lib/face/pose";
 import { AI_PREVIEW_KINDS, actorKeyFor, capForTier, hashIp, readGuestToken, verifySalonToken, type PreviewTier } from "@/lib/preview-access";
 import { prisma } from "@/lib/prisma";
-import { clientIp } from "@/lib/ratelimit";
+import { requestClientIp } from "@/lib/ratelimit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 3600;
@@ -83,7 +83,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "CONSENT", message: "Agree to the preview notice before a style preview." }, { status: 403 });
   }
 
-  const ip = clientIp(req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip"));
+  const ip = requestClientIp(req);
   const staffId = await signedInOwnerOrSuper(tenant.id);
   const bucket = staffId ? `staff:${staffId}` : ip;
 
@@ -170,7 +170,7 @@ export async function POST(req: Request) {
   let previewCharged = false;
   const takePreviewSlot = async () => {
     if (previewCharged) return null;
-    const limited = consumePreviewRate({ tool: tool as PreviewTool, staff: Boolean(staffId), bucket, tenantId: tenant.id });
+    const limited = await consumePreviewRateShared({ tool: tool as PreviewTool, staff: Boolean(staffId), bucket, tenantId: tenant.id });
     if (!limited.ok) {
       await failGenerationJob(jobId, { outcome: "rate", message: limited.message });
       return NextResponse.json({ error: "RATE", message: limited.message }, { status: 429 });

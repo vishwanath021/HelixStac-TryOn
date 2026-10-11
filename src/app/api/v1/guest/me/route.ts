@@ -68,6 +68,12 @@ export async function DELETE(req: Request) {
     data: { tenantId: found.tenant.id, kind: "DELETE", contact: "guest-hub", sessionId: found.customer.id, status: "DONE", note: "Guest deleted their hub data. Photos were never stored." },
   });
   const res = NextResponse.json({ ok: true });
-  res.cookies.set("helix_guest", "", { httpOnly: true, path: "/", maxAge: 0 });
+  res.cookies.set("helix_guest", "", {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+    secure: process.env.NODE_ENV === "production",
+  });
   return res;
 }

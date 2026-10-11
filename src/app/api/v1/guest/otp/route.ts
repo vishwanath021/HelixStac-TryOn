@@ -4,7 +4,7 @@ import { CONSENT_HASH, CONSENT_VERSION } from "@/data/consent";
 import { exposeDevOtp, otpSender } from "@/lib/otp";
 import { hashOtp, newOtpCode, normalizePhone } from "@/lib/preview-access";
 import { prisma } from "@/lib/prisma";
-import { rateLimit } from "@/lib/ratelimit";
+import { requestClientIp, sharedRateLimit } from "@/lib/ratelimit";
 
 const schema = z.object({ slug: z.string().min(1), phone: z.string().min(8).max(20) });
 
@@ -15,7 +15,9 @@ export async function POST(req: Request) {
   if (!phone) return NextResponse.json({ error: "PHONE", message: "Enter a mobile number with 10 digits, or include the country code." }, { status: 400 });
   const tenant = await prisma.tenant.findUnique({ where: { slug: parsed.data.slug } });
   if (!tenant || tenant.status === "SUSPENDED") return NextResponse.json({ error: "TENANT" }, { status: 404 });
-  if (!rateLimit(`otp:${tenant.id}:${phone}`, 5, 60 * 60 * 1000).ok) {
+  const phoneLimit = await sharedRateLimit(`otp:${tenant.id}:${phone}`, 5, 60 * 60 * 1000);
+  const ipLimit = await sharedRateLimit(`otp-ip:${requestClientIp(req)}`, 20, 60 * 60 * 1000);
+  if (!phoneLimit.ok || !ipLimit.ok) {
     return NextResponse.json({ error: "RATE", message: "Too many codes for this number. Wait and try again." }, { status: 429 });
   }
   const code = newOtpCode();

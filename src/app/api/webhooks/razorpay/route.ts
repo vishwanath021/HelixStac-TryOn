@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { getBillingProvider } from "@/lib/billing";
+import { billingProviderName } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
+  if (process.env.NODE_ENV === "production" && billingProviderName() === "mock") {
+    return NextResponse.json({ error: "WEBHOOK_DISABLED" }, { status: 404 });
+  }
   const rawBody = await req.text();
   const signature = req.headers.get("x-razorpay-signature") || "";
   try {

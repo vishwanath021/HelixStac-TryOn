@@ -1,8 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { csrfBlocked } from "@/lib/http/csrf";
 import { parseHost } from "@/lib/host";
+
+function hasSessionCookie(req: NextRequest) {
+  return Boolean(req.cookies.get("authjs.session-token") || req.cookies.get("__Secure-authjs.session-token"));
+}
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  if (csrfBlocked(req)) return NextResponse.json({ error: "CSRF" }, { status: 403 });
+  if ((pathname.startsWith("/admin") || pathname.startsWith("/super")) && !hasSessionCookie(req)) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
   if (
     pathname.startsWith("/api") ||
     pathname.startsWith("/_next") ||

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { colourGuidance, faceGuidance, quizGuidance } from "@/lib/guidance";
+import { tooMany } from "@/lib/http/guard";
 
 const schema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("face"), shape: z.string().min(2).max(20), who: z.enum(["women", "men", "kids"]) }),
@@ -15,6 +16,8 @@ const schema = z.discriminatedUnion("kind", [
 ]);
 
 export async function POST(req: Request) {
+  const limited = await tooMany(req, "guide", 120, 60 * 60 * 1000);
+  if (limited) return limited;
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
   const body = parsed.data;

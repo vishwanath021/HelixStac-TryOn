@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 import { appBaseUrl } from "@/lib/env";
+import { tooMany } from "@/lib/http/guard";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(req: Request) {
+  const limited = await tooMany(req, "qr", 60, 60 * 60 * 1000);
+  if (limited) return limited;
   const url = new URL(req.url);
   const slug = url.searchParams.get("slug") || "";
   const format = url.searchParams.get("format") === "svg" ? "svg" : "png";

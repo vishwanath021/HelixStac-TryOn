@@ -4,8 +4,8 @@ import { LookuviLockup } from "@/components/brand/LookuviMark";
 import { signIn } from "next-auth/react";
 import { useEffect, useState } from "react";
 
-export function LoginForm() {
-  const [email, setEmail] = useState("owner@demo.helixstac.app");
+export function LoginForm({ defaultEmail = "" }: { defaultEmail?: string }) {
+  const [email, setEmail] = useState(defaultEmail);
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [magic, setMagic] = useState("");
@@ -16,7 +16,8 @@ export function LoginForm() {
     event.preventDefault();
     setMessage("");
     const result = await signIn("credentials", { email, password, redirect: false });
-    if (result?.error) setMessage("Those details did not match. Check the demo login in the README.");
+    if (result?.code === "rate_limit") setMessage("Too many sign-in attempts. Wait a few minutes and try again.");
+    else if (result?.error) setMessage("Those details did not match.");
     else window.location.href = "/admin";
   }
 
@@ -55,6 +56,7 @@ export function LoginForm() {
         </label>
         <button className="btn w-full" type="submit">Sign in</button>
       </form>
+      <p className="mt-3 text-sm"><a href="/login/reset">Forgot password</a></p>
       <form className="mt-4" onSubmit={onMagic}>
         <button className="btn secondary w-full" type="submit">Email me a link</button>
       </form>

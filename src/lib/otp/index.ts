@@ -6,7 +6,11 @@ export interface OtpSender {
 class MockOtpSender implements OtpSender {
   name = "mock";
   async send(phone: string, code: string) {
-    console.info(`[otp-mock] code for phone ending ${phone.slice(-4)}: ${code}`);
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("OTP_PROVIDER=mock cannot send codes in production");
+    }
+    void code;
+    console.info(`[otp-mock] dev code issued for phone ending ${phone.slice(-4)}`);
   }
 }
 

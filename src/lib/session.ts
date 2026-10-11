@@ -8,11 +8,17 @@ export async function requireMembership() {
   if (!session?.user?.id) {
     return { error: NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 }) };
   }
-  const membership = await prisma.membership.findFirst({
-    where: { userId: session.user.id },
-    include: { tenant: true },
-    orderBy: { role: "asc" },
-  });
+  const preferred = session.user.tenantId;
+  const membership = preferred
+    ? await prisma.membership.findFirst({
+        where: { userId: session.user.id, tenantId: preferred },
+        include: { tenant: true },
+      })
+    : await prisma.membership.findFirst({
+        where: { userId: session.user.id },
+        include: { tenant: true },
+        orderBy: { role: "asc" },
+      });
   if (!membership) {
     return { error: NextResponse.json({ error: "NO_TENANT" }, { status: 403 }) };
   }
@@ -44,11 +50,17 @@ export async function requireSuper() {
 export async function pageTenant() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
-  const membership = await prisma.membership.findFirst({
-    where: { userId: session.user.id },
-    include: { tenant: true },
-    orderBy: { role: "asc" },
-  });
+  const preferred = session.user.tenantId;
+  const membership = preferred
+    ? await prisma.membership.findFirst({
+        where: { userId: session.user.id, tenantId: preferred },
+        include: { tenant: true },
+      })
+    : await prisma.membership.findFirst({
+        where: { userId: session.user.id },
+        include: { tenant: true },
+        orderBy: { role: "asc" },
+      });
   if (!membership) {
     if (session.user.isSuperAdmin) redirect("/super");
     redirect("/login?error=no-salon");

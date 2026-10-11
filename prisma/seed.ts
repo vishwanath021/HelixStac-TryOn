@@ -11,6 +11,10 @@ const STAFF_PASSWORD = "DemoStaff#2026";
 const SUPER_PASSWORD = "SuperAdmin#2026";
 
 async function main() {
+  if (process.env.NODE_ENV === "production") {
+    console.error("Demo seed is refused in production. Create the operator with: node scripts/create-super-admin.mjs");
+    process.exit(1);
+  }
   const trialEnds = new Date();
   trialEnds.setDate(trialEnds.getDate() + TRIAL_DAYS);
   const tenant = await prisma.tenant.upsert({

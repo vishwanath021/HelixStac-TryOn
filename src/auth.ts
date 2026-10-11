@@ -1,11 +1,18 @@
-import NextAuth, { type DefaultSession } from "next-auth";
+import NextAuth, { CredentialsSignin, type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { numberEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
-import { rateLimit } from "@/lib/ratelimit";
+import { requestClientIp, sharedRateLimit } from "@/lib/ratelimit";
+
+class LoginLimited extends CredentialsSignin {
+  code = "rate_limit";
+}
+
+const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
+const secureCookies = process.env.NODE_ENV === "production";
 
 declare module "next-auth" {
   interface Session {
@@ -39,7 +46,13 @@ async function userToSession(email: string) {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
-  session: { strategy: "jwt" },
+  session: { strategy: "jwt", maxAge: SESSION_MAX_AGE },
+  cookies: {
+    sessionToken: {
+      name: secureCookies ? "__Secure-authjs.session-token" : "authjs.session-token",
+      options: { httpOnly: true, sameSite: "lax", path: "/", secure: secureCookies },
+    },
+  },
   pages: { signIn: "/login" },
   providers: [
     Credentials({
@@ -49,12 +62,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      authorize: async (credentials) => {
+      authorize: async (credentials, request) => {
         const parsed = credentialsSchema.safeParse(credentials);
         if (!parsed.success) return null;
         const email = parsed.data.email.toLowerCase();
-        const limit = rateLimit(`login:${email}`, numberEnv("LOGIN_LIMIT", 8), 15 * 60 * 1000);
-        if (!limit.ok) return null;
+        const ip = request ? requestClientIp(request) : "unknown";
+        const windowMs = 15 * 60 * 1000;
+        const byIp = await sharedRateLimit(`login:ip:${ip}`, numberEnv("LOGIN_IP_LIMIT", 30), windowMs);
+        const byEmail = await sharedRateLimit(`login:${email}`, numberEnv("LOGIN_LIMIT", 8), windowMs);
+        if (!byIp.ok || !byEmail.ok) throw new LoginLimited();
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user) return null;
         const ok = await compare(parsed.data.password, user.passwordHash);
@@ -78,13 +94,34 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
+    async jwt({ token, user }) {
       if (user) {
         const extra = user as typeof user & { isSuperAdmin?: boolean; tenantId?: string; role?: string };
         token.id = user.id;
         token.isSuperAdmin = extra.isSuperAdmin ?? false;
         token.tenantId = extra.tenantId;
         token.role = extra.role;
+      }
+      if (token.id) {
+        try {
+          const fresh = await prisma.user.findUnique({ where: { id: String(token.id) } });
+          if (!fresh) {
+            token.isSuperAdmin = false;
+            token.role = undefined;
+            token.tenantId = undefined;
+          } else {
+            const preferred = typeof token.tenantId === "string" ? token.tenantId : "";
+            const membership = preferred
+              ? await prisma.membership.findUnique({ where: { userId_tenantId: { userId: fresh.id, tenantId: preferred } } })
+              : await prisma.membership.findFirst({ where: { userId: fresh.id }, orderBy: { role: "asc" } });
+            token.isSuperAdmin = fresh.isSuperAdmin;
+            token.role = membership?.role;
+            token.tenantId = membership?.tenantId;
+            token.email = fresh.email;
+          }
+        } catch {
+          // Keep the last claims when the database is briefly unreachable.
+        }
       }
       return token;
     },
