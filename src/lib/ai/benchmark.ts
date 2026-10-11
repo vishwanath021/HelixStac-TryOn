@@ -237,18 +237,49 @@ export async function writeBenchmarkStages(dir: string, stages: {
   transform: FrameTransform;
 }) {
   await mkdir(dir, { recursive: true });
+  const id = path.basename(dir);
+  const mirror = async (name: string, body: Buffer, contentType: string) => {
+    const { putObject } = await import("@/lib/storage");
+    await putObject(`benchmarks/${id}/${name}`, body, contentType).catch(() => undefined);
+  };
   await writeFile(path.join(dir, "original-input.jpg"), stages.original);
+  await mirror("original-input.jpg", stages.original, "image/jpeg");
   await writeFile(path.join(dir, "sanitized-input.jpg"), stages.sanitized);
+  await mirror("sanitized-input.jpg", stages.sanitized, "image/jpeg");
   await writeFile(path.join(dir, "provider-input.png"), stages.providerInput);
+  await mirror("provider-input.png", stages.providerInput, "image/png");
   await writeFile(path.join(dir, "provider-reference.jpg"), stages.reference);
-  await writeFile(path.join(dir, "transform.json"), JSON.stringify(stages.transform, null, 2));
-  await writeFile(path.join(dir, "validation.json"), JSON.stringify(stages.validation, null, 2));
-  if (stages.providerResponse) await writeFile(path.join(dir, "provider-response.png"), stages.providerResponse);
-  if (stages.restored) await writeFile(path.join(dir, "restored-output.png"), stages.restored);
-  if (stages.aligned) await writeFile(path.join(dir, "aligned-output.png"), stages.aligned);
-  if (stages.maskOverlay) await writeFile(path.join(dir, "mask-overlay.png"), stages.maskOverlay);
-  if (stages.hairComposite) await writeFile(path.join(dir, "hair-composite.png"), stages.hairComposite);
-  if (stages.faceCheck) await writeFile(path.join(dir, "face-check.png"), stages.faceCheck);
+  await mirror("provider-reference.jpg", stages.reference, "image/jpeg");
+  const transformJson = Buffer.from(JSON.stringify(stages.transform, null, 2));
+  const validationJson = Buffer.from(JSON.stringify(stages.validation, null, 2));
+  await writeFile(path.join(dir, "transform.json"), transformJson);
+  await mirror("transform.json", transformJson, "application/json");
+  await writeFile(path.join(dir, "validation.json"), validationJson);
+  await mirror("validation.json", validationJson, "application/json");
+  if (stages.providerResponse) {
+    await writeFile(path.join(dir, "provider-response.png"), stages.providerResponse);
+    await mirror("provider-response.png", stages.providerResponse, "image/png");
+  }
+  if (stages.restored) {
+    await writeFile(path.join(dir, "restored-output.png"), stages.restored);
+    await mirror("restored-output.png", stages.restored, "image/png");
+  }
+  if (stages.aligned) {
+    await writeFile(path.join(dir, "aligned-output.png"), stages.aligned);
+    await mirror("aligned-output.png", stages.aligned, "image/png");
+  }
+  if (stages.maskOverlay) {
+    await writeFile(path.join(dir, "mask-overlay.png"), stages.maskOverlay);
+    await mirror("mask-overlay.png", stages.maskOverlay, "image/png");
+  }
+  if (stages.hairComposite) {
+    await writeFile(path.join(dir, "hair-composite.png"), stages.hairComposite);
+    await mirror("hair-composite.png", stages.hairComposite, "image/png");
+  }
+  if (stages.faceCheck) {
+    await writeFile(path.join(dir, "face-check.png"), stages.faceCheck);
+    await mirror("face-check.png", stages.faceCheck, "image/png");
+  }
 }
 
 export async function restoredFromProvider(providerResponse: Buffer, transform: FrameTransform) {

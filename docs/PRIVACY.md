@@ -11,14 +11,14 @@ The salon decides why a guest's data is processed. In DPDP terms that is the dat
 | Path | Leaves the phone? | Stored? |
 |---|---|---|
 | Live colour | No. MediaPipe runs in the browser on files we host. | No |
-| Style preview | Yes. JPEG bytes go to the app server, then to the configured image provider. | No. Memory only. Response is `Cache-Control: no-store`. |
-| Eyebrow mapping | Same path as a style preview. The server sends a brow-only prompt. | No. The try-on row stores the shape id, not the photo. |
-| Beard and nail previews | Same path. Prompts edit facial hair or visible nails only. | No pixels stored. |
+| Style preview | Yes. JPEG bytes go to the app server, then to the configured image provider. | The generated JPEG is kept in private object storage for up to 24 hours so a repeat request is not billed again, then deleted. The HTTP response is `Cache-Control: no-store`. |
+| Eyebrow mapping | Same path as a style preview. The server sends a brow-only prompt. | Same 24-hour preview object. The try-on row stores the shape id, not the photo. |
+| Beard and nail previews | Same path. Prompts edit facial hair or visible nails only. | Same 24-hour preview object. |
 | Sample portrait | The illustration in `/samples` is not a guest. | It is a static file, not a photo of a person. |
 
 The generate route checks magic bytes, rejects files over 2 MB, and re-encodes with `sharp`, which drops EXIF. Logs go through `redact()` so photo fields and long strings are not printed. Analytics events reject keys that look like images.
 
-There is no photo bucket and no photo column. A deletion request cannot return a file that was never kept. It can delete leads tied to the browser session.
+The original selfie is not a database column. The generated preview is an object keyed by salon and request id. `POST /api/cron/retention` deletes it when `expiresAt` passes. A withdrawal deletes leads tied to a session that has a consent row. It does not need the guest to guess another person's session.
 
 ## What is stored
 
@@ -30,7 +30,7 @@ There is no photo bucket and no photo column. A deletion request cannot return a
 
 ## Consent
 
-The notice is version `2026-10-03` in `src/data/consent.ts`. The guest must tick the age line. Kids' styles say a parent or guardian should be present. Declining consent leaves the menu readable and blocks camera, upload, and preview.
+The notice is version `2026-10-11` in `src/data/consent.ts`. The guest must tick the age line. Kids' styles say a parent or guardian should be present. Declining consent leaves the menu readable and blocks camera, upload, and preview.
 
 Withdrawal is on `/privacy`. If the browser still has the session id, leads for that session are removed and the request is marked done. Other requests stay open for the salon to handle. The in-product target is 30 days.
 
@@ -52,4 +52,4 @@ The age checkbox is an attestation, not an identity check. Kids' catalogue entri
 
 ## Cookies
 
-Auth.js uses an httpOnly session cookie for salon staff. Try-on guests get a random id in `sessionStorage` and do not need an account. The booking hub sets a separate httpOnly `helix_guest` cookie after a phone code. It stores name, date of birth, audience, hair length, family labels, and booking requests for that salon only. Photos are still not stored. **Delete my data** removes that guest row and writes a completed data request. OTP sends are logged as consent with the last four digits of the number, not the code and not a photo. The dev mock may show the code on screen when `NODE_ENV` is not production.
+Auth.js uses an httpOnly session cookie for salon staff. Try-on guests get a random id in `sessionStorage` and do not need an account. The booking hub sets a separate httpOnly `helix_guest` cookie after a phone code. It stores name, date of birth, audience, hair length, family labels, and booking requests for that salon only. **Delete my data** removes that guest row and writes a completed data request. OTP sends are logged as consent with the last four digits of the number. The mock sender does not print the code. Outside production the code can still be returned in the API response when `ALLOW_DEV_OTP` is not required to be off.

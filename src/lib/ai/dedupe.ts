@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import path from "node:path";
+import { deleteObject, putObject, readStored } from "@/lib/storage";
 import { numberEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { releasePaidCall } from "@/lib/ai/spend";
@@ -15,7 +16,11 @@ export function jobFingerprint(parts: { photo: Buffer; styleId: string; tool: st
   return hash.digest("hex");
 }
 
-function jobDir(tenantId: string, requestId: string) {
+function jobKey(tenantId: string, requestId: string, fileName: string) {
+  return path.posix.join("generations", tenantId, requestId, fileName);
+}
+
+function legacyDir(tenantId: string, requestId: string) {
   return path.join(process.cwd(), "var", "generation-jobs", tenantId, requestId);
 }
 
@@ -26,7 +31,8 @@ function ttlDate() {
 async function purgeExpired() {
   const stale = await prisma.generationJob.findMany({ where: { expiresAt: { lt: new Date() } }, take: 20 });
   for (const row of stale) {
-    await rm(jobDir(row.tenantId, row.requestId), { recursive: true, force: true }).catch(() => undefined);
+    if (row.imagePath) await deleteObject(row.imagePath).catch(() => undefined);
+    await rm(legacyDir(row.tenantId, row.requestId), { recursive: true, force: true }).catch(() => undefined);
     await prisma.generationJob.delete({ where: { id: row.id } }).catch(() => undefined);
   }
 }
@@ -107,7 +113,8 @@ async function resolveExisting(existing: {
   }
   if (existing.status === "READY" && existing.imagePath) {
     try {
-      const image = await readFile(existing.imagePath);
+      const image = await readStored(existing.imagePath);
+      if (!image) return { kind: "repeat", status: 410, message: "That preview expired and was not generated again." };
       return { kind: "replay", image, demoReason: existing.demoReason };
     } catch {
       return { kind: "repeat", status: 410, message: "That preview expired and was not generated again." };
@@ -121,15 +128,14 @@ async function resolveExisting(existing: {
 }
 
 export async function completeGenerationJob(id: string, args: { tenantId: string; requestId: string; image: Buffer; demoReason?: string; callId?: string; fileName?: "result.jpg" | "result.json" }) {
-  const dir = jobDir(args.tenantId, args.requestId);
-  await mkdir(dir, { recursive: true });
-  const file = path.join(dir, args.fileName || "result.jpg");
-  await writeFile(file, args.image);
+  const fileName = args.fileName || "result.jpg";
+  const key = jobKey(args.tenantId, args.requestId, fileName);
+  await putObject(key, args.image, fileName.endsWith(".json") ? "application/json" : "image/jpeg");
   await prisma.generationJob.update({
     where: { id },
     data: {
       status: "READY",
-      imagePath: file,
+      imagePath: key,
       demoReason: args.demoReason || "",
       outcome: args.demoReason || "paid",
       callId: args.callId || "",

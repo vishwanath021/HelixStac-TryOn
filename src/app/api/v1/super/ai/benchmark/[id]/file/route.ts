@@ -3,6 +3,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { BENCHMARK_STAGES, benchmarkDir } from "@/lib/ai/benchmark";
 import { requireSuper } from "@/lib/session";
+import { getObject } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   }
   const file = path.join(benchmarkDir(id), stage);
   try {
-    const bytes = await readFile(file);
+    const bytes = (await getObject(`benchmarks/${id}/${stage}`)) || (await readFile(file));
     return new NextResponse(new Uint8Array(bytes), {
       headers: {
         "content-type": MIME[path.extname(stage)] || "application/octet-stream",
