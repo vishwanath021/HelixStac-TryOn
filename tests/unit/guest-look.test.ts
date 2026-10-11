@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { GUEST_FAL_MODEL, GUEST_OPENAI_MODEL, loadGuestReference } from "@/lib/ai/guest-hairstyle";
+import { BROWS_NEED_OPENAI, GUEST_FAL_MODEL, GUEST_OPENAI_MODEL, browsRoute, engineForGuestTool, guestEngineModel, loadGuestReference } from "@/lib/ai/guest-hairstyle";
 import { prepareGuestReference, quoteComparisonModel } from "@/lib/ai/compare-models";
 import { FAL_NUMBERED_IMAGE_PROMPT } from "@/lib/ai/fal-models";
 import { readHairstyleReference } from "@/lib/ai/style-reference";
@@ -11,14 +11,40 @@ import { shadeById } from "@/data/shades";
 const SELFIE = { width: 768, height: 1024 };
 
 describe("guest reference generation", () => {
-  it("sends the brow prompt to flux-3 without the hairstyle sentence or a mask", async () => {
+  it("sends brows to sunburst and keeps style, beard, and colour on the selected engine", async () => {
+    expect(engineForGuestTool("brows", "fal")).toBe("openai");
+    expect(guestEngineModel(engineForGuestTool("brows", "fal"))).toBe(GUEST_OPENAI_MODEL);
+    expect(engineForGuestTool("style", "fal")).toBe("fal");
+    expect(engineForGuestTool("beard", "fal")).toBe("fal");
+    expect(engineForGuestTool("colour", "fal")).toBe("fal");
+    expect(engineForGuestTool("nails", "fal")).toBe("fal");
+    expect(guestEngineModel(engineForGuestTool("beard", "fal"))).toBe(GUEST_FAL_MODEL);
+    expect(engineForGuestTool("style", "openai")).toBe("openai");
+    expect(browsRoute({ openaiReady: true, selected: "fal", selectedReady: true })).toBe("sunburst");
+    expect(browsRoute({ openaiReady: false, selected: "fal", selectedReady: true })).toBe("message");
+    expect(browsRoute({ openaiReady: false, selected: "fal", selectedReady: false })).toBe("demo");
+    expect(browsRoute({ openaiReady: false, selected: "openai", selectedReady: false })).toBe("demo");
+    expect(BROWS_NEED_OPENAI).toMatch(/OpenAI/);
+    expect(BROWS_NEED_OPENAI).toMatch(/not sent/);
+
+    const guest = readFileSync("src/lib/ai/guest-hairstyle.ts", "utf8");
+    expect(guest).toContain("engineForGuestTool(args.tool, selected)");
+    expect(guest).toContain("modelId: guestEngineModel(engine)");
+    const route = readFileSync("src/app/api/v1/tryon/generate/route.ts", "utf8");
+    expect(route).toContain("browsRoute");
+    expect(route).toContain("BROWS_NEED_OPENAI");
+    expect(route).toContain("engineForGuestTool(tool, engine)");
+    expect(route).not.toMatch(/gpt-image/);
+    const settings = readFileSync("src/components/admin/SuperAiForm.tsx", "utf8");
+    expect(settings).toContain("Brows always use OpenAI gpt-image-2.5-sunburst");
+
     const selfie = await sharp({ create: { width: SELFIE.width, height: SELFIE.height, channels: 3, background: "#c4a484" } }).jpeg().toBuffer();
     const loaded = await loadGuestReference("brows", "soft-arch");
     expect(loaded).toBeTruthy();
     const ready = await prepareGuestReference({
       jpeg: selfie,
       styleId: "soft-arch",
-      modelId: GUEST_FAL_MODEL,
+      modelId: guestEngineModel(engineForGuestTool("brows", "fal")),
       quality: "medium",
       prompt: loaded!.prompt,
       reference: loaded!.reference,
@@ -26,13 +52,14 @@ describe("guest reference generation", () => {
     });
     expect(ready.ok).toBe(true);
     if (!ready.ok) return;
+    expect(ready.quote.model).toBe(GUEST_OPENAI_MODEL);
     expect(ready.prompt).toContain("Image 1 is the customer selfie, image 2 is the reference.");
     expect(ready.prompt).toContain("Change only the eyebrow shape and thickness to match image 2.");
     expect(ready.prompt).not.toContain(FAL_NUMBERED_IMAGE_PROMPT);
     expect(ready.prompt.toLowerCase()).not.toContain("mask");
-    expect(ready.planned).toBeNull();
-    expect(ready.quote.estimateUsd).toBe(0.024);
-    expect(ready.quote.estimateInr).toBe(2.5);
+    expect(ready.quote.estimateUsd).toBe(0.159714);
+    expect(ready.quote.estimateInr).toBe(16.6);
+    expect(ready.quote.size).toBe("1024x1536");
   });
 
   it("recolours from a shade swatch and keeps the numbered colour prompt", async () => {

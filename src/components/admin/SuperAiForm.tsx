@@ -226,7 +226,8 @@ export function SuperAiForm({
     >
       <fieldset className="grid gap-3 border-b border-line pb-4" aria-label="Salon hairstyle model">
         <legend className="text-base font-semibold">Salon hairstyle model</legend>
-        <p className="text-sm text-muted">Hair style, colour, brows, beard, and nails send the full photo and the reference to this model. Comparison stays on this page.</p>
+        <p className="text-sm text-muted">Hair style, colour, beard, and nails send the full photo and the reference to this model. Comparison stays on this page.</p>
+        <p className="text-sm">Brows always use OpenAI gpt-image-2.5-sunburst at quality medium. That does not follow the default above. With no OpenAI key, a brow preview is not sent to FLUX.3.</p>
         <label className="flex min-h-11 items-center gap-2 text-sm">
           <input type="radio" name="guest-engine" checked={guestEngine === "fal"} onChange={() => setGuestEngine("fal")} />
           fal FLUX.3 (default)

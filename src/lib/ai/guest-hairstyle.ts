@@ -28,6 +28,24 @@ export function guestEngineModel(engine: GuestEngine) {
   return engine === "openai" ? GUEST_OPENAI_MODEL : GUEST_FAL_MODEL;
 }
 
+/** Brows stay on sunburst. Style, beard, colour, and nails follow the admin default. */
+export function engineForGuestTool(tool: string, selected: GuestEngine): GuestEngine {
+  return tool === "brows" ? "openai" : selected;
+}
+
+/**
+ * sunburst: an OpenAI key is saved, so brows call gpt-image-2.5-sunburst.
+ * message: another engine is ready, so refusing avoids a charged FLUX.3 call.
+ * demo: nothing is ready, so the unbilled sample card can still show.
+ */
+export function browsRoute(args: { openaiReady: boolean; selected: GuestEngine; selectedReady: boolean }): "sunburst" | "message" | "demo" {
+  if (args.openaiReady) return "sunburst";
+  if (args.selected !== "openai" && args.selectedReady) return "message";
+  return "demo";
+}
+
+export const BROWS_NEED_OPENAI = "Brows use OpenAI sunburst. Add an OpenAI key on AI settings. This preview was not sent.";
+
 async function setting(key: string) {
   const row = await prisma.platformSetting.findUnique({ where: { key } });
   return row?.value ?? "";
@@ -130,7 +148,8 @@ type GuestEditArgs = {
  * The guest response is a JPEG. Cost and model stay on the ledger.
  */
 async function runGuestEdit(args: GuestEditArgs): Promise<NextResponse | null> {
-  const { engine } = await readGuestEngine(args.tenantId);
+  const selected = (await readGuestEngine(args.tenantId)).engine;
+  const engine = engineForGuestTool(args.tool, selected);
   if (!(await guestEngineReady(engine))) return null;
   const executed = await executeReferenceEdit({
     jpeg: args.jpeg,

@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { claimGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
-import { demoGuestPreview, guestEngineReady, loadGuestReference, readGuestEngine, runGuestHairstyleIfReady, runGuestLookIfReady } from "@/lib/ai/guest-hairstyle";
+import { BROWS_NEED_OPENAI, browsRoute, demoGuestPreview, engineForGuestTool, guestEngineReady, loadGuestReference, readGuestEngine, runGuestHairstyleIfReady, runGuestLookIfReady } from "@/lib/ai/guest-hairstyle";
 import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { auth } from "@/auth";
 import { consumePreviewRate, guestLimitMessage, toolEnabled, type PreviewTool, type ToolId } from "@/lib/tools";
@@ -198,11 +198,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "STYLE", message: "That look is not on this salon's menu." }, { status: 400 });
   }
 
+  const { engine } = await readGuestEngine(tenant.id);
+  if (tool === "brows") {
+    const openaiReady = await guestEngineReady("openai");
+    const selectedReady = engine === "openai" ? openaiReady : await guestEngineReady(engine);
+    if (browsRoute({ openaiReady, selected: engine, selectedReady }) === "message") {
+      await failGenerationJob(jobId, { outcome: "key", message: BROWS_NEED_OPENAI });
+      return NextResponse.json({ error: "NO_OPENAI_KEY", message: BROWS_NEED_OPENAI }, { status: 400 });
+    }
+  }
+
   const limited = await takePreviewSlot();
   if (limited) return limited;
 
   const kind = tool === "brows" ? "BROWS" : tool === "beard" ? "BEARD" : tool === "nails" ? "NAILS" : tool === "colour" ? "COLOUR" : "STYLE";
-  const { engine } = await readGuestEngine(tenant.id);
+  const effective = engineForGuestTool(tool, engine);
   const superUser = placementDebug ? await viewerIsSuper() : false;
   const withPose = (response: NextResponse) => {
     if (response.status === 200 && placementDebug && superUser) {
@@ -210,7 +220,7 @@ export async function POST(req: Request) {
     }
     return response;
   };
-  if (await guestEngineReady(engine)) {
+  if (await guestEngineReady(effective)) {
     const styled = tool === "style" || !guestLook
       ? await runGuestHairstyleIfReady({
           jpeg,
