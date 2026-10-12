@@ -1,0 +1,775 @@
+import { referenceTextureFor, type ReferenceTexture } from "@/data/hair-texture";
+
+export type { ReferenceTexture } from "@/data/hair-texture";
+export { referenceTextureFor } from "@/data/hair-texture";
+
+export type Gender = "women" | "men" | "kids";
+export type FaceShape = "oval" | "round" | "square" | "heart" | "oblong" | "diamond";
+export type HairType = "straight" | "wavy" | "curly" | "thick" | "thin";
+export type HairDensity = "thin" | "medium" | "thick";
+export type HairTexture = "straight" | "wavy" | "curly";
+export type LengthCategory = "short" | "medium" | "long";
+
+export type StyleDef = {
+  id: string;
+  name: string;
+  gender: Gender;
+  category: string;
+  description: string;
+  prompt: string;
+  /** How long the selected cut is. Used by the reference-mode prompt, not by the production mask. */
+  lengthCategory: LengthCategory;
+  /** What the shipped reference JPEG actually shows. Curly is unused: none of the current files are curly. */
+  referenceTexture: ReferenceTexture;
+  tags: string[];
+  faceShapes: FaceShape[];
+  hairTypes: HairType[];
+  /** Hair amounts this cut is suitable for. At most two. */
+  density: HairDensity[];
+  /** Curl patterns this cut is suitable for. At most two. */
+  texture: HairTexture[];
+  serviceKeys: string[];
+};
+
+type Draft = Pick<StyleDef, "id" | "name" | "gender" | "category" | "description" | "prompt"> &
+  Partial<Pick<StyleDef, "lengthCategory" | "tags" | "faceShapes" | "hairTypes" | "serviceKeys" | "referenceTexture">>;
+
+export function lengthCategoryFor(style: { id?: string; category?: string; lengthCategory?: LengthCategory }): LengthCategory {
+  if (style.lengthCategory) return style.lengthCategory;
+  const category = style.category || "";
+  const id = style.id || "";
+  if (id === "hime-cut") return "long";
+  if (category === "bangs" || category === "medium") return "medium";
+  if (category === "short" || category === "crop" || category === "fade" || category === "taper" || /pixie|buzz|crew|bowl|crop|fade/.test(id)) return "short";
+  if (category === "bob" || id.includes("bob") || id === "lob" || id.endsWith("-lob")) return "medium";
+  if (category === "classic") {
+    if (id === "side-part" || id === "slick-back" || id === "old-money" || id === "comb-over" || id === "scissor-cut") return "medium";
+    return "short";
+  }
+  return "long";
+}
+
+/**
+ * Barber suitability. Each cut is at most two densities and two textures.
+ * hairTypes stays the guide-quiz list. The picker and AI suggestions read this map.
+ */
+const SUITABILITY: Record<string, { density: HairDensity[]; texture: HairTexture[] }> = {
+  "wispy-bangs": { density: ["thin"], texture: ["straight"] },
+  pixie: { density: ["thin"], texture: ["straight", "curly"] },
+  "sleek-straight": { density: ["thin", "medium"], texture: ["straight"] },
+  "french-bob": { density: ["thin"], texture: ["wavy", "curly"] },
+  "feathered-layers": { density: ["thin"], texture: ["wavy"] },
+  "collarbone-cut": { density: ["thin", "medium"], texture: ["wavy"] },
+  "shoulder-layers": { density: ["thin", "medium"], texture: ["curly"] },
+  "soft-bob": { density: ["medium"], texture: ["straight", "wavy"] },
+  "blunt-bob": { density: ["medium"], texture: ["straight"] },
+  "korean-soft-layers": { density: ["medium"], texture: ["straight"] },
+  "classic-layers": { density: ["medium"], texture: ["straight", "wavy"] },
+  lob: { density: ["medium"], texture: ["wavy"] },
+  "soft-waves": { density: ["medium"], texture: ["wavy"] },
+  "italian-bob": { density: ["medium"], texture: ["wavy", "curly"] },
+  "face-framing-layers": { density: ["medium", "thick"], texture: ["straight"] },
+  "curtain-bangs": { density: ["medium", "thick"], texture: ["straight"] },
+  "butterfly-layers": { density: ["medium", "thick"], texture: ["wavy"] },
+  "beach-waves": { density: ["medium", "thick"], texture: ["wavy"] },
+  shag: { density: ["medium", "thick"], texture: ["curly"] },
+  "hime-cut": { density: ["thick"], texture: ["straight"] },
+  "curtain-wolf": { density: ["thick"], texture: ["straight", "wavy"] },
+  "long-layers": { density: ["thick"], texture: ["straight"] },
+  "voluminous-blowout": { density: ["thick"], texture: ["straight"] },
+  "textured-lob": { density: ["thick"], texture: ["wavy"] },
+  "wolf-cut": { density: ["thick"], texture: ["wavy", "curly"] },
+  "soft-curls": { density: ["thick"], texture: ["curly"] },
+  "buzz-cut": { density: ["thin"], texture: ["straight", "curly"] },
+  "crew-cut": { density: ["thin"], texture: ["straight", "wavy"] },
+  caesar: { density: ["thin"], texture: ["straight"] },
+  "comb-over": { density: ["thin"], texture: ["straight", "wavy"] },
+  "ivy-league": { density: ["thin"], texture: ["wavy"] },
+  "side-part": { density: ["thin", "medium"], texture: ["straight"] },
+  "short-back-sides": { density: ["thin", "medium"], texture: ["straight"] },
+  "classic-taper": { density: ["thin"], texture: ["curly"] },
+  "low-fade": { density: ["thin", "medium"], texture: ["curly"] },
+  "french-crop": { density: ["medium"], texture: ["straight"] },
+  "korean-two-block": { density: ["medium"], texture: ["straight"] },
+  "old-money": { density: ["medium"], texture: ["straight"] },
+  "high-fade": { density: ["medium"], texture: ["straight"] },
+  "textured-fringe": { density: ["medium", "thick"], texture: ["straight"] },
+  "mid-fade": { density: ["medium", "thick"], texture: ["straight"] },
+  "textured-crop": { density: ["medium", "thick"], texture: ["wavy"] },
+  quiff: { density: ["medium"], texture: ["wavy"] },
+  "messy-texture": { density: ["medium"], texture: ["wavy"] },
+  "taper-fade": { density: ["medium", "thick"], texture: ["wavy"] },
+  undercut: { density: ["thick"], texture: ["straight"] },
+  pompadour: { density: ["thick"], texture: ["straight", "wavy"] },
+  "slick-back": { density: ["thick"], texture: ["straight"] },
+  "spiky-texture": { density: ["thick"], texture: ["straight"] },
+  "bro-flow": { density: ["thick"], texture: ["wavy"] },
+  "modern-mullet": { density: ["thick"], texture: ["wavy", "curly"] },
+  "scissor-cut": { density: ["thick"], texture: ["wavy", "curly"] },
+  "curly-top-fade": { density: ["medium", "thick"], texture: ["curly"] },
+  "drop-fade": { density: ["medium"], texture: ["curly"] },
+  "burst-fade": { density: ["thick"], texture: ["curly"] },
+  "kids-soft-bob": { density: ["medium"], texture: ["straight", "wavy"] },
+  "kids-bowl": { density: ["thin", "medium"], texture: ["straight"] },
+  "kids-curly-crop": { density: ["medium", "thick"], texture: ["curly"] },
+  "kids-pixie": { density: ["thin"], texture: ["straight", "wavy"] },
+};
+
+function suitabilityFor(id: string) {
+  const row = SUITABILITY[id];
+  if (!row || row.density.length < 1 || row.density.length > 2 || row.texture.length < 1 || row.texture.length > 2) {
+    throw new Error(`Hairstyle ${id} needs 1–2 densities and 1–2 textures`);
+  }
+  return row;
+}
+
+function s(draft: Draft): StyleDef {
+  const hairTypes = draft.hairTypes ?? ["straight", "wavy", "thick"];
+  const referenceTexture = draft.referenceTexture ?? referenceTextureFor(draft);
+  const suitability = suitabilityFor(draft.id);
+  return {
+    ...draft,
+    lengthCategory: draft.lengthCategory ?? lengthCategoryFor(draft),
+    referenceTexture,
+    tags: draft.tags ?? [draft.category],
+    faceShapes: draft.faceShapes ?? ["oval"],
+    hairTypes,
+    density: suitability.density,
+    texture: suitability.texture,
+    serviceKeys: draft.serviceKeys ?? ["haircut", "styling"],
+  };
+}
+
+const women: StyleDef[] = [
+  s({
+    id: "butterfly-layers",
+    name: "Butterfly Layers",
+    gender: "women",
+    category: "layers",
+    description: "Face-framing layers with soft volume through the lengths.",
+    prompt: "Long layered haircut with curtain-like face-framing pieces, airy volume through the mid-lengths, and feathered ends. The silhouette opens slightly, like butterfly wings, without looking teased.",
+    faceShapes: ["oval", "round", "heart", "oblong"],
+    hairTypes: ["straight", "wavy", "thick"],
+    serviceKeys: ["haircut", "styling"],
+  }),
+  s({
+    id: "curtain-bangs",
+    name: "Curtain Bangs",
+    gender: "women",
+    category: "bangs",
+    description: "Centre-parted bangs that frame the cheeks.",
+    prompt: "Keep the existing length and add soft curtain bangs, parted in the centre, tapering longer toward the cheekbones. Natural, not a heavy blunt fringe.",
+    faceShapes: ["oval", "heart", "oblong", "diamond"],
+    serviceKeys: ["haircut", "styling"],
+  }),
+  s({
+    id: "wolf-cut",
+    name: "Wolf Cut",
+    gender: "women",
+    category: "layers",
+    description: "Shag-mullet hybrid with choppy layers and curtain bangs.",
+    prompt: "Wolf cut: choppy shag layers, shorter pieces around the face, longer length at the back, curtain bangs, textured and a little undone. Not a costume wig.",
+    faceShapes: ["oval", "square", "heart"],
+    hairTypes: ["wavy", "straight", "thick"],
+  }),
+  s({
+    id: "soft-bob",
+    name: "Soft Bob",
+    gender: "women",
+    category: "bob",
+    description: "Jaw-length bob with a soft, inward curve.",
+    prompt: "A soft jaw-length bob with a gentle inward curve at the ends, light internal layers, and a natural side or centre part. Polished but not severe.",
+    faceShapes: ["oval", "heart", "diamond"],
+    hairTypes: ["straight", "wavy", "thin", "thick"],
+  }),
+  s({
+    id: "pixie",
+    name: "Pixie",
+    gender: "women",
+    category: "short",
+    description: "Cropped pixie with textured top and soft edges.",
+    prompt: "A short pixie: closely cropped sides and nape, a little length and texture on top, soft wispy edges around the forehead and ears. Elegant, not severe.",
+    faceShapes: ["oval", "heart", "diamond"],
+    hairTypes: ["straight", "wavy", "thin", "curly"],
+  }),
+  s({
+    id: "korean-soft-layers",
+    name: "Korean Soft Layers",
+    gender: "women",
+    category: "layers",
+    description: "Airy, face-softening layers with a light fringe.",
+    prompt: "Korean soft layers: long hair with very light, airy layers, a soft see-through fringe or curtain bangs, and a rounded silhouette. Weightless, not stacked.",
+    faceShapes: ["oval", "round", "square", "heart"],
+    hairTypes: ["straight", "wavy", "thin"],
+  }),
+  s({
+    id: "beach-waves",
+    name: "Beach Waves",
+    gender: "women",
+    category: "waves",
+    description: "Loose, salty waves with a lived-in finish.",
+    prompt: "Loose beach waves through the mid-lengths and ends, with a soft natural part. The waves should look like a salt spray finish, not tight curls or a crimping iron.",
+    faceShapes: ["oval", "oblong", "square", "heart"],
+    hairTypes: ["wavy", "straight", "thick"],
+    serviceKeys: ["haircut", "styling", "balayage"],
+  }),
+  s({
+    id: "long-layers",
+    name: "Long Layers",
+    gender: "women",
+    category: "layers",
+    description: "Long hair with movement and no short chop.",
+    prompt: "Keep the hair long, past the shoulders, and add long layers for movement. Face-framing pieces start below the chin. Ends look healthy and slightly textured.",
+    faceShapes: ["oval", "oblong", "square"],
+    hairTypes: ["straight", "wavy", "thick", "thin"],
+  }),
+  s({
+    id: "blunt-bob",
+    name: "Blunt Bob",
+    gender: "women",
+    category: "bob",
+    description: "A precise one-length bob at the jaw.",
+    prompt: "A blunt one-length bob ending at the jaw, sharp perimeter, minimal layering, sleek and heavy. Centre or soft side part.",
+    faceShapes: ["oval", "heart", "diamond"],
+    hairTypes: ["straight", "thick"],
+  }),
+  s({
+    id: "french-bob",
+    name: "French Bob",
+    gender: "women",
+    category: "bob",
+    description: "Chin-length Parisian bob with a micro fringe.",
+    prompt: "French bob: chin-length, slightly rounded, with a short textured micro fringe. Chic and a little piece-y, not a helmet bob.",
+    faceShapes: ["oval", "heart", "diamond"],
+    hairTypes: ["straight", "wavy", "thin"],
+  }),
+  s({
+    id: "shag",
+    name: "Shag",
+    gender: "women",
+    category: "layers",
+    description: "Choppy 70s-inspired shag with fringe.",
+    prompt: "A modern shag: choppy layers, piece-y fringe, texture through the crown, and lived-in ends. Rock-and-roll but wearable for everyday.",
+    faceShapes: ["oval", "square", "oblong"],
+    hairTypes: ["wavy", "straight", "thick"],
+  }),
+  s({
+    id: "lob",
+    name: "Long Bob",
+    gender: "women",
+    category: "bob",
+    description: "A collarbone-skimming long bob.",
+    prompt: "Long bob (lob) ending at the collarbone, with a soft angle that is slightly longer in front, light layers, and a polished everyday finish.",
+    faceShapes: ["oval", "round", "heart", "square"],
+    hairTypes: ["straight", "wavy", "thick", "thin"],
+  }),
+  s({
+    id: "hime-cut",
+    name: "Hime Cut",
+    gender: "women",
+    category: "bangs",
+    description: "Straight hime cut with cheek-length sides.",
+    prompt: "Hime cut: long straight hair with blunt cheek-length side locks framing the face and a straight fringe. The back stays long. Precise and graphic.",
+    faceShapes: ["oval", "heart", "oblong"],
+    hairTypes: ["straight", "thick"],
+  }),
+  s({
+    id: "wispy-bangs",
+    name: "Wispy Bangs",
+    gender: "women",
+    category: "bangs",
+    description: "Light, piece-y bangs over the existing cut.",
+    prompt: "Add wispy, piece-y bangs that graze the eyebrows, with a soft side sweep. Keep the rest of the length. Airy, not a thick bar of hair.",
+    faceShapes: ["oval", "heart", "oblong", "diamond"],
+    serviceKeys: ["haircut", "styling"],
+  }),
+  s({
+    id: "face-framing-layers",
+    name: "Face-Framing Layers",
+    gender: "women",
+    category: "layers",
+    description: "Layers that start at the cheek and open the face.",
+    prompt: "Add face-framing layers that start around the cheekbones and blend into the length. The outline of the haircut stays long. Soft, not choppy.",
+    faceShapes: ["round", "square", "heart", "oval"],
+  }),
+  s({
+    id: "soft-curls",
+    name: "Soft Curls",
+    gender: "women",
+    category: "curls",
+    description: "Defined, bouncy curls with a natural crown.",
+    prompt: "Style the hair into soft, defined curls with bounce, leaving the roots a little calmer. Curls should follow the hair's natural direction and not look like a wig of ringlets.",
+    faceShapes: ["oval", "oblong", "heart", "square"],
+    hairTypes: ["curly", "wavy", "thick"],
+    serviceKeys: ["haircut", "styling"],
+  }),
+  s({
+    id: "sleek-straight",
+    name: "Sleek Straight",
+    gender: "women",
+    category: "straight",
+    description: "Smooth, glossy straight hair with a clean part.",
+    prompt: "Smooth the hair into a sleek straight finish with a clean part and glassy shine. Keep the existing length and hairline. No wet-look plastic skin.",
+    faceShapes: ["oval", "oblong", "diamond", "heart"],
+    hairTypes: ["straight", "thick", "thin"],
+    serviceKeys: ["haircut", "styling", "keratin"],
+  }),
+  s({
+    id: "voluminous-blowout",
+    name: "Voluminous Blowout",
+    gender: "women",
+    category: "styling",
+    description: "A round-brush blowout with lift at the root.",
+    prompt: "A salon blowout: lifted roots, large soft bends through the lengths, and ends turned under or softly flicked. Full, not stiff.",
+    faceShapes: ["oval", "round", "square", "oblong"],
+    serviceKeys: ["styling", "haircut"],
+  }),
+  s({
+    id: "italian-bob",
+    name: "Italian Bob",
+    gender: "women",
+    category: "bob",
+    description: "Thick, chin-length bob with a natural middle part.",
+    prompt: "Italian bob: thick chin-to-jaw bob, centre part, a little volume at the crown, and ends that tuck under. Rich and simple.",
+    faceShapes: ["oval", "heart", "diamond"],
+    hairTypes: ["straight", "wavy", "thick"],
+  }),
+  s({
+    id: "textured-lob",
+    name: "Textured Lob",
+    gender: "women",
+    category: "bob",
+    description: "A lived-in long bob with piece-y ends.",
+    prompt: "Textured lob at the collarbone with piece-y, separated ends and a soft wave. Not blunt, not curly.",
+    faceShapes: ["oval", "square", "round", "heart"],
+    hairTypes: ["wavy", "straight", "thick"],
+  }),
+  s({
+    id: "classic-layers",
+    name: "Classic Layers",
+    gender: "women",
+    category: "layers",
+    description: "Even layers for movement on long hair.",
+    prompt: "Classic layered cut on long hair: graduated layers that remove weight, keep a smooth outline, and move when the head turns.",
+    faceShapes: ["oval", "oblong", "round", "square"],
+  }),
+  s({
+    id: "soft-waves",
+    name: "Soft Waves",
+    gender: "women",
+    category: "waves",
+    description: "Relaxed S-waves, quieter than beach hair.",
+    prompt: "Soft S-shaped waves, relaxed and polished, starting below the cheek. Less tousled than beach waves.",
+    faceShapes: ["oval", "heart", "oblong", "square"],
+    hairTypes: ["wavy", "straight"],
+    serviceKeys: ["styling", "haircut"],
+  }),
+  s({
+    id: "shoulder-layers",
+    name: "Shoulder-Length Layers",
+    gender: "women",
+    category: "layers",
+    description: "Shoulder length with blended layers.",
+    prompt: "Cut the hair to just below the shoulders and blend layers so the ends flip softly. Practical everyday shape.",
+    faceShapes: ["oval", "round", "heart", "square"],
+  }),
+  s({
+    id: "feathered-layers",
+    name: "Feathered Layers",
+    gender: "women",
+    category: "layers",
+    description: "Feathered ends with light movement.",
+    prompt: "Feathered layers with light, flicked ends and a soft face frame. Airy  texture, not a heavy 80s helmet.",
+    faceShapes: ["oval", "round", "oblong"],
+    hairTypes: ["straight", "wavy", "thin"],
+  }),
+  s({
+    id: "collarbone-cut",
+    name: "Collarbone Cut",
+    gender: "women",
+    category: "bob",
+    description: "A clean cut that sits on the collarbone.",
+    prompt: "One-length-leaning cut that sits on the collarbone, with a barely-there layer at the ends so it doesn't kick out. Neat and modern.",
+    faceShapes: ["oval", "heart", "diamond", "oblong"],
+  }),
+  s({
+    id: "curtain-wolf",
+    name: "Curtain Wolf",
+    gender: "women",
+    category: "layers",
+    description: "Wolf-cut texture with a softer curtain fringe.",
+    prompt: "A softer wolf cut: curtain bangs, shaggy layers around the face, and longer textured length in the back. Wearable, not extreme.",
+    faceShapes: ["oval", "square", "heart"],
+    hairTypes: ["wavy", "straight", "thick"],
+  }),
+];
+
+const men: StyleDef[] = [
+  s({
+    id: "mid-fade",
+    name: "Mid Fade",
+    gender: "men",
+    category: "fade",
+    description: "A fade that starts around the middle of the head.",
+    prompt: "Men's mid fade: a gradual fade starting around the parietal ridge, short back and sides, with natural length and texture on top. Clean neckline. Keep any beard that is already there.",
+    faceShapes: ["oval", "square", "round", "diamond"],
+    hairTypes: ["straight", "wavy", "curly", "thick"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "textured-crop",
+    name: "Textured Crop",
+    gender: "men",
+    category: "crop",
+    description: "Short textured crop with a fringe.",
+    prompt: "Textured crop: short sides, chopped textured top, and a short forward fringe. Matte, piece-y, not spiked with gel.",
+    faceShapes: ["oval", "square", "heart", "round"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "undercut",
+    name: "Undercut",
+    gender: "men",
+    category: "fade",
+    description: "Disconnected short sides and longer top.",
+    prompt: "Undercut: very short disconnected sides and back, with longer hair on top that can be combed back or to the side. A clear weight line. Keep facial hair unchanged.",
+    faceShapes: ["oval", "square", "oblong", "diamond"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "pompadour",
+    name: "Pompadour",
+    gender: "men",
+    category: "classic",
+    description: "Height through the front, short sides.",
+    prompt: "Modern pompadour: volume swept up and back at the front, shorter faded sides, polished but not a costume. Hair should still look like hair.",
+    faceShapes: ["oval", "oblong", "square", "heart"],
+    hairTypes: ["straight", "wavy", "thick"],
+    serviceKeys: ["haircut", "styling"],
+  }),
+  s({
+    id: "quiff",
+    name: "Quiff",
+    gender: "men",
+    category: "classic",
+    description: "Forward-up volume with a short back.",
+    prompt: "A quiff: length on top styled up and slightly forward, short sides, natural texture. Less tall than a pompadour.",
+    faceShapes: ["oval", "square", "oblong", "heart"],
+    serviceKeys: ["haircut", "styling"],
+  }),
+  s({
+    id: "korean-two-block",
+    name: "Korean Two-Block",
+    gender: "men",
+    category: "crop",
+    description: "Longer top block over closely cut sides.",
+    prompt: "Korean two-block: a clear separation between longer textured top and very short sides, with a soft fringe that can part or fall forward. Neat and youthful.",
+    faceShapes: ["oval", "round", "heart", "diamond"],
+    hairTypes: ["straight", "wavy", "thick"],
+    serviceKeys: ["haircut"],
+  }),
+  s({
+    id: "old-money",
+    name: "Old Money Cut",
+    gender: "men",
+    category: "classic",
+    description: "Quiet side part, tapered neck, no hard lines.",
+    prompt: "Old money cut: a classic tapered side part, modest length on top combed with a soft side part, short natural neckline, no skin fade and no hard lines. Quiet and groomed.",
+    faceShapes: ["oval", "oblong", "square", "heart"],
+    hairTypes: ["straight", "wavy", "thin", "thick"],
+    serviceKeys: ["haircut"],
+  }),
+  s({
+    id: "classic-taper",
+    name: "Classic Taper",
+    gender: "men",
+    category: "taper",
+    description: "Scissor taper, longer than a fade.",
+    prompt: "Classic taper: sides and back gradually shorter toward the neck, scissor-cut, with enough hair left that the scalp does not show. Natural top.",
+    faceShapes: ["oval", "round", "square", "oblong"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "buzz-cut",
+    name: "Buzz Cut",
+    gender: "men",
+    category: "short",
+    description: "An even short buzz.",
+    prompt: "An even buzz cut, about 6–12 mm all over, following the shape of the head. No design lines. Keep beard if present.",
+    faceShapes: ["oval", "square", "diamond", "heart"],
+    hairTypes: ["straight", "wavy", "curly", "thin", "thick"],
+    serviceKeys: ["haircut"],
+  }),
+  s({
+    id: "crew-cut",
+    name: "Crew Cut",
+    gender: "men",
+    category: "short",
+    description: "Short on the sides, slightly longer on top.",
+    prompt: "Crew cut: short sides and a little more length on top, textured forward, neat and low-maintenance.",
+    faceShapes: ["oval", "square", "round", "diamond"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "side-part",
+    name: "Side Part",
+    gender: "men",
+    category: "classic",
+    description: "A clean side part with controlled length.",
+    prompt: "A neat side part with medium length on top, combed to one side, and tapered sides. Office-ready, not slick with a wet shine.",
+    faceShapes: ["oval", "oblong", "square", "heart"],
+    serviceKeys: ["haircut", "styling"],
+  }),
+  s({
+    id: "slick-back",
+    name: "Slick Back",
+    gender: "men",
+    category: "classic",
+    description: "Hair combed straight back, short sides.",
+    prompt: "Slick back: top hair combed straight back with a soft sheen, short tapered sides. Keep it realistic, not patent-leather.",
+    faceShapes: ["oval", "oblong", "square"],
+    hairTypes: ["straight", "wavy", "thick"],
+    serviceKeys: ["haircut", "styling"],
+  }),
+  s({
+    id: "french-crop",
+    name: "French Crop",
+    gender: "men",
+    category: "crop",
+    description: "Short fringe cropped straight across.",
+    prompt: "French crop: short textured top with a straight-across fringe just above the eyebrows, faded or tapered sides.",
+    faceShapes: ["oval", "square", "heart", "round"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "burst-fade",
+    name: "Burst Fade",
+    gender: "men",
+    category: "fade",
+    description: "A fade that arcs around the ear.",
+    prompt: "Burst fade: the fade arcs around the ear rather than straight up, with longer hair behind the ear blending toward the crown. Texture on top.",
+    faceShapes: ["oval", "round", "square"],
+    hairTypes: ["curly", "wavy", "thick"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "low-fade",
+    name: "Low Fade",
+    gender: "men",
+    category: "fade",
+    description: "A fade that starts just above the ear.",
+    prompt: "Low fade: the shortest point sits just above the ear and the neck, blending quickly into longer hair. Conservative and clean.",
+    faceShapes: ["oval", "round", "square", "heart", "oblong"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "high-fade",
+    name: "High Fade",
+    gender: "men",
+    category: "fade",
+    description: "A fade that climbs high, with a short top.",
+    prompt: "High fade: skin or bald-adjacent fade high on the sides, with a short textured top. Sharp but not a graphic design cut.",
+    faceShapes: ["oval", "square", "diamond", "oblong"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "caesar",
+    name: "Caesar Cut",
+    gender: "men",
+    category: "crop",
+    description: "Short uniform cut with a horizontal fringe.",
+    prompt: "Caesar cut: short even length with a straight short fringe combed forward. Neat and compact.",
+    faceShapes: ["oval", "square", "diamond"],
+    serviceKeys: ["haircut"],
+  }),
+  s({
+    id: "ivy-league",
+    name: "Ivy League",
+    gender: "men",
+    category: "classic",
+    description: "A longer crew that can be side-parted.",
+    prompt: "Ivy League: slightly longer crew cut that can be parted and combed to the side. Preppy and tidy.",
+    faceShapes: ["oval", "oblong", "square", "heart"],
+    serviceKeys: ["haircut"],
+  }),
+  s({
+    id: "modern-mullet",
+    name: "Modern Mullet",
+    gender: "men",
+    category: "layers",
+    description: "Shorter front, longer textured back.",
+    prompt: "A modern mullet: shorter textured front and sides, modestly longer back, blended rather than a costume party cut. Keep it wearable.",
+    faceShapes: ["oval", "square", "oblong"],
+    hairTypes: ["wavy", "straight", "curly", "thick"],
+    serviceKeys: ["haircut"],
+  }),
+  s({
+    id: "bro-flow",
+    name: "Bro Flow",
+    gender: "men",
+    category: "medium",
+    description: "Medium-length hair pushed back off the face.",
+    prompt: "Medium-length hair, grown out, pushed back or centre-parted with natural movement. Not a bob, not a bun.",
+    faceShapes: ["oval", "oblong", "square", "heart"],
+    hairTypes: ["straight", "wavy", "thick"],
+    serviceKeys: ["haircut", "styling"],
+  }),
+  s({
+    id: "curly-top-fade",
+    name: "Curly Top Fade",
+    gender: "men",
+    category: "fade",
+    description: "Fade on the sides, curls left intact on top.",
+    prompt: "Keep the curl pattern on top and fade the sides and back. Do not straighten the curls. Shape the silhouette so the curls have a clear outline.",
+    faceShapes: ["oval", "round", "square", "heart"],
+    hairTypes: ["curly", "thick"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "textured-fringe",
+    name: "Textured Fringe",
+    gender: "men",
+    category: "crop",
+    description: "A soft, piece-y fringe over a short cut.",
+    prompt: "Short sides with a textured, slightly long fringe that breaks across the forehead. Natural separation.",
+    faceShapes: ["oval", "heart", "oblong", "diamond"],
+    serviceKeys: ["haircut"],
+  }),
+  s({
+    id: "comb-over",
+    name: "Comb Over",
+    gender: "men",
+    category: "classic",
+    description: "A side-swept top with a tidy taper.",
+    prompt: "A modern comb over: hair on top swept to one side with a soft part, tapered sides, no severe comb-over hiding a scalp. Honest and neat.",
+    faceShapes: ["oval", "oblong", "square"],
+    serviceKeys: ["haircut", "styling"],
+  }),
+  s({
+    id: "taper-fade",
+    name: "Taper Fade",
+    gender: "men",
+    category: "fade",
+    description: "A gentle fade that still leaves a little hair.",
+    prompt: "Taper fade: a soft fade that does not go to the skin, blending short sides into the top. Versatile barber finish.",
+    faceShapes: ["oval", "round", "square", "heart", "oblong"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "messy-texture",
+    name: "Messy Texture",
+    gender: "men",
+    category: "crop",
+    description: "Piece-y, undone texture on a short-medium top.",
+    prompt: "Short-medium top with messy, separated texture, as if styled with a matte paste. Sides tapered. Effortless, not dirty.",
+    faceShapes: ["oval", "square", "heart", "round"],
+    hairTypes: ["wavy", "straight", "thick"],
+    serviceKeys: ["haircut", "styling"],
+  }),
+  s({
+    id: "spiky-texture",
+    name: "Spiky Texture",
+    gender: "men",
+    category: "short",
+    description: "Short spikes with a modern, matte finish.",
+    prompt: "Short textured spikes, separated and matte, with faded sides. Contemporary, not a 2000s gel spike.",
+    faceShapes: ["oval", "square", "oblong"],
+    hairTypes: ["straight", "thick"],
+    serviceKeys: ["haircut", "styling"],
+  }),
+  s({
+    id: "drop-fade",
+    name: "Drop Fade",
+    gender: "men",
+    category: "fade",
+    description: "A fade that drops lower behind the ear.",
+    prompt: "Drop fade: the fade line is higher at the temple and drops lower behind the ear. Clean blend, natural top texture.",
+    faceShapes: ["oval", "round", "square"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "short-back-sides",
+    name: "Short Back and Sides",
+    gender: "men",
+    category: "classic",
+    description: "The classic barber short back and sides.",
+    prompt: "Traditional short back and sides with scissor work on top left long enough to comb. Tidy neckline. No skin fade.",
+    faceShapes: ["oval", "round", "square", "oblong", "heart"],
+    serviceKeys: ["haircut", "beard"],
+  }),
+  s({
+    id: "scissor-cut",
+    name: "Scissor Cut",
+    gender: "men",
+    category: "classic",
+    description: "An all-over scissor cut with natural length.",
+    prompt: "An all-over scissor cut with natural length, no clipper fade, shaped to the head with a soft outline. Good for thicker Indian hair that needs weight removed.",
+    faceShapes: ["oval", "round", "square", "heart", "oblong"],
+    hairTypes: ["thick", "wavy", "curly", "straight"],
+    serviceKeys: ["haircut"],
+  }),
+];
+
+const kids: StyleDef[] = [
+  s({
+    id: "kids-soft-bob",
+    name: "Kids Soft Bob",
+    gender: "kids",
+    category: "kids",
+    description: "A simple bob for a child, with a parent present.",
+    prompt: "A simple child-appropriate soft bob just below the chin, with a light fringe if the hair already has one. Gentle and practical. Do not age the child up.",
+    faceShapes: ["oval", "round", "heart"],
+    hairTypes: ["straight", "wavy", "thick", "thin"],
+    serviceKeys: ["kids", "haircut"],
+  }),
+  s({
+    id: "kids-bowl",
+    name: "Kids Bowl Cut",
+    gender: "kids",
+    category: "kids",
+    description: "A rounded bowl shape with a soft fringe.",
+    prompt: "A soft modern bowl cut for a child: rounded outline, fringe just above the eyebrows, not severe. Keep the child looking the same age.",
+    faceShapes: ["round", "oval", "heart"],
+    serviceKeys: ["kids", "haircut"],
+  }),
+  s({
+    id: "kids-curly-crop",
+    name: "Kids Curly Crop",
+    gender: "kids",
+    category: "kids",
+    description: "A short shape that leaves curls bouncy.",
+    prompt: "A short curly crop for a child that respects the curl pattern, with a tidy outline around the ears. Do not straighten the hair.",
+    faceShapes: ["oval", "round", "heart"],
+    hairTypes: ["curly", "thick", "wavy"],
+    serviceKeys: ["kids", "haircut"],
+  }),
+  s({
+    id: "kids-pixie",
+    name: "Kids Pixie",
+    gender: "kids",
+    category: "kids",
+    description: "A short pixie with soft edges for a child.",
+    prompt: "A gentle short pixie for a child, with a little texture on top and soft edges. Practical for school. Do not change the child's face or age.",
+    faceShapes: ["oval", "heart", "diamond"],
+    hairTypes: ["straight", "wavy", "thin"],
+    serviceKeys: ["kids", "haircut"],
+  }),
+];
+
+export const STYLES: StyleDef[] = [...women, ...men, ...kids];
+
+export function styleById(id: string) {
+  return STYLES.find((style) => style.id === id) ?? null;
+}
+
+export function stylesForGender(gender: Gender) {
+  return STYLES.filter((style) => style.gender === gender);
+}
+
+export type PublicStyle = Omit<StyleDef, "prompt">;
+
+export function toPublicStyle(style: StyleDef): PublicStyle {
+  const rest = { ...style };
+  delete (rest as { prompt?: string }).prompt;
+  return rest;
+}
