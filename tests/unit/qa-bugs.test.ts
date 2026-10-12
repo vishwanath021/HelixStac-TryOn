@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST as changePassword } from "@/app/api/v1/account/password/route";
 import { POST as saveDomain } from "@/app/api/v1/admin/domain/route";
 import { POST as inviteStaff } from "@/app/api/v1/admin/team/route";
+import { LOCALES, t } from "@/data/i18n";
 import { isPlatformHost } from "@/lib/host";
 import { prisma } from "@/lib/prisma";
 import { sessionIsCurrent } from "@/lib/session-revocation";
@@ -226,5 +227,18 @@ describe("session revocation", () => {
     const fresh = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(fresh.sessionVersion).toBe(1);
     expect(await compare("CorrectHorse#2", fresh.passwordHash)).toBe(true);
+  });
+});
+
+describe("consent copy", () => {
+  it("names fal and OpenAI in every locale and drops the Gemini demo wording", () => {
+    for (const locale of LOCALES) {
+      const text = t(locale, "consentProcessor");
+      expect(text, locale).toContain("fal");
+      expect(text, locale).toContain("Black Forest Labs FLUX");
+      expect(text, locale).toContain("OpenAI");
+      expect(text.toLowerCase(), locale).not.toContain("gemini");
+      expect(text.toLowerCase(), locale).not.toContain("demo renderer");
+    }
   });
 });
