@@ -8,7 +8,7 @@ import { SalonPaused } from "@/components/guest/SalonPaused";
 import { POST as changePassword } from "@/app/api/v1/account/password/route";
 import { POST as saveDomain } from "@/app/api/v1/admin/domain/route";
 import { GET as exportLeads } from "@/app/api/v1/admin/leads/export/route";
-import { POST as inviteStaff } from "@/app/api/v1/admin/team/route";
+import { DELETE as removeStaff, POST as inviteStaff } from "@/app/api/v1/admin/team/route";
 import { LOCALES, t } from "@/data/i18n";
 import { csvCell } from "@/lib/csv";
 import { isPlatformHost } from "@/lib/host";
@@ -55,6 +55,16 @@ function invite(body: Record<string, string>) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+    }),
+  );
+}
+
+function removeMember(userId: string) {
+  return removeStaff(
+    new Request("http://localhost/api/v1/admin/team", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ userId }),
     }),
   );
 }
@@ -156,6 +166,26 @@ describe("team invite", () => {
       where: { userId_tenantId: { userId: user.id, tenantId: tenant.id } },
     });
     expect(membership.role).toBe("STAFF");
+  });
+
+  it("removes a staff membership only, writes an audit row, and keeps the last owner", async () => {
+    const { tenant, owner } = await salonOwner("team-rm");
+    const staff = await prisma.user.create({
+      data: { email: `staff-${tag()}@example.test`, name: "Staff", passwordHash: "staff-hash" },
+    });
+    createdUsers.push(staff.id);
+    await prisma.membership.create({ data: { userId: staff.id, tenantId: tenant.id, role: "STAFF" } });
+    const removed = await removeMember(staff.id);
+    expect(removed.status).toBe(200);
+    expect(await prisma.membership.findUnique({ where: { userId_tenantId: { userId: staff.id, tenantId: tenant.id } } })).toBeNull();
+    expect(await prisma.user.findUnique({ where: { id: staff.id } })).toBeTruthy();
+    const audit = await prisma.auditLog.findFirst({ where: { action: "TEAM_REMOVE", target: staff.id } });
+    expect(audit?.actorId).toBe(owner.id);
+    await prisma.auditLog.deleteMany({ where: { target: staff.id } });
+
+    const self = await removeMember(owner.id);
+    expect(self.status).toBe(400);
+    expect(await prisma.membership.findUnique({ where: { userId_tenantId: { userId: owner.id, tenantId: tenant.id } } })).toBeTruthy();
   });
 });
 

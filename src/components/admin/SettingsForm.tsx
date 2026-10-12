@@ -7,6 +7,8 @@ export function SettingsForm({
   initial,
   canRemoveBranding,
   enabledTools = ["hairstyle", "colour", "brows", "nails", "beard"],
+  members,
+  selfId,
 }: {
   initial: {
     name: string;
@@ -33,6 +35,8 @@ export function SettingsForm({
   };
   canRemoveBranding: boolean;
   enabledTools?: ToolId[];
+  members: { userId: string; name: string; email: string; role: string }[];
+  selfId: string;
 }) {
   const [form, setForm] = useState(initial);
   const [message, setMessage] = useState("");
@@ -41,6 +45,8 @@ export function SettingsForm({
   const [staffEmail, setStaffEmail] = useState("");
   const [staffName, setStaffName] = useState("");
   const [staffPassword, setStaffPassword] = useState("");
+  const [team, setTeam] = useState(members);
+  const ownerCount = team.filter((member) => member.role === "OWNER").length;
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -100,6 +106,26 @@ export function SettingsForm({
     });
     const data = await res.json().catch(() => ({}));
     setMessage(res.ok ? "Staff added to this salon." : data.message || "Could not add staff");
+    if (res.ok && data.userId) {
+      setTeam((current) => current.some((member) => member.userId === data.userId)
+        ? current
+        : [...current, { userId: data.userId, name: staffName, email: staffEmail, role: "STAFF" }]);
+    }
+  }
+
+  async function removeMember(userId: string) {
+    const res = await fetch("/api/v1/admin/team", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setMessage(data.message || "Could not remove that person");
+      return;
+    }
+    setTeam((current) => current.filter((member) => member.userId !== userId));
+    setMessage("Removed from this salon.");
   }
 
   return (
@@ -169,13 +195,30 @@ export function SettingsForm({
         </div>
         {domainNote && <p className="text-sm" role="status">{domainNote}</p>}
       </form>
-      <form className="card grid gap-2 p-4" onSubmit={addStaff}>
-        <h2 className="font-serif text-2xl">Add staff</h2>
+      <section className="card grid gap-3 p-4">
+        <h2 className="font-serif text-2xl">Team</h2>
+        <ul className="space-y-2">
+          {team.map((member) => {
+            const canRemove = member.userId !== selfId && !(member.role === "OWNER" && ownerCount <= 1);
+            return (
+              <li key={member.userId} className="flex items-center justify-between gap-3 text-sm">
+                <span>
+                  {member.name}
+                  <span className="block text-xs text-muted">{member.email} · {member.role === "OWNER" ? "Owner" : "Staff"}</span>
+                </span>
+                {canRemove ? <button className="btn secondary" type="button" onClick={() => void removeMember(member.userId)}>Remove</button> : null}
+              </li>
+            );
+          })}
+        </ul>
+      <form className="grid gap-2" onSubmit={addStaff}>
+        <h3 className="font-medium">Add staff</h3>
         <input className="field" type="email" placeholder="Email" value={staffEmail} onChange={(event) => setStaffEmail(event.target.value)} required aria-label="Staff email" />
         <input className="field" placeholder="Name" value={staffName} onChange={(event) => setStaffName(event.target.value)} required aria-label="Staff name" />
         <input className="field" type="password" placeholder="Password, at least 12 characters" value={staffPassword} onChange={(event) => setStaffPassword(event.target.value)} required minLength={12} aria-label="Staff password" />
         <button className="btn" type="submit">Create staff login</button>
       </form>
+      </section>
       {message && <p className="text-sm" role="status">{message}</p>}
     </div>
   );
