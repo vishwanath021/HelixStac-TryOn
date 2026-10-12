@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
-import { appBaseUrl } from "@/lib/env";
 import { tooMany } from "@/lib/http/guard";
 import { prisma } from "@/lib/prisma";
+import { salonGuestOrigin } from "@/lib/public-url";
 
 export async function GET(req: Request) {
   const limited = await tooMany(req, "qr", 60, 60 * 60 * 1000);
@@ -12,7 +12,7 @@ export async function GET(req: Request) {
   const format = url.searchParams.get("format") === "svg" ? "svg" : "png";
   const tenant = await prisma.tenant.findUnique({ where: { slug } });
   if (!tenant) return NextResponse.json({ error: "TENANT" }, { status: 404 });
-  const target = `${appBaseUrl()}/s/${tenant.slug}?src=qr`;
+  const target = `${await salonGuestOrigin(tenant.id, tenant.slug)}/?src=qr`;
   if (format === "svg") {
     const svg = await QRCode.toString(target, { type: "svg", margin: 1, color: { dark: "#12312e", light: "#ffffff" } });
     return new NextResponse(svg, {

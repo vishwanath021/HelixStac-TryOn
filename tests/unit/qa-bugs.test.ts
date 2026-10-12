@@ -13,6 +13,7 @@ import { DELETE as removeStaff, POST as inviteStaff } from "@/app/api/v1/admin/t
 import { LOCALES, t } from "@/data/i18n";
 import { csvCell } from "@/lib/csv";
 import { isPlatformHost } from "@/lib/host";
+import { salonGuestOrigin } from "@/lib/public-url";
 import { prisma } from "@/lib/prisma";
 import { sessionIsCurrent } from "@/lib/session-revocation";
 
@@ -366,6 +367,28 @@ describe("privacy page", () => {
     expect(html.toLowerCase()).not.toContain("template");
     expect(html.toLowerCase()).not.toContain("lawyer");
     expect(html.toLowerCase()).not.toContain("gemini");
+  });
+});
+
+describe("salon qr host", () => {
+  it("uses the try host, or a verified custom domain", async () => {
+    const previousBase = process.env.APP_BASE_URL;
+    const previousRoot = process.env.ROOT_DOMAIN;
+    process.env.APP_BASE_URL = "https://lookuvi.example.test";
+    process.env.ROOT_DOMAIN = "example.test";
+    try {
+      const { tenant } = await salonOwner("qr");
+      expect(await salonGuestOrigin(tenant.id, tenant.slug)).toBe(`https://${tenant.slug}.try.example.test`);
+      await prisma.domain.create({ data: { host: "try.salon.example", tenantId: tenant.id, token: "t", verified: false } });
+      expect(await salonGuestOrigin(tenant.id, tenant.slug)).toBe(`https://${tenant.slug}.try.example.test`);
+      await prisma.domain.update({ where: { host: "try.salon.example" }, data: { verified: true } });
+      expect(await salonGuestOrigin(tenant.id, tenant.slug)).toBe("https://try.salon.example");
+    } finally {
+      if (previousBase === undefined) delete process.env.APP_BASE_URL;
+      else process.env.APP_BASE_URL = previousBase;
+      if (previousRoot === undefined) delete process.env.ROOT_DOMAIN;
+      else process.env.ROOT_DOMAIN = previousRoot;
+    }
   });
 });
 
