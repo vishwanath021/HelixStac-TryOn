@@ -1,5 +1,8 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { compare, hash } from "bcryptjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import PrivacyPage from "@/app/privacy/page";
 import { POST as changePassword } from "@/app/api/v1/account/password/route";
 import { POST as saveDomain } from "@/app/api/v1/admin/domain/route";
 import { GET as exportLeads } from "@/app/api/v1/admin/leads/export/route";
@@ -255,6 +258,20 @@ describe("leads csv", () => {
     expect(body).toContain("\"'=HYPERLINK(\"\"http://x\"\")\"");
     expect(body).toContain("\"'+9198\"");
     await prisma.lead.deleteMany({ where: { tenantId: tenant.id } });
+  });
+});
+
+describe("privacy page", () => {
+  it("names the real processors and hides the template note", () => {
+    const html = renderToStaticMarkup(createElement(PrivacyPage));
+    expect(html).toContain("fal (Black Forest Labs FLUX)");
+    expect(html).toContain("OpenAI");
+    expect(html).toContain("Hostinger");
+    expect(html).toContain("Cloudflare");
+    expect(html).toContain("Digital Personal Data Protection Act, 2023");
+    expect(html.toLowerCase()).not.toContain("template");
+    expect(html.toLowerCase()).not.toContain("lawyer");
+    expect(html.toLowerCase()).not.toContain("gemini");
   });
 });
 
