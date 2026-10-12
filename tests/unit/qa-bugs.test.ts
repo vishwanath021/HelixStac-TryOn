@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { compare, hash } from "bcryptjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GET as caddyAsk } from "@/app/api/caddy/ask/route";
+import { LoginForm } from "@/app/login/LoginForm";
 import PrivacyPage from "@/app/privacy/page";
 import { SalonPaused } from "@/components/guest/SalonPaused";
 import { POST as changePassword } from "@/app/api/v1/account/password/route";
@@ -389,6 +390,15 @@ describe("salon qr host", () => {
       if (previousRoot === undefined) delete process.env.ROOT_DOMAIN;
       else process.env.ROOT_DOMAIN = previousRoot;
     }
+  });
+});
+
+describe("login hint", () => {
+  it("shows the local-dev sentence only when asked", () => {
+    const hidden = renderToStaticMarkup(createElement(LoginForm, { showDevHint: false }));
+    expect(hidden).not.toContain("In local dev");
+    const shown = renderToStaticMarkup(createElement(LoginForm, { showDevHint: true }));
+    expect(shown).toContain("In local dev the link can appear here.");
   });
 });
 
