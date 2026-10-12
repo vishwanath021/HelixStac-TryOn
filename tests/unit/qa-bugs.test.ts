@@ -8,6 +8,7 @@ import { SalonPaused } from "@/components/guest/SalonPaused";
 import { POST as changePassword } from "@/app/api/v1/account/password/route";
 import { POST as saveDomain } from "@/app/api/v1/admin/domain/route";
 import { GET as exportLeads } from "@/app/api/v1/admin/leads/export/route";
+import { DELETE as deleteService, PATCH as patchService } from "@/app/api/v1/admin/services/[id]/route";
 import { DELETE as removeStaff, POST as inviteStaff } from "@/app/api/v1/admin/team/route";
 import { LOCALES, t } from "@/data/i18n";
 import { csvCell } from "@/lib/csv";
@@ -186,6 +187,41 @@ describe("team invite", () => {
     const self = await removeMember(owner.id);
     expect(self.status).toBe(400);
     expect(await prisma.membership.findUnique({ where: { userId_tenantId: { userId: owner.id, tenantId: tenant.id } } })).toBeTruthy();
+  });
+});
+
+describe("services", () => {
+  it("hides a service in place and deletes only that row", async () => {
+    const { tenant } = await salonOwner("svc");
+    const service = await prisma.service.create({
+      data: { tenantId: tenant.id, key: "cut", name: "Cut", priceInr: 100, active: true },
+    });
+    const hidden = await patchService(
+      new Request(`http://localhost/api/v1/admin/services/${service.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ active: false }),
+      }),
+      { params: Promise.resolve({ id: service.id }) },
+    );
+    expect(hidden.status).toBe(200);
+    expect((await prisma.service.findUniqueOrThrow({ where: { id: service.id } })).active).toBe(false);
+    const shown = await patchService(
+      new Request(`http://localhost/api/v1/admin/services/${service.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ active: true }),
+      }),
+      { params: Promise.resolve({ id: service.id }) },
+    );
+    expect(shown.status).toBe(200);
+    expect((await prisma.service.findUniqueOrThrow({ where: { id: service.id } })).active).toBe(true);
+    const removed = await deleteService(
+      new Request(`http://localhost/api/v1/admin/services/${service.id}`, { method: "DELETE" }),
+      { params: Promise.resolve({ id: service.id }) },
+    );
+    expect(removed.status).toBe(200);
+    expect(await prisma.service.findUnique({ where: { id: service.id } })).toBeNull();
   });
 });
 

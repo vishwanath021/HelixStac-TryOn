@@ -6,11 +6,11 @@ export const dynamic = "force-dynamic";
 
 export default async function ServicesPage() {
   const { tenant } = await pageTenant();
-  const services = await prisma.service.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: { name: "asc" } });
+  const services = await prisma.service.findMany({ where: { tenantId: tenant.id }, orderBy: { name: "asc" } });
   return (
     <main>
       <h1 className="mb-4 page-title">Services and prices</h1>
-      <ServiceEditor initial={services.map((service) => ({ id: service.id, key: service.key, name: service.name, priceInr: service.priceInr, durationMin: service.durationMin }))} />
+      <ServiceEditor initial={services.map((service) => ({ id: service.id, key: service.key, name: service.name, priceInr: service.priceInr, durationMin: service.durationMin, active: service.active }))} />
     </main>
   );
 }
