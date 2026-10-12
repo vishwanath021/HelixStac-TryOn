@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 96">
+  <g>
+    <rect width="64" height="64" rx="16" fill="#3E304B"/>
+    <path d="M14 23c8 1 11 11 18 13 8 2 12-7 19-5" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round"/>
+    <path d="M14 41c8 1 11 9 18 11 8 2 11-6 17-4" fill="none" stroke="#B6A0C9" stroke-width="6.5" stroke-linecap="round"/>
+  </g>
+  <text x="84" y="36" fill="#3E304B" font-family="Inter, Arial, Helvetica, sans-serif" font-size="40" font-weight="700" letter-spacing="-1.2">lookuvi</text>
+  <text x="86" y="64" fill="#686171" font-family="Inter, Arial, Helvetica, sans-serif" font-size="18" font-weight="500">See your next look.</text>
+</svg>

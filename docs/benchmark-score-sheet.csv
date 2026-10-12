@@ -1,0 +1,7 @@
+run,selfie,style_id,length_change,likeness_1_to_5,style_match_1_to_5,framing_1_to_5,edges_1_to_5,reconstruction_1_to_5,latency_s,usage_input_tokens,usage_output_tokens,output_estimate_inr,usage_inr,accepted,notes
+1,selfie-a,pixie,long-to-short,,,,,,,
+2,selfie-a,long-layers,short-to-long,,,,,,,
+3,selfie-b,blunt-bob,long-to-short,,,,,,,
+4,selfie-b,beach-waves,short-to-long,,,,,,,
+5,selfie-c,soft-bob,long-to-short,,,,,,,
+6,selfie-c,curtain-bangs,fringe,,,,,,,

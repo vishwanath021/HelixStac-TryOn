@@ -1,0 +1,21 @@
+Public-domain and CC0 portraits used only as placement fixtures. No customer or family photos.
+
+Landmarks in the matching .json files are MediaPipe Face Landmarker output
+(@mediapipe/tasks-vision 0.10.21, assets/vision/face_landmarker.task). They are
+normalized x, y, z for the 478 face points.
+
+| File | Subject | Licence | Source |
+|---|---|---|---|
+| malayali-beard.jpg | Malayali man with a beard, outdoors | CC0 | https://commons.wikimedia.org/wiki/File:Outdoors-man-portrait.jpg |
+| glasses-beard.jpg | Older man, glasses and beard | CC0 | https://commons.wikimedia.org/wiki/File:Man_with_a_white_beard_and_glasses,_by_Angelina_Litvin,_2015-10-05_(Unsplash).jpg |
+| glasses-outdoor.jpg | Man with glasses, outdoors | CC0 | https://commons.wikimedia.org/wiki/File:Man_vanguard_glasses_outdoors_(Unsplash).jpg |
+| curly-freckles.jpg | Man with curly hair, close portrait | CC0 | https://commons.wikimedia.org/wiki/File:Curly_hair_and_freckles_man_(Unsplash).jpg |
+| face-portrait.jpg | Close portrait, chin near the frame edge | CC0 | https://commons.wikimedia.org/wiki/File:Face_portrait_(Unsplash).jpg |
+| woman-pink.jpg | Woman, hand beside the cheek | CC0 | https://commons.wikimedia.org/wiki/File:Smiling_woman_pink_shirt.jpg |
+| phone-smile.jpg | Woman indoors, glasses, phone in hand | CC0 | https://commons.wikimedia.org/wiki/File:Smiling_woman_with_a_phone_(Unsplash).jpg |
+| turned-beanie.jpg | Man turned well away from the camera | CC0 | https://commons.wikimedia.org/wiki/File:Beard_and_Beanie_(Unsplash).jpg |
+| bindi-smile.jpg | Woman with a bindi, headscarf, and thin brows | CC0 | https://commons.wikimedia.org/wiki/File:Woman_with_bindi_smiles_(Unsplash).jpg |
+
+Wikimedia Commons file pages record the CC0 1.0 dedication.
+
+bindi-smile.jpg is that photo rotated about 20.4 degrees so the head is level, then fit inside 640×960. The unrotated file leans just past the 20 degree roll limit. Landmarks are Face Landmarker output on the leveled JPEG.

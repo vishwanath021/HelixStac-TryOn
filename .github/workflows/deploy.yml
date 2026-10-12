@@ -1,0 +1,56 @@
+name: Deploy
+
+# Manual only. A push does not deploy. The job stops if SSH secrets are missing.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require deploy secrets
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          if [ -z "$SSH_HOST" ] || [ -z "$SSH_USER" ] || [ -z "$SSH_KEY" ]; then
+            echo "Add SSH_HOST, SSH_USER, and SSH_KEY in GitHub repository secrets. Nothing was deployed."
+            exit 1
+          fi
+      - name: Build and push the image
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          owner=$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          image="ghcr.io/${owner}/lookuvi:${GITHUB_SHA}"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build -t "$image" .
+          docker push "$image"
+      - name: Copy compose files and restart
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          port="${SSH_PORT:-22}"
+          ssh_opts="-i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -p $port"
+          scp_opts="-i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -P $port"
+          dest="$SSH_USER@$SSH_HOST"
+          ssh $ssh_opts "$dest" "mkdir -p /opt/lookuvi/deploy /opt/lookuvi/scripts/deploy"
+          scp $scp_opts docker-compose.prod.yml "$dest:/opt/lookuvi/docker-compose.prod.yml"
+          scp $scp_opts deploy/Caddyfile deploy/backup.cron "$dest:/opt/lookuvi/deploy/"
+          scp $scp_opts scripts/backup-postgres.sh scripts/restore-postgres.sh scripts/backup-object.mjs "$dest:/opt/lookuvi/scripts/"
+          scp $scp_opts scripts/deploy/droplet.sh "$dest:/opt/lookuvi/scripts/deploy/droplet.sh"
+          ssh $ssh_opts "$dest" "chmod +x /opt/lookuvi/scripts/deploy/droplet.sh /opt/lookuvi/scripts/backup-postgres.sh /opt/lookuvi/scripts/restore-postgres.sh && GHCR_USER='$GITHUB_ACTOR' GHCR_TOKEN='$GHCR_TOKEN' LOOKUVI_IMAGE='$IMAGE' /opt/lookuvi/scripts/deploy/droplet.sh"
