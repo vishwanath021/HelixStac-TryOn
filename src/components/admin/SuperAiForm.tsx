@@ -381,7 +381,7 @@ export function SuperAiForm({
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={falEnabled} onChange={(event) => setFalEnabled(event.target.checked)} />
-          Enable fal comparisons
+          Enable fal (guest try-on when the engine is fal, and comparisons)
         </label>
         <div className="flex flex-wrap gap-2">
           <button className="btn secondary" type="button" disabled={busy} onClick={() => void saveFal(false)}>Save fal key</button>
