@@ -7,6 +7,7 @@ import { checkUserTotp } from "@/lib/account-totp";
 import { numberEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { requestClientIp, sharedRateLimit } from "@/lib/ratelimit";
+import { revokeUserSessions, sessionIsCurrent } from "@/lib/session-revocation";
 
 class LoginLimited extends CredentialsSignin {
   code = "rate_limit";
@@ -57,6 +58,7 @@ async function userToSession(email: string) {
     isSuperAdmin: user.isSuperAdmin,
     tenantId: membership?.tenantId,
     role: membership?.role,
+    sessionVersion: user.sessionVersion,
   };
 }
 
@@ -118,32 +120,43 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
+  events: {
+    async signOut(message) {
+      if (!("token" in message) || !message.token) return;
+      const id = String(message.token.id || message.token.sub || "");
+      if (id) await revokeUserSessions(id);
+    },
+  },
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        const extra = user as typeof user & { isSuperAdmin?: boolean; tenantId?: string; role?: string };
+        const extra = user as typeof user & { isSuperAdmin?: boolean; tenantId?: string; role?: string; sessionVersion?: number };
         token.id = user.id;
         token.isSuperAdmin = extra.isSuperAdmin ?? false;
         token.tenantId = extra.tenantId;
         token.role = extra.role;
+        token.sessionVersion = extra.sessionVersion ?? 0;
       }
       if (token.id) {
         try {
           const fresh = await prisma.user.findUnique({ where: { id: String(token.id) } });
-          if (!fresh) {
+          if (!fresh || !sessionIsCurrent(token.sessionVersion, fresh.sessionVersion)) {
+            token.id = "";
+            token.sub = "";
             token.isSuperAdmin = false;
             token.role = undefined;
             token.tenantId = undefined;
-          } else {
-            const preferred = typeof token.tenantId === "string" ? token.tenantId : "";
-            const membership = preferred
-              ? await prisma.membership.findUnique({ where: { userId_tenantId: { userId: fresh.id, tenantId: preferred } } })
-              : await prisma.membership.findFirst({ where: { userId: fresh.id }, orderBy: { role: "asc" } });
-            token.isSuperAdmin = fresh.isSuperAdmin;
-            token.role = membership?.role;
-            token.tenantId = membership?.tenantId;
-            token.email = fresh.email;
+            return token;
           }
+          const preferred = typeof token.tenantId === "string" ? token.tenantId : "";
+          const membership = preferred
+            ? await prisma.membership.findUnique({ where: { userId_tenantId: { userId: fresh.id, tenantId: preferred } } })
+            : await prisma.membership.findFirst({ where: { userId: fresh.id }, orderBy: { role: "asc" } });
+          token.sessionVersion = fresh.sessionVersion;
+          token.isSuperAdmin = fresh.isSuperAdmin;
+          token.role = membership?.role;
+          token.tenantId = membership?.tenantId;
+          token.email = fresh.email;
         } catch {
           // Keep the last claims when the database is briefly unreachable.
         }

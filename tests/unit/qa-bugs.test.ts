@@ -1,9 +1,11 @@
-import { compare } from "bcryptjs";
+import { compare, hash } from "bcryptjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { POST as changePassword } from "@/app/api/v1/account/password/route";
 import { POST as saveDomain } from "@/app/api/v1/admin/domain/route";
 import { POST as inviteStaff } from "@/app/api/v1/admin/team/route";
 import { isPlatformHost } from "@/lib/host";
 import { prisma } from "@/lib/prisma";
+import { sessionIsCurrent } from "@/lib/session-revocation";
 
 vi.mock("@/auth", () => ({
   auth: vi.fn(),
@@ -192,5 +194,37 @@ describe("custom domains", () => {
       if (previousRoot === undefined) delete process.env.ROOT_DOMAIN;
       else process.env.ROOT_DOMAIN = previousRoot;
     }
+  });
+});
+
+describe("session revocation", () => {
+  it("treats a missing token version as 0 and rejects a bumped version", () => {
+    expect(sessionIsCurrent(undefined, 0)).toBe(true);
+    expect(sessionIsCurrent(0, 0)).toBe(true);
+    expect(sessionIsCurrent(0, 1)).toBe(false);
+    expect(sessionIsCurrent(1, 1)).toBe(true);
+  });
+
+  it("bumps sessionVersion when the password changes", async () => {
+    const password = "CorrectHorse#1";
+    const user = await prisma.user.create({
+      data: { email: `pw-${tag()}@example.test`, name: "Password", passwordHash: await hash(password, 12), sessionVersion: 0 },
+    });
+    createdUsers.push(user.id);
+    vi.mocked(auth).mockResolvedValue({
+      user: { id: user.id, email: user.email, isSuperAdmin: false },
+      expires: "2099-01-01T00:00:00.000Z",
+    });
+    const res = await changePassword(
+      new Request("http://localhost/api/v1/account/password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ currentPassword: password, newPassword: "CorrectHorse#2", confirmPassword: "CorrectHorse#2" }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const fresh = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(fresh.sessionVersion).toBe(1);
+    expect(await compare("CorrectHorse#2", fresh.passwordHash)).toBe(true);
   });
 });

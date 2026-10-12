@@ -4,6 +4,7 @@ import { hash } from "bcryptjs";
 import { z } from "zod";
 import { tooMany } from "@/lib/http/guard";
 import { prisma } from "@/lib/prisma";
+import { revokeUserSessions } from "@/lib/session-revocation";
 
 const DEMO_PASSWORDS = new Set(["DemoSalon#2026", "DemoStaff#2026", "SuperAdmin#2026"]);
 
@@ -26,7 +27,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "TOKEN", message: "That reset link has expired." }, { status: 400 });
   }
   const passwordHash = await hash(parsed.data.password, 12);
-  await prisma.user.update({ where: { email: row.email }, data: { passwordHash } });
+  const user = await prisma.user.update({ where: { email: row.email }, data: { passwordHash } });
+  await revokeUserSessions(user.id);
   await prisma.passwordReset.update({ where: { id: row.id }, data: { used: true } });
   return NextResponse.json({ ok: true, message: "Password updated. Sign in with the new password." });
 }
