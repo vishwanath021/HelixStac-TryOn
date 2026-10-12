@@ -6,6 +6,7 @@ import { claimGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/
 import { BROWS_NEED_OPENAI, browsRoute, demoGuestPreview, engineForGuestTool, guestEngineReady, loadGuestReference, readGuestEngine, runGuestHairstyleIfReady, runGuestLookIfReady } from "@/lib/ai/guest-hairstyle";
 import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { auth } from "@/auth";
+import { resolveFalKey } from "@/lib/ai/credentials";
 import { consumePreviewRateShared, guestLimitMessage, toolEnabled, type PreviewTool, type ToolId } from "@/lib/tools";
 import { resolveLook } from "@/lib/guidance";
 import { classifySkinPhoto } from "@/lib/hand-photo";
@@ -255,6 +256,12 @@ export async function POST(req: Request) {
     if (styled) return withPose(styled);
   }
 
+  // Say why a guest got the unbilled sample instead of a provider call.
+  const falState = effective === "fal" ? await resolveFalKey() : null;
+  console.warn(
+    `[tryon] sample preview for ${tenant.slug}/${tool}: guest engine "${effective}" is not ready` +
+      (falState && !falState.ok ? ` (fal key ${falState.reason === "off" ? "saved but not enabled on /super/ai" : "missing"})` : ""),
+  );
   return withPose(await demoGuestPreview({
     jpeg,
     styleId,
