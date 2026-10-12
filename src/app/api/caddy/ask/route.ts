@@ -24,8 +24,8 @@ export async function GET(req: Request) {
   if (decision.kind === "no") return new NextResponse(null, { status: 404 });
   if (decision.kind === "apex") return new NextResponse(null, { status: 200 });
   if (decision.kind === "salon" && decision.slug) {
-    const tenant = await prisma.tenant.findUnique({ where: { slug: decision.slug }, select: { status: true } });
-    if (!tenant || tenant.status === "SUSPENDED") return new NextResponse(null, { status: 404 });
+    const tenant = await prisma.tenant.findUnique({ where: { slug: decision.slug }, select: { id: true } });
+    if (!tenant) return new NextResponse(null, { status: 404 });
     return new NextResponse(null, { status: 200 });
   }
   const host = domain.trim().toLowerCase().split(":")[0] || "";

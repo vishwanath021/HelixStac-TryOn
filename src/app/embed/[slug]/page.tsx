@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { SalonPaused } from "@/components/guest/SalonPaused";
 import { TryOnApp } from "@/components/tryon/TryOnApp";
 import { loadTenantBySlug, toSalonConfig } from "@/lib/salon";
 
@@ -8,5 +9,6 @@ export default async function EmbedPage({ params }: { params: Promise<{ slug: st
   const { slug } = await params;
   const tenant = await loadTenantBySlug(slug);
   if (!tenant) notFound();
+  if (tenant.status === "SUSPENDED") return <SalonPaused name={tenant.name} />;
   return <TryOnApp config={toSalonConfig(tenant)} embed />;
 }

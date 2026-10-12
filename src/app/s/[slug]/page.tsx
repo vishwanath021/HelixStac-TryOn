@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
+import { SalonPaused } from "@/components/guest/SalonPaused";
 import { TryOnApp } from "@/components/tryon/TryOnApp";
 import { usingDemoProvider } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
@@ -33,6 +34,7 @@ export default async function SalonPage({
   const host = headerList.get("x-tenant-host") || headerList.get("host") || "";
   const tenant = slug === "by-host" ? await loadTenantByHost(host.split(":")[0] || "") : await loadTenantBySlug(slug);
   if (!tenant) notFound();
+  if (tenant.status === "SUSPENDED") return <SalonPaused name={tenant.name} />;
   const config = toSalonConfig(tenant);
   const salonMode = verifySalonToken(query.salon || "", tenant.id, tenant.salonNonce);
   const session = await auth();

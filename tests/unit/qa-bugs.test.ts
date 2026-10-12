@@ -2,7 +2,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { compare, hash } from "bcryptjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { GET as caddyAsk } from "@/app/api/caddy/ask/route";
 import PrivacyPage from "@/app/privacy/page";
+import { SalonPaused } from "@/components/guest/SalonPaused";
 import { POST as changePassword } from "@/app/api/v1/account/password/route";
 import { POST as saveDomain } from "@/app/api/v1/admin/domain/route";
 import { GET as exportLeads } from "@/app/api/v1/admin/leads/export/route";
@@ -258,6 +260,32 @@ describe("leads csv", () => {
     expect(body).toContain("\"'=HYPERLINK(\"\"http://x\"\")\"");
     expect(body).toContain("\"'+9198\"");
     await prisma.lead.deleteMany({ where: { tenantId: tenant.id } });
+  });
+});
+
+describe("suspended salon", () => {
+  it("allows a certificate for an existing suspended salon and shows a paused page", async () => {
+    const html = renderToStaticMarkup(createElement(SalonPaused, { name: "QA Salon" }));
+    expect(html).toContain("This salon is paused");
+    expect(html).toContain("QA Salon");
+    const previousApp = process.env.APP_DOMAIN;
+    const previousRoot = process.env.ROOT_DOMAIN;
+    process.env.APP_DOMAIN = "lookuvi.example.test";
+    process.env.ROOT_DOMAIN = "example.test";
+    try {
+      const slug = `paused-${tag()}`;
+      const tenant = await prisma.tenant.create({ data: { slug, name: "Paused Salon", status: "SUSPENDED" } });
+      createdTenants.push(tenant.id);
+      const paused = await caddyAsk(new Request(`http://localhost/api/caddy/ask?domain=${slug}.try.example.test`));
+      expect(paused.status).toBe(200);
+      const missing = await caddyAsk(new Request(`http://localhost/api/caddy/ask?domain=missing-${tag()}.try.example.test`));
+      expect(missing.status).toBe(404);
+    } finally {
+      if (previousApp === undefined) delete process.env.APP_DOMAIN;
+      else process.env.APP_DOMAIN = previousApp;
+      if (previousRoot === undefined) delete process.env.ROOT_DOMAIN;
+      else process.env.ROOT_DOMAIN = previousRoot;
+    }
   });
 });
 
