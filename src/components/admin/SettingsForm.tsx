@@ -98,7 +98,8 @@ export function SettingsForm({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: staffEmail, name: staffName, password: staffPassword }),
     });
-    setMessage(res.ok ? "Staff login created." : "Could not add staff");
+    const data = await res.json().catch(() => ({}));
+    setMessage(res.ok ? "Staff added to this salon." : data.message || "Could not add staff");
   }
 
   return (
@@ -172,7 +173,7 @@ export function SettingsForm({
         <h2 className="font-serif text-2xl">Add staff</h2>
         <input className="field" type="email" placeholder="Email" value={staffEmail} onChange={(event) => setStaffEmail(event.target.value)} required aria-label="Staff email" />
         <input className="field" placeholder="Name" value={staffName} onChange={(event) => setStaffName(event.target.value)} required aria-label="Staff name" />
-        <input className="field" type="password" placeholder="Password" value={staffPassword} onChange={(event) => setStaffPassword(event.target.value)} required minLength={8} aria-label="Staff password" />
+        <input className="field" type="password" placeholder="Password, at least 12 characters" value={staffPassword} onChange={(event) => setStaffPassword(event.target.value)} required minLength={12} aria-label="Staff password" />
         <button className="btn" type="submit">Create staff login</button>
       </form>
       {message && <p className="text-sm" role="status">{message}</p>}
