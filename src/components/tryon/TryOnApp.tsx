@@ -894,7 +894,7 @@ export function TryOnApp({
                 <button className="h-[4.5rem] w-[4.5rem] rounded-full border-[5px] border-white/50 bg-white disabled:opacity-50" type="button" aria-label={t(lang, "takePhoto")} disabled={!cameraReady} onClick={() => void shutter()} />
                 <div className="flex flex-wrap justify-center gap-2">
                   <button
-                    className="btn on-photo px-4 py-2 text-sm"
+                    className="btn on-photo"
                     type="button"
                     onClick={() => {
                       stopCamera();
@@ -903,13 +903,13 @@ export function TryOnApp({
                   >
                     {t(lang, "uploadInstead")}
                   </button>
-                  <button className="btn on-photo px-4 py-2 text-sm" type="button" onClick={() => stopCamera()}>{t(lang, "back")}</button>
+                  <button className="btn on-photo" type="button" onClick={() => stopCamera()}>{t(lang, "back")}</button>
                 </div>
               </div>
             )}
             {activeShot && !cameraOn && (
               <div className="absolute inset-x-0 bottom-4 z-10 flex justify-center gap-2">
-                <button className="btn on-photo px-4 py-2 text-sm" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "retake")}</button>
+                <button className="btn on-photo" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "retake")}</button>
               </div>
             )}
             {busy && (

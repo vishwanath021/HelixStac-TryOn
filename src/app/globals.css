@@ -165,20 +165,27 @@ textarea { min-height: 48px; }
   border-bottom-color: var(--brand);
 }
 .chip {
-  min-height: 44px;
-  border-radius: 999px;
+  /* Same shape, type and size as .btn / .btn.secondary (Take selfie / Upload). */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 48px;
+  border-radius: 10px;
   border: 1px solid var(--line);
   background: #fff;
-  color: var(--ink);
-  padding: 0.4rem 0.9rem;
-  font-size: 14px;
+  color: var(--brand);
+  padding: 0.7rem 1rem;
+  font-size: 15px;
   font-weight: 600;
+  letter-spacing: 0;
   cursor: pointer;
 }
+.chip:hover:not([aria-pressed="true"]) { background: var(--selected); color: var(--aubergine); }
 .chip[aria-pressed="true"] {
-  background: var(--selected);
-  color: var(--aubergine);
-  border-color: var(--brand);
+  background: var(--brand-btn, var(--brand));
+  color: var(--on-brand, #ffffff);
+  border-color: transparent;
 }
 .nav-side {
   background: var(--aubergine);
