@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { tooMany } from "@/lib/http/guard";
 import { passwordProblem } from "@/lib/passwords";
 import { prisma } from "@/lib/prisma";
+import { revokeUserSessions } from "@/lib/session-revocation";
 
 const bodySchema = z.object({
   currentPassword: z.string().min(1).max(200),
@@ -30,6 +31,7 @@ export async function POST(req: Request) {
   if (problem) return NextResponse.json({ error: "WEAK", message: problem }, { status: 400 });
   if (newPassword === currentPassword) return NextResponse.json({ error: "SAME", message: "Choose a password different from the current one." }, { status: 400 });
   await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await hash(newPassword, 12) } });
+  await revokeUserSessions(user.id);
   await prisma.auditLog.create({ data: { actorId: user.id, action: "PASSWORD_CHANGE", target: user.id, meta: "{}" } });
   return NextResponse.json({ ok: true, message: "Password changed. Use the new password next time you sign in." });
 }

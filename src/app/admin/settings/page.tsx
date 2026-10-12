@@ -1,5 +1,6 @@
 import { SettingsForm } from "@/components/admin/SettingsForm";
 import { planById } from "@/data/plans";
+import { prisma } from "@/lib/prisma";
 import { pageTenant } from "@/lib/session";
 import { enabledTools } from "@/lib/tools";
 
@@ -10,10 +11,17 @@ export default async function SettingsPage() {
   if (membership.role !== "OWNER") {
     return <main><h1 className="page-title">Settings</h1><p className="mt-2">Staff can edit the catalogue and leads. Brand and billing stay with the owner.</p></main>;
   }
+  const members = await prisma.membership.findMany({
+    where: { tenantId: tenant.id },
+    include: { user: { select: { id: true, name: true, email: true } } },
+    orderBy: [{ role: "asc" }, { id: "asc" }],
+  });
   return (
     <main>
       <h1 className="mb-4 page-title">Settings</h1>
       <SettingsForm
+        selfId={membership.userId}
+        members={members.map((row) => ({ userId: row.user.id, name: row.user.name, email: row.user.email, role: row.role }))}
         canRemoveBranding={planById(tenant.plan).removeBranding}
         enabledTools={[...enabledTools()]}
         initial={{

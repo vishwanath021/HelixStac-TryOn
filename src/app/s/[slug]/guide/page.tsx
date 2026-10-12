@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
+import { SalonPaused } from "@/components/guest/SalonPaused";
 import { GuideScreen } from "@/components/guide/GuideScreen";
 import { loadTenantByHost, loadTenantBySlug, toSalonConfig } from "@/lib/salon";
 
@@ -11,5 +12,6 @@ export default async function GuidePage({ params }: { params: Promise<{ slug: st
   const host = headerList.get("x-tenant-host") || headerList.get("host") || "";
   const tenant = slug === "by-host" ? await loadTenantByHost(host.split(":")[0] || "") : await loadTenantBySlug(slug);
   if (!tenant) notFound();
+  if (tenant.status === "SUSPENDED") return <SalonPaused name={tenant.name} />;
   return <GuideScreen config={toSalonConfig(tenant)} />;
 }

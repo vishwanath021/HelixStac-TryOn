@@ -27,3 +27,22 @@ export function parseHost(hostHeader: string, rootDomain = "localhost", appDomai
 export function isReservedSlug(slug: string) {
   return RESERVED.has(slug);
 }
+
+function platformHostname(value: string | undefined) {
+  const raw = (value || "").trim().toLowerCase();
+  if (!raw) return "";
+  try {
+    if (raw.includes("://")) return new URL(raw).hostname;
+  } catch {
+    return "";
+  }
+  return raw.split("/")[0]?.split(":")[0] || "";
+}
+
+/** APP_DOMAIN, ROOT_DOMAIN, and any host under them. */
+export function isPlatformHost(host: string, env: NodeJS.ProcessEnv = process.env) {
+  const name = host.trim().toLowerCase().replace(/\.$/, "").split(":")[0] || "";
+  if (!name) return false;
+  const roots = [platformHostname(env.APP_DOMAIN), platformHostname(env.ROOT_DOMAIN)].filter(Boolean);
+  return roots.some((root) => name === root || name.endsWith(`.${root}`));
+}

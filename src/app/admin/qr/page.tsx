@@ -3,6 +3,7 @@ import { SalonModeCard } from "@/components/admin/SalonModeCard";
 import { planById } from "@/data/plans";
 import { appBaseUrl } from "@/lib/env";
 import { signSalonToken } from "@/lib/preview-access";
+import { salonGuestOrigin } from "@/lib/public-url";
 import { pageTenant } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -11,8 +12,9 @@ export default async function QrAdminPage() {
   const { tenant, membership } = await pageTenant();
   const plan = planById(tenant.plan);
   const base = appBaseUrl();
-  const pageUrl = `${base}/s/${tenant.slug}`;
-  const salonUrl = tenant.salonNonce ? `${pageUrl}?salon=${signSalonToken(tenant.id, tenant.salonNonce)}` : "";
+  const origin = await salonGuestOrigin(tenant.id, tenant.slug);
+  const pageUrl = `${origin}/?src=qr`;
+  const salonUrl = tenant.salonNonce ? `${origin}/?salon=${signSalonToken(tenant.id, tenant.salonNonce)}` : "";
   const snippet = `<script src="${base}/embed.js" data-salon="${tenant.slug}" data-lang="${tenant.defaultLang}" defer></script>`;
   return (
     <main>

@@ -2,9 +2,10 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { SalonPaused } from "@/components/guest/SalonPaused";
 import { PrintButton } from "@/components/PrintButton";
 import { brandStyle } from "@/lib/contrast";
-import { appBaseUrl } from "@/lib/env";
+import { salonGuestOrigin } from "@/lib/public-url";
 import { loadTenantBySlug } from "@/lib/salon";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,8 @@ export default async function QrStandee({ params }: { params: Promise<{ slug: st
   const { slug } = await params;
   const tenant = await loadTenantBySlug(slug);
   if (!tenant) notFound();
-  const target = `${appBaseUrl()}/s/${tenant.slug}?src=qr`;
+  if (tenant.status === "SUSPENDED") return <SalonPaused name={tenant.name} />;
+  const target = `${await salonGuestOrigin(tenant.id, tenant.slug)}/?src=qr`;
   return (
     <main className="mx-auto max-w-md px-4 py-8 print:max-w-none" style={brandStyle(tenant.primaryColor, tenant.accentColor) as CSSProperties}>
       <article className="card p-8 text-center print:border-0 print:shadow-none">
