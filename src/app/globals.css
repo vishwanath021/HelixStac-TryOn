@@ -338,6 +338,14 @@ textarea { min-height: 48px; }
   }
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .super-sheet { animation: super-sheet-in 160ms ease-out; }
+}
+@keyframes super-sheet-in {
+  from { transform: translateX(16px); }
+  to { transform: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }

@@ -283,7 +283,8 @@ test("a renamed salon shows on the guest header and title", async ({ page }) => 
     await page.getByLabel("Password").fill("SuperAdmin#2026");
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("heading", { name: "Lookuvi" })).toBeVisible();
-    await page.goto("/super");
+    await page.goto("/super/salons");
+    await page.getByRole("row", { name: /demo-salon/ }).click();
     const superName = page.getByLabel("Salon name for demo-salon");
     await superName.fill("Studio Indiranagar");
     await superName.locator("xpath=ancestor::form").getByRole("button", { name: "Save name" }).click();
@@ -475,7 +476,7 @@ test("super admin sees assumed COGS", async ({ page }) => {
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByText(/assumption/i)).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/09-super.png", fullPage: true });
-  await page.goto("/super/ai");
+  await page.goto("/super/costs");
   await expect(page.getByRole("heading", { name: "Image costs" })).toBeVisible();
   await expect(page.getByText("Estimate", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Actual", { exact: true }).first()).toBeVisible();
@@ -490,6 +491,8 @@ test("super admin sees assumed COGS", async ({ page }) => {
   await expect(sync).toBeVisible();
   await sync.click();
   await expect(page.getByText(/ADMIN-scoped key/)).toBeVisible();
+  await page.goto("/super/ai");
+  await page.getByText("Advanced (internal)").click();
   await page.getByRole("button", { name: "Calibration run" }).click();
   await expect(page.getByText(/Offline calibration/i)).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("img", { name: /mask/i })).toHaveCount(5);

@@ -47,7 +47,7 @@ export default async function BenchmarkReviewPage({ params }: { params: Promise<
         Real family photos are personal data. This run sent them only to OpenAI. The files stay on this server under var/benchmarks
         and are removed after {retentionHours} hours, or when you press Delete now.
       </p>
-      <p className="mt-3 text-sm"><Link className="underline" href="/super/ai">Back to AI settings</Link></p>
+      <p className="mt-3 text-sm"><Link className="underline" href="/super/ai">Back to AI</Link></p>
       {run.clothingWarning === "clothing_changed" && (
         <p className="mt-3 rounded-xl border border-line bg-white p-3 text-sm leading-6">
           Warning: clothing_changed. The neckline or shoulder band moved relative to the selfie. This is a finding, not an accepted result.

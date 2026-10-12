@@ -1,0 +1,340 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { PLANS, type PlanId } from "@/data/plans";
+import type { SalonRecord } from "@/lib/super/directory";
+import { Badge, statusTone } from "@/components/ui/badge";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Sheet } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "@/components/ui/toaster";
+
+function when(value: string | null) {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" });
+}
+
+export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
+  const [rows, setRows] = useState(initial);
+  const [query, setQuery] = useState("");
+  const [plan, setPlan] = useState("");
+  const [status, setStatus] = useState("");
+  const [selected, setSelected] = useState<SalonRecord | null>(null);
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [creditOpen, setCreditOpen] = useState(false);
+  const [suspendOpen, setSuspendOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [ownerPassword, setOwnerPassword] = useState("");
+  const [nextPlan, setNextPlan] = useState<PlanId>("STARTER");
+  const [delta, setDelta] = useState("50");
+  const [reason, setReason] = useState("");
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (plan && row.plan !== plan) return false;
+      if (status && row.status !== status) return false;
+      if (!needle) return true;
+      return row.name.toLowerCase().includes(needle) || row.slug.toLowerCase().includes(needle);
+    });
+  }, [rows, query, plan, status]);
+
+  function say(text: string, ok = true) {
+    setNotice(text);
+    toast(text, ok);
+  }
+
+  function openSalon(row: SalonRecord) {
+    setSelected(row);
+  }
+
+  function openPlan(row: SalonRecord) {
+    setSelected(row);
+    setNextPlan(row.plan === "LITE" || row.plan === "STARTER" || row.plan === "PRO" ? row.plan : "STARTER");
+    setPlanOpen(true);
+  }
+
+  function openCredits(row: SalonRecord) {
+    setSelected(row);
+    setDelta("50");
+    setReason("");
+    setCreditOpen(true);
+  }
+
+  function openSuspend(row: SalonRecord) {
+    setSelected(row);
+    setSuspendOpen(true);
+  }
+
+  async function createSalon(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    const res = await fetch("/api/v1/super/tenants", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, slug, ownerEmail: ownerEmail || undefined, ownerPassword: ownerPassword || undefined }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      say(data.message || "Could not create that salon.", false);
+      return;
+    }
+    say(`Created ${data.slug}.`);
+    window.location.reload();
+  }
+
+  async function update(id: string, body: Record<string, unknown>) {
+    setBusy(true);
+    const res = await fetch(`/api/v1/super/tenants/${id}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      say(data.message || "Could not update that salon.", false);
+      return false;
+    }
+    const text = data.plan ? `Plan set to ${data.plan}. Included tries added.` : "Updated.";
+    say(text);
+    if (typeof body.name === "string" && !body.plan && body.creditDelta === undefined && !body.status) {
+      const nextName = body.name;
+      setRows((current) => current.map((row) => (row.id === id ? { ...row, name: nextName } : row)));
+      setSelected((row) => (row && row.id === id ? { ...row, name: nextName } : row));
+      return true;
+    }
+    window.location.reload();
+    return true;
+  }
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="page-title">Salons</h1>
+          <p className="mt-2 text-sm text-muted">Search, then open a salon to edit it.</p>
+        </div>
+        <button className="btn" type="button" onClick={() => setCreateOpen(true)}>New salon</button>
+      </div>
+      {notice ? <p className="mt-3 text-sm" role="status">{notice}</p> : null}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <input className="field max-w-xs" aria-label="Search salons" placeholder="Search name or slug" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <select className="field max-w-[12rem]" aria-label="Plan" value={plan} onChange={(event) => setPlan(event.target.value)}>
+          <option value="">All plans</option>
+          {Object.values(PLANS).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+        <select className="field max-w-[12rem]" aria-label="Status" value={status} onChange={(event) => setStatus(event.target.value)}>
+          <option value="">All statuses</option>
+          <option value="TRIAL">Trial</option>
+          <option value="ACTIVE">Active</option>
+          <option value="SUSPENDED">Suspended</option>
+        </select>
+      </div>
+      {filtered.length === 0 ? (
+        <p className="card mt-4 p-4 text-sm text-muted">{rows.length === 0 ? "No salons yet." : "No salons match."}</p>
+      ) : (
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="text-xs uppercase text-muted">
+                <th className="py-2 pr-3">Name</th>
+                <th className="py-2 pr-3">Slug</th>
+                <th className="py-2 pr-3">Plan</th>
+                <th className="py-2 pr-3">Status</th>
+                <th className="py-2 pr-3">Credits</th>
+                <th className="py-2 pr-3">Previews this month</th>
+                <th className="py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((row) => (
+                <tr key={row.id} className="cursor-pointer border-t border-line" onClick={() => openSalon(row)}>
+                  <td className="py-3 pr-3 font-medium">{row.name}</td>
+                  <td className="py-3 pr-3">
+                    <a className="underline" href={`/s/${row.slug}`} onClick={(event) => event.stopPropagation()}>{row.slug}</a>
+                  </td>
+                  <td className="py-3 pr-3">{row.planName}</td>
+                  <td className="py-3 pr-3"><Badge tone={statusTone(row.status)}>{row.status}</Badge></td>
+                  <td className="py-3 pr-3">{row.credits}</td>
+                  <td className="py-3 pr-3">{row.previewsThisMonth}</td>
+                  <td className="py-3 text-right" onClick={(event) => event.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="btn secondary" type="button" aria-label={`Actions for ${row.slug}`}>Actions</button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem onSelect={() => openSalon(row)}>Open</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => openPlan(row)}>Change plan</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => openCredits(row)}>Adjust credits</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => openSuspend(row)}>{row.status === "SUSPENDED" ? "Resume" : "Suspend"}</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Sheet open={Boolean(selected) && !planOpen && !creditOpen && !suspendOpen} onOpenChange={(open) => { if (!open) setSelected(null); }} title={selected?.name || "Salon"} description={selected ? selected.slug : undefined}>
+        {selected ? (
+          <Tabs defaultValue="profile">
+            <TabsList>
+              <TabsTrigger value="profile">Profile</TabsTrigger>
+              <TabsTrigger value="plan">Plan & credits</TabsTrigger>
+              <TabsTrigger value="usage">Usage</TabsTrigger>
+            </TabsList>
+            <TabsContent value="profile">
+              <form
+                className="grid gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const field = new FormData(event.currentTarget).get("name");
+                  void update(selected.id, { name: String(field || "") });
+                }}
+              >
+                <label className="text-sm">Name
+                  <input className="field mt-1" name="name" aria-label={`Salon name for ${selected.slug}`} defaultValue={selected.name} required minLength={2} />
+                </label>
+                <button className="btn w-fit" type="submit" disabled={busy}>{busy ? "Saving…" : "Save name"}</button>
+              </form>
+              <dl className="mt-4 grid gap-2 text-sm">
+                <div><dt className="text-muted">Slug</dt><dd><a className="underline" href={`/s/${selected.slug}`}>{selected.slug}</a></dd></div>
+                <div><dt className="text-muted">Owner</dt><dd>{selected.ownerName || "—"}{selected.ownerEmail ? ` · ${selected.ownerEmail}` : ""}</dd></div>
+                <div><dt className="text-muted">Domain</dt><dd>{selected.host || "None verified"}</dd></div>
+                <div><dt className="text-muted">Created</dt><dd>{when(selected.createdAt)}</dd></div>
+                <div><dt className="text-muted">Trial ends</dt><dd>{when(selected.trialEndsAt)}</dd></div>
+              </dl>
+            </TabsContent>
+            <TabsContent value="plan">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone="neutral">{selected.planName}</Badge>
+                <Badge tone={statusTone(selected.status)}>{selected.status}</Badge>
+              </div>
+              <p className="mt-3 text-sm">{selected.credits} credits</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button className="btn secondary" type="button" onClick={() => openPlan(selected)}>Change plan</button>
+                <button className="btn secondary" type="button" onClick={() => openCredits(selected)}>Adjust credits</button>
+                <button className="btn secondary" type="button" onClick={() => openSuspend(selected)}>{selected.status === "SUSPENDED" ? "Resume" : "Suspend"}</button>
+              </div>
+            </TabsContent>
+            <TabsContent value="usage">
+              <dl className="grid gap-2 text-sm">
+                <div><dt className="text-muted">Previews this month</dt><dd className="font-medium">{selected.previewsThisMonth}</dd></div>
+                <div><dt className="text-muted">All previews</dt><dd className="font-medium">{selected.tryOns}</dd></div>
+                <div><dt className="text-muted">Leads</dt><dd className="font-medium">{selected.leads}</dd></div>
+              </dl>
+            </TabsContent>
+          </Tabs>
+        ) : null}
+      </Sheet>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent title="New salon" description="Starts a trial with the Starter credit grant.">
+          <form className="grid gap-3" onSubmit={createSalon}>
+            <label className="text-sm">Name
+              <input className="field mt-1" value={name} onChange={(event) => setName(event.target.value)} required minLength={2} />
+            </label>
+            <label className="text-sm">Slug
+              <input className="field mt-1" value={slug} onChange={(event) => setSlug(event.target.value)} required minLength={2} pattern="[a-z0-9]+(-[a-z0-9]+)*" />
+            </label>
+            <label className="text-sm">Owner email
+              <input className="field mt-1" type="email" value={ownerEmail} onChange={(event) => setOwnerEmail(event.target.value)} />
+            </label>
+            <label className="text-sm">Owner password
+              <input className="field mt-1" type="password" value={ownerPassword} onChange={(event) => setOwnerPassword(event.target.value)} minLength={12} />
+            </label>
+            <button className="btn" type="submit" disabled={busy}>{busy ? "Saving…" : "Create salon"}</button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={planOpen} onOpenChange={setPlanOpen}>
+        <DialogContent title="Change plan" description="Included tries are added. MRR counts only while the salon is active.">
+          <form
+            className="grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!selected) return;
+              void update(selected.id, { plan: nextPlan });
+            }}
+          >
+            <label className="text-sm">Plan
+              <select className="field mt-1" aria-label="Plan" value={nextPlan} onChange={(event) => setNextPlan(event.target.value as PlanId)}>
+                {Object.values(PLANS).map((item) => (
+                  <option key={item.id} value={item.id}>{item.name} · {item.credits} tries</option>
+                ))}
+              </select>
+            </label>
+            <button className="btn" type="submit" disabled={busy}>{busy ? "Saving…" : "Set plan"}</button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={creditOpen} onOpenChange={setCreditOpen}>
+        <DialogContent title="Adjust credits" description="A reason is stored on the audit event.">
+          <form
+            className="grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!selected || !reason.trim()) return;
+              void update(selected.id, { creditDelta: Number(delta), note: reason.trim() });
+            }}
+          >
+            <label className="text-sm">Amount
+              <input className="field mt-1" aria-label="Credit amount" type="number" value={delta} onChange={(event) => setDelta(event.target.value)} required />
+            </label>
+            <label className="text-sm">Reason
+              <input className="field mt-1" aria-label="Credit reason" value={reason} onChange={(event) => setReason(event.target.value)} required maxLength={200} />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn" type="submit" disabled={busy || !reason.trim()}>{busy ? "Saving…" : "Adjust credits"}</button>
+              <button
+                className="btn secondary"
+                type="button"
+                disabled={busy || !selected}
+                onClick={() => {
+                  if (!selected) return;
+                  void update(selected.id, { creditDelta: 50, note: "goodwill" });
+                }}
+              >
+                +50 goodwill
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={suspendOpen} onOpenChange={setSuspendOpen}>
+        <DialogContent
+          title={selected?.status === "SUSPENDED" ? "Resume salon" : "Suspend salon"}
+          description={selected?.status === "SUSPENDED" ? "The salon home opens again." : "Guests see a paused page until you resume."}
+        >
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn"
+              type="button"
+              disabled={busy || !selected}
+              onClick={() => {
+                if (!selected) return;
+                void update(selected.id, { status: selected.status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED" });
+              }}
+            >
+              {busy ? "Saving…" : selected?.status === "SUSPENDED" ? "Resume" : "Suspend"}
+            </button>
+            <button className="btn secondary" type="button" onClick={() => setSuspendOpen(false)}>Cancel</button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

@@ -126,7 +126,7 @@ test("guest, owner, and super layouts fit the device", async ({ page }, testInfo
         createdAt: new Date(Date.UTC(2026, 9, 2, 0, index)),
       })),
     });
-    await go(page, "/super/ai");
+    await go(page, "/super/costs");
     await expect(page.getByRole("heading", { name: "Image costs" })).toBeVisible();
     await expect(page.locator("#image-costs")).toHaveAttribute("data-ready", "yes");
     await expect(page.getByText("21 images")).toBeVisible();
