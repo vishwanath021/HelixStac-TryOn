@@ -1,7 +1,21 @@
 /** Close-up card photos at /brows/cards/<id>.webp.
  *  `npm run brows:cards` fills this list. An id missing here keeps the line diagram.
  */
-export const BROW_CARD_PHOTO_IDS: readonly string[] = [];
+export const BROW_CARD_PHOTO_IDS: readonly string[] = [
+  "soft-arch",
+  "high-arch",
+  "straight-brow",
+  "rounded",
+  "s-shape",
+  "feathered",
+  "bold-natural",
+  "angled",
+  "flat-thick",
+  "natural-groomed",
+  "thin-defined",
+  "tapered",
+  "cleanup",
+];
 
 /** Card-photo notes only. Guest generation uses the catalogue prompt.
  *  Each line exaggerates the feature that should still read at thumbnail size.

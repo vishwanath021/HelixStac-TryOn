@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { browCardPhoto } from "@/data/brow-cards";
 import { browShapeById } from "@/data/brow-shapes";
 
@@ -30,15 +31,23 @@ function BrowDiagram({ id, name, badge }: { id: string; name: string; badge: boo
 }
 
 export function BrowCard({ id, name }: { id: string; name: string }) {
+  const [missing, setMissing] = useState(false);
   const shape = browShapeById(id);
+  const photo = browCardPhoto(id);
   if (!shape) {
     return <div className="grid aspect-square place-items-center bg-[#E6C3A4] px-2 text-center text-sm" />;
   }
-  const photo = browCardPhoto(id);
-  if (!photo) return <BrowDiagram id={id} name={name} badge={false} />;
+  if (!photo || missing) return <BrowDiagram id={id} name={name} badge={false} />;
   return (
-    <span className="relative block aspect-square w-full" data-brow-card="photo">
-      <img src={photo} alt="" width={512} height={512} className="aspect-square w-full object-cover" />
+    <span className="relative block aspect-video w-full overflow-hidden" data-brow-card="photo">
+      <img
+        src={photo}
+        alt=""
+        width={800}
+        height={450}
+        className="aspect-video h-full w-full object-cover object-center"
+        onError={() => setMissing(true)}
+      />
       <BrowDiagram id={id} name={name} badge />
     </span>
   );

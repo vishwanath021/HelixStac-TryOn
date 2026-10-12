@@ -103,7 +103,7 @@ describe("brow prompts", () => {
     expect(hashes.size).toBe(BROWS.length);
   });
 
-  it("changes the prompt on Try and leaves chip clicks as state", () => {
+  it("changes the prompt on Try and leaves chip clicks as state", async () => {
     const app = readFileSync("src/components/tryon/TryOnApp.tsx", "utf8");
     expect(app).toContain("onClick={() => setBrowThickness(item.id)}");
     expect(app).toContain("onClick={() => setBrowColour(item.id)}");
@@ -113,9 +113,17 @@ describe("brow prompts", () => {
     const card = readFileSync("src/components/tryon/BrowCard.tsx", "utf8");
     expect(card).toContain("browCardPhoto");
     expect(card).toContain("absolute bottom-1 right-1 h-9 w-9");
+    expect(card).toContain("object-cover object-center");
+    expect(card).toContain("aspect-video");
+    expect(card).toContain("onError");
+    expect([...BROW_CARD_PHOTO_IDS]).toEqual(BROWS.map((brow) => brow.id));
     for (const id of BROW_CARD_PHOTO_IDS) {
       expect(browById(id), id).toBeTruthy();
-      expect(existsSync(`public/brows/cards/${id}.webp`), id).toBe(true);
+      const file = `public/brows/cards/${id}.webp`;
+      expect(existsSync(file), id).toBe(true);
+      const meta = await sharp(file).metadata();
+      expect(meta.width, id).toBe(800);
+      expect(meta.height, id).toBe(450);
       expect(browCardPhoto(id)).toBe(`/brows/cards/${id}.webp`);
     }
     expect(browCardPhoto("missing-brow")).toBeNull();
