@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import { planById } from "@/data/plans";
+import { csvCell } from "@/lib/csv";
 import { prisma } from "@/lib/prisma";
 import { requireMembership } from "@/lib/session";
-
-function csvCell(value: string) {
-  return `"${value.replaceAll('"', '""')}"`;
-}
 
 export async function GET() {
   const access = await requireMembership();

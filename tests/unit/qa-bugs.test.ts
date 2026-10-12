@@ -2,8 +2,10 @@ import { compare, hash } from "bcryptjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST as changePassword } from "@/app/api/v1/account/password/route";
 import { POST as saveDomain } from "@/app/api/v1/admin/domain/route";
+import { GET as exportLeads } from "@/app/api/v1/admin/leads/export/route";
 import { POST as inviteStaff } from "@/app/api/v1/admin/team/route";
 import { LOCALES, t } from "@/data/i18n";
+import { csvCell } from "@/lib/csv";
 import { isPlatformHost } from "@/lib/host";
 import { prisma } from "@/lib/prisma";
 import { sessionIsCurrent } from "@/lib/session-revocation";
@@ -227,6 +229,32 @@ describe("session revocation", () => {
     const fresh = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(fresh.sessionVersion).toBe(1);
     expect(await compare("CorrectHorse#2", fresh.passwordHash)).toBe(true);
+  });
+});
+
+describe("leads csv", () => {
+  it("prefixes formula characters and keeps quotes", () => {
+    expect(csvCell("=HYPERLINK(\"http://x\")")).toBe("\"'=HYPERLINK(\"\"http://x\"\")\"");
+    expect(csvCell("+cmd")).toBe("\"'+cmd\"");
+    expect(csvCell("-1")).toBe("\"'-1\"");
+    expect(csvCell("@sum")).toBe("\"'@sum\"");
+    expect(csvCell("\t=1")).toBe("\"'\t=1\"");
+    expect(csvCell("\r=1")).toBe("\"'\r=1\"");
+    expect(csvCell("Ada")).toBe("\"Ada\"");
+    expect(csvCell("say \"hi\"")).toBe("\"say \"\"hi\"\"\"");
+  });
+
+  it("exports a formula name as a neutralised cell", async () => {
+    const { tenant } = await salonOwner("csv");
+    await prisma.lead.create({
+      data: { tenantId: tenant.id, name: "=HYPERLINK(\"http://x\")", lookName: "Pixie", phone: "+9198" },
+    });
+    const res = await exportLeads();
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("\"'=HYPERLINK(\"\"http://x\"\")\"");
+    expect(body).toContain("\"'+9198\"");
+    await prisma.lead.deleteMany({ where: { tenantId: tenant.id } });
   });
 });
 
