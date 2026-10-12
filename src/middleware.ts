@@ -52,12 +52,13 @@ export function middleware(req: NextRequest) {
     pathname.startsWith("/embed") ||
     pathname.startsWith("/mediapipe") ||
     pathname.startsWith("/brand") ||
-    pathname.startsWith("/samples")
+    pathname.startsWith("/samples") ||
+    /\.(?:webp|png|jpe?g|gif|svg|avif|ico|json|txt|wasm|js|css)$/i.test(pathname)
   ) {
     return nextWithCsp(req, nonce);
   }
   const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
-  const parsed = parseHost(host, process.env.ROOT_DOMAIN || "localhost");
+  const parsed = parseHost(host, process.env.ROOT_DOMAIN || "localhost", process.env.APP_DOMAIN);
   if (parsed.kind === "platform" || pathname.startsWith("/s/")) return nextWithCsp(req, nonce);
   const url = req.nextUrl.clone();
   const suffix = pathname === "/" ? "" : pathname;

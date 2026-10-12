@@ -5,10 +5,11 @@ export type HostParse =
   | { kind: "subdomain"; host: string; slug: string }
   | { kind: "custom"; host: string };
 
-export function parseHost(hostHeader: string, rootDomain = "localhost"): HostParse {
+export function parseHost(hostHeader: string, rootDomain = "localhost", appDomain = ""): HostParse {
   const host = hostHeader.split(":")[0]?.trim().toLowerCase() || "";
   const root = rootDomain.split(":")[0]?.trim().toLowerCase() || "localhost";
-  if (!host || host === root || host === "localhost" || host === "127.0.0.1" || host === `www.${root}` || host === `app.${root}`) {
+  const app = appDomain.split(":")[0]?.trim().toLowerCase();
+  if (!host || host === root || (app && (host === app || host === `www.${app}`)) || host === "localhost" || host === "127.0.0.1" || host === `www.${root}` || host === `app.${root}`) {
     return { kind: "platform", host };
   }
   if (host.endsWith(".localhost")) {
