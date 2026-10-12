@@ -3,6 +3,7 @@ import { promises as dns } from "node:dns";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { planById } from "@/data/plans";
+import { isPlatformHost } from "@/lib/host";
 import { prisma } from "@/lib/prisma";
 import { requireOwner } from "@/lib/session";
 
@@ -20,13 +21,17 @@ export async function POST(req: Request) {
   }
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
-  const host = parsed.data.host.toLowerCase().replace(/^https?:\/\//, "").split("/")[0];
+  const host = parsed.data.host.toLowerCase().replace(/^https?:\/\//, "").split("/")[0]?.split(":")[0] || "";
+  if (!host) return NextResponse.json({ error: "INVALID" }, { status: 400 });
+  if (isPlatformHost(host)) {
+    return NextResponse.json({ error: "PLATFORM", message: "That host belongs to the platform." }, { status: 400 });
+  }
   const existing = await prisma.domain.findUnique({ where: { host } });
-  const token = existing?.token || `helix-verify=${randomBytes(12).toString("hex")}`;
-  const domain = await prisma.domain.upsert({
-    where: { host },
-    update: { tenantId: access.tenant.id },
-    create: { host, tenantId: access.tenant.id, token, verified: false },
+  if (existing && existing.tenantId !== access.tenant.id) {
+    return NextResponse.json({ error: "TAKEN", message: "That domain is already attached to another salon." }, { status: 409 });
+  }
+  const domain = existing ?? await prisma.domain.create({
+    data: { host, tenantId: access.tenant.id, token: `helix-verify=${randomBytes(12).toString("hex")}`, verified: false },
   });
   if (!parsed.data.verify) {
     return NextResponse.json({ host, token: domain.token, verified: domain.verified, hint: `Add a TXT record for ${host} with ${domain.token}, then verify.` });

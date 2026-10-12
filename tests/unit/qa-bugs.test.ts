@@ -1,6 +1,8 @@
 import { compare } from "bcryptjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { POST as saveDomain } from "@/app/api/v1/admin/domain/route";
 import { POST as inviteStaff } from "@/app/api/v1/admin/team/route";
+import { isPlatformHost } from "@/lib/host";
 import { prisma } from "@/lib/prisma";
 
 vi.mock("@/auth", () => ({
@@ -40,6 +42,16 @@ async function salonOwner(label: string) {
 function invite(body: Record<string, string>) {
   return inviteStaff(
     new Request("http://localhost/api/v1/admin/team", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+function postDomain(body: Record<string, unknown>) {
+  return saveDomain(
+    new Request("http://localhost/api/v1/admin/domain", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -134,5 +146,51 @@ describe("team invite", () => {
       where: { userId_tenantId: { userId: user.id, tenantId: tenant.id } },
     });
     expect(membership.role).toBe("STAFF");
+  });
+});
+
+describe("custom domains", () => {
+  it("treats the app host, the root, and their subdomains as platform hosts", () => {
+    const env = { APP_DOMAIN: "https://lookuvi.example.test", ROOT_DOMAIN: "example.test" };
+    expect(isPlatformHost("lookuvi.example.test", env)).toBe(true);
+    expect(isPlatformHost("example.test", env)).toBe(true);
+    expect(isPlatformHost("demo.try.example.test", env)).toBe(true);
+    expect(isPlatformHost("www.lookuvi.example.test", env)).toBe(true);
+    expect(isPlatformHost("salon.example.com", env)).toBe(false);
+  });
+
+  it("refuses another salon's domain and platform hosts, and stores new domains unverified", async () => {
+    const previousApp = process.env.APP_DOMAIN;
+    const previousRoot = process.env.ROOT_DOMAIN;
+    process.env.APP_DOMAIN = "lookuvi.example.test";
+    process.env.ROOT_DOMAIN = "example.test";
+    try {
+      const other = await prisma.tenant.create({ data: { slug: `dom-b-${tag()}`, name: "B", plan: "PRO" } });
+      createdTenants.push(other.id);
+      const takenHost = `taken-${tag()}.example.com`;
+      await prisma.domain.create({ data: { host: takenHost, tenantId: other.id, token: "helix-verify=abc", verified: true } });
+      const { tenant } = await salonOwner("dom-a");
+      const taken = await postDomain({ host: takenHost });
+      expect(taken.status).toBe(409);
+      const still = await prisma.domain.findUniqueOrThrow({ where: { host: takenHost } });
+      expect(still.tenantId).toBe(other.id);
+      expect(still.verified).toBe(true);
+
+      const platform = await postDomain({ host: "demo.try.example.test" });
+      expect(platform.status).toBe(400);
+      expect(await prisma.domain.findUnique({ where: { host: "demo.try.example.test" } })).toBeNull();
+
+      const freshHost = `fresh-${tag()}.example.com`;
+      const created = await postDomain({ host: freshHost });
+      expect(created.status).toBe(200);
+      const row = await prisma.domain.findUniqueOrThrow({ where: { host: freshHost } });
+      expect(row.tenantId).toBe(tenant.id);
+      expect(row.verified).toBe(false);
+    } finally {
+      if (previousApp === undefined) delete process.env.APP_DOMAIN;
+      else process.env.APP_DOMAIN = previousApp;
+      if (previousRoot === undefined) delete process.env.ROOT_DOMAIN;
+      else process.env.ROOT_DOMAIN = previousRoot;
+    }
   });
 });
