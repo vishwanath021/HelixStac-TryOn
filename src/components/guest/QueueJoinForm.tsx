@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { t } from "@/data/i18n";
+import { QueueWait } from "@/components/guest/QueueWait";
 
 type Board = {
   name: string;
@@ -30,6 +31,7 @@ export function QueueJoinForm({ initial }: { initial: Board }) {
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [memory, setMemory] = useState<Memory | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const request = board.mode === "REQUEST";
 
   useEffect(() => {
@@ -47,7 +49,10 @@ export function QueueJoinForm({ initial }: { initial: Board }) {
       void fetch(`/api/v1/queue?slug=${encodeURIComponent(board.slug)}`)
         .then((res) => res.json())
         .then((data) => {
-          if (data && typeof data.open === "boolean") setBoard(data);
+          if (data && typeof data.open === "boolean") {
+            setBoard(data);
+            setRefreshKey((key) => key + 1);
+          }
         })
         .catch(() => undefined);
     }, 12000);
@@ -82,9 +87,11 @@ export function QueueJoinForm({ initial }: { initial: Board }) {
 
   return (
     <div>
-      <p className="mt-2 text-sm" data-queue-open={board.open ? "yes" : "no"} data-queue-mode={board.mode}>
-        {request ? t(lang, "queueRequestNote") : board.open ? (board.ahead === 0 ? t(lang, "queueNobody") : t(lang, "queueAbout", { min: board.waitMin, ahead: board.ahead })) : t(lang, "queueClosed")}
-      </p>
+      <div data-queue-open={board.open ? "yes" : "no"} data-queue-mode={board.mode}>
+        {request ? <p className="mt-2 text-sm">{t(lang, "queueRequestNote")}</p> : board.open ? (
+          <QueueWait key={refreshKey} serverWait={board.waitMin} ahead={board.ahead} lang={lang} />
+        ) : <p className="mt-2 text-sm">{t(lang, "queueClosed")}</p>}
+      </div>
       <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted">{board.open ? t(lang, "queueOpenNow") : t(lang, "queueClosedNow")}</p>
       {memory ? (
         <div className="card mt-4 grid gap-2 p-4">

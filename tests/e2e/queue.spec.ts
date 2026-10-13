@@ -47,13 +47,15 @@ test("a guest joins, sees a live token, and can rejoin from this phone", async (
   const phone = `9${String(Date.now()).slice(-9)}`;
   await page.goto("/s/demo-salon/queue");
   await page.locator("form[data-ready='yes']").waitFor();
-  await expect(page.getByText(/No one is waiting|About \d+ min/)).toBeVisible();
+  await expect(page.getByText(/You're next|\d+ min/)).toBeVisible();
   await page.getByLabel("Name", { exact: true }).fill("Queue Guest");
   await page.getByLabel("Mobile number").fill(phone);
   await page.getByRole("checkbox", { name: /queue updates/i }).check();
   await page.getByRole("button", { name: "Join the queue" }).click();
   await expect(page.locator("[data-status='WAITING'][data-ready='yes']")).toBeVisible();
-  await expect(page.locator("[data-status='WAITING'] [data-queue-token]")).toHaveClass(/text-7xl/);
+  await expect(page.locator("[data-status='WAITING'] [data-queue-wait='0']")).toBeVisible();
+  await expect(page.getByText("You're next")).toBeVisible();
+  await expect(page.locator("[data-status='WAITING'] [data-queue-token]")).toHaveClass(/text-base/);
   await expect(page.getByText(/Token \d+/)).toBeVisible();
   await page.getByRole("button", { name: "I'm on my way" }).click();
   await expect(page.getByText("The desk knows you are on the way.")).toBeVisible();

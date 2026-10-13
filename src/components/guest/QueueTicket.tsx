@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { t } from "@/data/i18n";
+import { QueueWait } from "@/components/guest/QueueWait";
 
 type Ticket = {
   ref: string;
@@ -26,6 +27,7 @@ export function QueueTicket({ slug, initial }: { slug: string; initial: Ticket }
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const lang = ticket.lang || "en";
   const open = ticket.status === "WAITING" || ticket.status === "CALLED" || ticket.status === "REQUESTED" || ticket.status === "CONFIRMED";
 
@@ -35,7 +37,10 @@ export function QueueTicket({ slug, initial }: { slug: string; initial: Ticket }
       void fetch(`/api/v1/queue/status?slug=${encodeURIComponent(slug)}&ref=${encodeURIComponent(ticket.ref)}`)
         .then((res) => res.json())
         .then((data) => {
-          if (data && typeof data.status === "string") setTicket((current) => ({ ...current, ...data }));
+          if (data && typeof data.status === "string") {
+            setTicket((current) => ({ ...current, ...data }));
+            setRefreshKey((key) => key + 1);
+          }
         })
         .catch(() => undefined);
     }, 12000);
@@ -57,10 +62,11 @@ export function QueueTicket({ slug, initial }: { slug: string; initial: Ticket }
       return;
     }
     setTicket((current) => ({ ...current, ...data }));
+    setRefreshKey((key) => key + 1);
   }
 
-  let line = t(lang, "queueAbout", { min: ticket.waitMin, ahead: ticket.ahead });
-  if (ticket.status === "CALLED") line = t(lang, "queueYourTurn");
+  const live = ticket.status === "WAITING" || ticket.status === "CALLED";
+  let line = "";
   if (ticket.status === "IN_SERVICE") line = t(lang, "queueServingYou");
   if (ticket.status === "REQUESTED") line = t(lang, "queueWaitingConfirm");
   if (ticket.status === "CONFIRMED") line = t(lang, "queueConfirmedWhen", { date: ticket.requestedDate, slot: ticket.requestedSlot });
@@ -70,9 +76,14 @@ export function QueueTicket({ slug, initial }: { slug: string; initial: Ticket }
 
   return (
     <div data-status={ticket.status} data-ready={ready ? "yes" : "no"}>
-      <p className="mt-6 text-sm uppercase tracking-[0.14em] text-muted">{t(lang, "queueToken", { token: ticket.token })}</p>
-      <p className="font-serif text-7xl leading-none" data-queue-token={ticket.token}>{ticket.token}</p>
-      <p className="mt-4 text-lg">{line}</p>
+      {live ? (
+        <QueueWait key={refreshKey} serverWait={ticket.waitMin} ahead={ticket.ahead} token={ticket.token} lang={lang} phrase={ticket.status === "CALLED" ? "turn" : undefined} />
+      ) : (
+        <>
+          <p className="mt-6 text-lg">{line}</p>
+          <p className="text-sm text-muted" data-queue-token={ticket.token}>{t(lang, "queueToken", { token: ticket.token })}</p>
+        </>
+      )}
       {ticket.serviceName ? <p className="mt-1 text-sm text-muted">{ticket.serviceName}</p> : null}
       {ticket.onTheWay ? <p className="mt-3 text-sm">{t(lang, "queueComing")}</p> : null}
       {open ? (

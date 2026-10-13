@@ -8,6 +8,7 @@ import { notifyGuest, sendWhatsApp, type NotifyMessage } from "@/lib/notify";
 import { prisma } from "@/lib/prisma";
 import { kolkataDayKey } from "@/lib/queue/day";
 import { peopleAhead, waitMinutes } from "@/lib/queue/estimate";
+import { displayedWait } from "@/lib/queue/wait-display";
 import { indianMobile } from "@/lib/queue/phone";
 import { QueueError, addWalkIn, callNext, confirmRequest, finishEntry, joinQueue, purgeOldQueueEntries, saveQueueSettings, setQueueOpen, sweepAlerts } from "@/lib/queue/service";
 import { resetRateLimits } from "@/lib/ratelimit";
@@ -39,6 +40,15 @@ describe("queue maths and phone", () => {
     ];
     expect(peopleAhead(rows, "c").map((row) => row.id)).toEqual(["a", "b"]);
     expect(peopleAhead(rows, null)).toHaveLength(3);
+  });
+
+  it("counts the shown wait down once a minute and never below the server sample", () => {
+    expect(displayedWait(16, 1_000, 1_000)).toBe(16);
+    expect(displayedWait(16, 1_000, 1_000 + 59_999)).toBe(16);
+    expect(displayedWait(16, 1_000, 1_000 + 60_000)).toBe(15);
+    expect(displayedWait(16, 1_000, 1_000 + 16 * 60_000)).toBe(0);
+    expect(displayedWait(16, 1_000, 1_000 + 40 * 60_000)).toBe(0);
+    expect(displayedWait(0, 1_000, 1_000 + 60_000)).toBe(0);
   });
 
   it("accepts Indian mobiles and rejects everything else", () => {
@@ -206,7 +216,9 @@ describe("queue joins", () => {
       },
     }));
     expect(html).toContain("I agree to receive queue updates on this phone.");
-    expect(html).toContain("About 15 min · 3 ahead");
+    expect(html).toContain("15 min");
+    expect(html).toContain("EST WAIT");
+    expect(html).toContain("3 ahead");
     expect(html).toContain("Join the queue");
     expect(html).toContain("Try a look while you wait");
     const { slug } = await salon();
