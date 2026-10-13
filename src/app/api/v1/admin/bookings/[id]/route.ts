@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { ownerFeatures } from "@/lib/features";
 import { requireMembership } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
@@ -7,6 +8,7 @@ import { buildWhatsAppLink } from "@/lib/whatsapp";
 const schema = z.object({ status: z.enum(["CONFIRMED", "DECLINED"]) });
 
 export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
+  if (!ownerFeatures().bookings) return NextResponse.json({ error: "OFF", message: "Bookings are not available." }, { status: 404 });
   const access = await requireMembership();
   if ("error" in access && access.error) return access.error;
   if (!("tenant" in access)) return NextResponse.json({ error: "NO_TENANT" }, { status: 403 });

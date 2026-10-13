@@ -57,9 +57,6 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "PLAN", message: "Removing the Lookuvi mark needs Pro or Chain." }, { status: 403 });
   }
   const languages = data.languages?.filter(isLocale);
-  if (languages && plan.languages && languages.length > plan.languages) {
-    return NextResponse.json({ error: "PLAN", message: `This plan includes ${plan.languages} languages.` }, { status: 403 });
-  }
   const { defaultLang, logoUrl, ...rest } = data;
   delete rest.languages;
   const gated: Record<string, ToolId> = {
@@ -71,6 +68,11 @@ export async function PUT(req: Request) {
   };
   for (const [field, id] of Object.entries(gated)) {
     if (!toolEnabled(id)) delete rest[field as keyof typeof rest];
+  }
+  if (!access.tenant.productTryOn) {
+    for (const field of ["toolColour", "toolStyle", "toolBrows", "toolBeard", "toolNails", "hairPickerOn", "hairSuggestOn", "hairSuggestUsesCredits", "anonDailyCap", "memberDailyCap", "requireLoginToBook"] as const) {
+      delete rest[field];
+    }
   }
   const tenant = await prisma.tenant.update({
     where: { id: access.tenant.id },

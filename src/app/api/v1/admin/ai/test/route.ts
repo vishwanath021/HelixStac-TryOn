@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { allowByoKey } from "@/lib/ai/credentials";
 import { storedKey, testProviderKey } from "@/lib/ai/settings-store";
+import { ownerFeatures } from "@/lib/features";
 import { requireOwner } from "@/lib/session";
 
 const schema = z.object({
@@ -13,6 +14,9 @@ export async function POST(req: Request) {
   const access = await requireOwner();
   if ("error" in access && access.error) return access.error;
   if (!("tenant" in access)) return NextResponse.json({ error: "OWNER_ONLY" }, { status: 403 });
+  if (!access.tenant.productTryOn || !ownerFeatures().salonAi) {
+    return NextResponse.json({ error: "OFF", message: "Salon AI settings are not available." }, { status: 404 });
+  }
   if (!(await allowByoKey())) {
     return NextResponse.json({ error: "BYO_OFF", message: "This salon uses the platform key." }, { status: 403 });
   }

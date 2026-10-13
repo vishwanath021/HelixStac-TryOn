@@ -242,6 +242,7 @@ describe("custom domains", () => {
     const previousRoot = process.env.ROOT_DOMAIN;
     process.env.APP_DOMAIN = "lookuvi.example.test";
     process.env.ROOT_DOMAIN = "example.test";
+    process.env.FEATURE_CUSTOM_DOMAIN = "true";
     try {
       const other = await prisma.tenant.create({ data: { slug: `dom-b-${tag()}`, name: "B", plan: "PRO" } });
       createdTenants.push(other.id);
@@ -269,6 +270,7 @@ describe("custom domains", () => {
       else process.env.APP_DOMAIN = previousApp;
       if (previousRoot === undefined) delete process.env.ROOT_DOMAIN;
       else process.env.ROOT_DOMAIN = previousRoot;
+      delete process.env.FEATURE_CUSTOM_DOMAIN;
     }
   });
 });
@@ -394,11 +396,12 @@ describe("salon qr host", () => {
 });
 
 describe("login hint", () => {
-  it("shows the local-dev sentence only when asked", () => {
-    const hidden = renderToStaticMarkup(createElement(LoginForm, { showDevHint: false }));
-    expect(hidden).not.toContain("In local dev");
-    const shown = renderToStaticMarkup(createElement(LoginForm, { showDevHint: true }));
-    expect(shown).toContain("In local dev the link can appear here.");
+  it("keeps password and reset, and hides the magic link", () => {
+    const html = renderToStaticMarkup(createElement(LoginForm, {}));
+    expect(html).toContain("Forgot password");
+    expect(html).not.toContain("Email me a link");
+    expect(html).not.toContain("In local dev");
+    expect(html).not.toContain("Magic link");
   });
 });
 

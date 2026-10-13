@@ -18,6 +18,8 @@ export type SalonRecord = {
   host: string;
   createdAt: string;
   trialEndsAt: string | null;
+  productTryOn: boolean;
+  productQueue: boolean;
 };
 
 /** One tenant query plus one grouped preview count for the Kolkata month. */
@@ -62,6 +64,8 @@ export async function loadSalons(): Promise<SalonRecord[]> {
       host: tenant.domains[0]?.host || "",
       createdAt: tenant.createdAt.toISOString(),
       trialEndsAt: tenant.trialEndsAt?.toISOString() || null,
+      productTryOn: tenant.productTryOn,
+      productQueue: tenant.productQueue,
     };
   });
 }

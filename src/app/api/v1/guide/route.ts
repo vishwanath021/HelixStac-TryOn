@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { ownerFeatures } from "@/lib/features";
 import { colourGuidance, faceGuidance, quizGuidance } from "@/lib/guidance";
 import { tooMany } from "@/lib/http/guard";
 
@@ -16,6 +17,7 @@ const schema = z.discriminatedUnion("kind", [
 ]);
 
 export async function POST(req: Request) {
+  if (!ownerFeatures().guide) return NextResponse.json({ error: "OFF", message: "The style guide is not available." }, { status: 404 });
   const limited = await tooMany(req, "guide", 120, 60 * 60 * 1000);
   if (limited) return limited;
   const parsed = schema.safeParse(await req.json().catch(() => null));

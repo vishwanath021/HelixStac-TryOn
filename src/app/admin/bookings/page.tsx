@@ -1,4 +1,6 @@
+import { notFound } from "next/navigation";
 import { BookingActions } from "@/components/admin/BookingActions";
+import { ownerFeatures } from "@/lib/features";
 import { parseJson } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { pageTenant } from "@/lib/session";
@@ -6,6 +8,7 @@ import { pageTenant } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 export default async function BookingsPage() {
+  if (!ownerFeatures().bookings) notFound();
   const { tenant } = await pageTenant();
   const bookings = await prisma.booking.findMany({
     where: { tenantId: tenant.id },

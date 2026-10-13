@@ -44,6 +44,9 @@ export async function POST(req: Request) {
   if (tenant.status === "SUSPENDED") {
     return NextResponse.json({ error: "SUSPENDED", message: "This salon's try-on is paused." }, { status: 403 });
   }
+  if (!tenant.productTryOn) {
+    return NextResponse.json({ error: "PRODUCT", message: "Try-on is not available for this salon." }, { status: 404 });
+  }
   if (!tenant.toolStyle || !tenant.hairSuggestOn) {
     return NextResponse.json({ error: "OFF", message: "AI hair suggestions are turned off for this salon." }, { status: 403 });
   }

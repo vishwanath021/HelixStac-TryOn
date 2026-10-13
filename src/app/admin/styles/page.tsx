@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { CatalogueEditor } from "@/components/admin/CatalogueEditor";
 import { SHADES } from "@/data/shades";
 import { STYLES, toPublicStyle } from "@/data/styles";
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function StylesPage() {
   const { tenant } = await pageTenant();
+  if (!tenant.productTryOn) notFound();
   const [styleRows, shadeRows] = await Promise.all([
     prisma.tenantStyle.findMany({ where: { tenantId: tenant.id } }),
     prisma.tenantShade.findMany({ where: { tenantId: tenant.id } }),

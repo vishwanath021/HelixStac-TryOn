@@ -1,11 +1,14 @@
+import { notFound } from "next/navigation";
 import { SalonAiForm } from "@/components/admin/SalonAiForm";
 import { salonAiView } from "@/lib/ai/settings-store";
+import { ownerFeatures } from "@/lib/features";
 import { pageTenant } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminAiPage() {
   const { tenant, membership } = await pageTenant();
+  if (!tenant.productTryOn || !ownerFeatures().salonAi) notFound();
   if (membership.role !== "OWNER") {
     return (
       <main>

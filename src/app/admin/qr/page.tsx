@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { SalonModeCard } from "@/components/admin/SalonModeCard";
 import { planById } from "@/data/plans";
 import { appBaseUrl } from "@/lib/env";
+import { ownerFeatures } from "@/lib/features";
 import { signSalonToken } from "@/lib/preview-access";
 import { salonGuestOrigin } from "@/lib/public-url";
 import { pageTenant } from "@/lib/session";
@@ -10,6 +12,8 @@ export const dynamic = "force-dynamic";
 
 export default async function QrAdminPage() {
   const { tenant, membership } = await pageTenant();
+  if (!tenant.productTryOn) notFound();
+  const embedOn = ownerFeatures().embed;
   const plan = planById(tenant.plan);
   const base = appBaseUrl();
   const origin = await salonGuestOrigin(tenant.id, tenant.slug);
@@ -18,7 +22,7 @@ export default async function QrAdminPage() {
   const snippet = `<script src="${base}/embed.js" data-salon="${tenant.slug}" data-lang="${tenant.defaultLang}" defer></script>`;
   return (
     <main>
-      <h1 className="page-title">QR and embed</h1>
+      <h1 className="page-title">{embedOn ? "QR and embed" : "QR"}</h1>
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <article className="card p-4">
           <h2 className="font-serif text-2xl">Standee</h2>
@@ -30,7 +34,7 @@ export default async function QrAdminPage() {
           </div>
           <p className="mt-3 break-all text-xs text-muted">{pageUrl}</p>
         </article>
-        <article className="card p-4">
+        {embedOn ? <article className="card p-4">
           <h2 className="font-serif text-2xl">Website embed</h2>
           {plan.embed ? (
             <>
@@ -41,7 +45,7 @@ export default async function QrAdminPage() {
           ) : (
             <p className="mt-2 text-sm">The embed widget is on Pro and Chain. Starter uses the hosted page and QR.</p>
           )}
-        </article>
+        </article> : null}
         <SalonModeCard initialUrl={salonUrl} canRotate={membership.role === "OWNER"} />
       </div>
     </main>
