@@ -30,7 +30,7 @@ describe("owner feature flags", () => {
     const labels = ownerNav(off).map((link) => link.label);
     expect(labels).not.toContain("Bookings");
     expect(labels).not.toContain("AI settings");
-    expect(labels).not.toContain("Queue (coming soon)");
+    expect(labels).not.toContain("Queue");
     expect(labels).toContain("Styles");
     expect(labels).toContain("QR");
     expect(labels).not.toContain("QR and embed");
@@ -45,7 +45,7 @@ describe("owner feature flags", () => {
   it("shows queue only when that product is on, and hides try-on pages when it is off", () => {
     const queued = ownerNav({ ...off, productTryOn: false, productQueue: true });
     const labels = queued.map((link) => link.label);
-    expect(labels).toContain("Queue (coming soon)");
+    expect(labels).toContain("Queue");
     expect(labels).not.toContain("Styles");
     expect(labels).not.toContain("View try-on");
     expect(labels).not.toContain("QR and embed");

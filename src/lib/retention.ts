@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import { BENCHMARK_STAGES } from "@/lib/ai/benchmark";
 import { numberEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
+import { purgeOldQueueEntries, sweepAllQueues } from "@/lib/queue/service";
 import { deleteObject } from "@/lib/storage";
 
 /** Deletes expired preview objects and benchmark selfies. Safe to run on every instance. */
@@ -25,7 +26,9 @@ export async function runRetention() {
 
   const oldBuckets = new Date(Date.now() - 48 * 60 * 60 * 1000);
   await prisma.rateBucket.deleteMany({ where: { resetAt: { lt: oldBuckets } } }).catch(() => undefined);
-  return { jobs: staleJobs.length, benchmarks: staleRuns.length };
+  const queue = await purgeOldQueueEntries().catch(() => 0);
+  const alerts = await sweepAllQueues().catch(() => ({ sent: 0, salons: 0 }));
+  return { jobs: staleJobs.length, benchmarks: staleRuns.length, queue, alerts: alerts.sent };
 }
 
 let timer: ReturnType<typeof setInterval> | null = null;
