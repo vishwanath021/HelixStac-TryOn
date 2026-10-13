@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { closedGuestHub } from "@/lib/feature-gate";
 import { ageYears, readGuestToken } from "@/lib/preview-access";
 import { prisma } from "@/lib/prisma";
 
@@ -18,6 +19,8 @@ async function current(slug: string) {
 }
 
 export async function GET(req: Request) {
+  const closed = closedGuestHub();
+  if (closed) return closed;
   const slug = new URL(req.url).searchParams.get("slug") || "";
   const found = await current(slug);
   if (!found?.tenant) return NextResponse.json({ error: "TENANT" }, { status: 404 });
@@ -35,6 +38,8 @@ const profileSchema = z.object({
 });
 
 export async function PUT(req: Request) {
+  const closed = closedGuestHub();
+  if (closed) return closed;
   const parsed = profileSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
   const found = await current(parsed.data.slug);
@@ -60,6 +65,8 @@ export async function PUT(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const closed = closedGuestHub();
+  if (closed) return closed;
   const slug = new URL(req.url).searchParams.get("slug") || "";
   const found = await current(slug);
   if (!found?.customer) return NextResponse.json({ error: "AUTH" }, { status: 401 });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { CONSENT_HASH, CONSENT_VERSION } from "@/data/consent";
+import { ownerFeatures } from "@/lib/features";
 import { exposeDevOtp, otpSender, phoneLoginConfigured } from "@/lib/otp";
 import { hashOtp, newOtpCode, normalizePhone } from "@/lib/preview-access";
 import { prisma } from "@/lib/prisma";
@@ -9,6 +10,7 @@ import { requestClientIp, sharedRateLimit } from "@/lib/ratelimit";
 const schema = z.object({ slug: z.string().min(1), phone: z.string().min(8).max(20) });
 
 export async function POST(req: Request) {
+  if (!ownerFeatures().guestHub) return NextResponse.json({ error: "OFF", message: "Guest login is not available." }, { status: 404 });
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
   if (!phoneLoginConfigured()) {

@@ -11,6 +11,8 @@ const schema = z.object({
   plan: z.string().optional(),
   creditDelta: z.number().int().min(-100000).max(100000).optional(),
   note: z.string().max(200).optional(),
+  productTryOn: z.boolean().optional(),
+  productQueue: z.boolean().optional(),
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -30,6 +32,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       name: parsed.data.name,
       status: parsed.data.status,
       ...(plan ? { plan: plan.id, dailyCap: plan.credits } : {}),
+      ...(parsed.data.productTryOn !== undefined ? { productTryOn: parsed.data.productTryOn } : {}),
+      ...(parsed.data.productQueue !== undefined ? { productQueue: parsed.data.productQueue } : {}),
     },
   });
   if (plan) {
@@ -54,6 +58,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       },
     });
   }
+  const productChange = parsed.data.productTryOn !== undefined || parsed.data.productQueue !== undefined;
   if (!plan && !parsed.data.creditDelta) {
     await prisma.auditLog.create({
       data: {
@@ -61,6 +66,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         action: "TENANT_UPDATE",
         target: id,
         meta: JSON.stringify(parsed.data),
+      },
+    });
+  } else if (productChange) {
+    await prisma.auditLog.create({
+      data: {
+        actorId: access.session.user.id,
+        action: "TENANT_UPDATE",
+        target: id,
+        meta: JSON.stringify({ productTryOn: parsed.data.productTryOn, productQueue: parsed.data.productQueue }),
       },
     });
   }

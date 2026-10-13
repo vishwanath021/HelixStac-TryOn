@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { planById } from "@/data/plans";
+import { ownerFeatures } from "@/lib/features";
 import { prisma } from "@/lib/prisma";
 import { requireOwner } from "@/lib/session";
 
@@ -15,6 +16,7 @@ export async function POST(req: Request) {
   const access = await requireOwner();
   if ("error" in access && access.error) return access.error;
   if (!("tenant" in access)) return NextResponse.json({ error: "NO_TENANT" }, { status: 403 });
+  if (!ownerFeatures().outlets) return NextResponse.json({ error: "OFF", message: "Outlets are not available." }, { status: 404 });
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
   const plan = planById(access.tenant.plan);

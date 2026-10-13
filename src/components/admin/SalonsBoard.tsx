@@ -10,6 +10,15 @@ import { Sheet } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
 
+function applySalonPatch(row: SalonRecord, body: Record<string, unknown>): SalonRecord {
+  return {
+    ...row,
+    ...(typeof body.name === "string" ? { name: body.name } : {}),
+    ...(typeof body.productTryOn === "boolean" ? { productTryOn: body.productTryOn } : {}),
+    ...(typeof body.productQueue === "boolean" ? { productQueue: body.productQueue } : {}),
+  };
+}
+
 function when(value: string | null) {
   if (!value) return "—";
   return new Date(value).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" });
@@ -105,10 +114,10 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
     }
     const text = data.plan ? `Plan set to ${data.plan}. Included tries added.` : "Updated.";
     say(text);
-    if (typeof body.name === "string" && !body.plan && body.creditDelta === undefined && !body.status) {
-      const nextName = body.name;
-      setRows((current) => current.map((row) => (row.id === id ? { ...row, name: nextName } : row)));
-      setSelected((row) => (row && row.id === id ? { ...row, name: nextName } : row));
+    const structural = Boolean(body.plan) || body.creditDelta !== undefined || Boolean(body.status);
+    if (!structural) {
+      setRows((current) => current.map((row) => (row.id === id ? applySalonPatch(row, body) : row)));
+      setSelected((row) => (row && row.id === id ? applySalonPatch(row, body) : row));
       return true;
     }
     window.location.reload();
@@ -221,6 +230,25 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
                 <Badge tone={statusTone(selected.status)}>{selected.status}</Badge>
               </div>
               <p className="mt-3 text-sm">{selected.credits} credits</p>
+              <fieldset className="mt-4 grid gap-2">
+                <legend className="text-sm font-medium">Products</legend>
+                <label className="flex min-h-11 items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selected.productTryOn}
+                    onChange={(event) => void update(selected.id, { productTryOn: event.target.checked })}
+                  />
+                  AI Try-on
+                </label>
+                <label className="flex min-h-11 items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selected.productQueue}
+                    onChange={(event) => void update(selected.id, { productQueue: event.target.checked })}
+                  />
+                  Queue & alerts
+                </label>
+              </fieldset>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button className="btn secondary" type="button" onClick={() => openPlan(selected)}>Change plan</button>
                 <button className="btn secondary" type="button" onClick={() => openCredits(selected)}>Adjust credits</button>

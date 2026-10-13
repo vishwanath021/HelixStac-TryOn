@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { salonAiView, saveSalonAi } from "@/lib/ai/settings-store";
+import { ownerFeatures } from "@/lib/features";
 import { requireOwner } from "@/lib/session";
+
+function salonAiClosed(productTryOn: boolean) {
+  if (productTryOn && ownerFeatures().salonAi) return null;
+  return NextResponse.json({ error: "OFF", message: "Salon AI settings are not available." }, { status: 404 });
+}
 
 const schema = z.object({
   provider: z.enum(["openai", "gemini"]),
@@ -13,6 +19,8 @@ export async function GET() {
   const access = await requireOwner();
   if ("error" in access && access.error) return access.error;
   if (!("tenant" in access)) return NextResponse.json({ error: "OWNER_ONLY" }, { status: 403 });
+  const closed = salonAiClosed(access.tenant.productTryOn);
+  if (closed) return closed;
   return NextResponse.json(await salonAiView(access.tenant.id));
 }
 
@@ -20,6 +28,8 @@ export async function PUT(req: Request) {
   const access = await requireOwner();
   if ("error" in access && access.error) return access.error;
   if (!("tenant" in access) || !("session" in access)) return NextResponse.json({ error: "OWNER_ONLY" }, { status: 403 });
+  const closed = salonAiClosed(access.tenant.productTryOn);
+  if (closed) return closed;
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
   try {

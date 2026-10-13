@@ -3,25 +3,16 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { SignOutButton } from "@/components/admin/SignOutButton";
-
-const LINKS = [
-  ["/admin", "Overview"],
-  ["/admin/onboarding", "Onboarding"],
-  ["/admin/styles", "Styles"],
-  ["/admin/services", "Services"],
-  ["/admin/leads", "Leads"],
-  ["/admin/bookings", "Bookings"],
-  ["/admin/qr", "QR and embed"],
-  ["/admin/billing", "Billing"],
-  ["/admin/settings", "Settings"],
-];
+import { ownerNav, type OwnerFeatures } from "@/lib/features";
 
 export function AdminNav({
   role,
   name,
   credits,
   slug,
-  showAi,
+  productTryOn,
+  productQueue,
+  features,
   salons = [],
   currentTenantId = "",
 }: {
@@ -29,13 +20,18 @@ export function AdminNav({
   name: string;
   credits: number;
   slug: string;
-  showAi: boolean;
+  productTryOn: boolean;
+  productQueue: boolean;
+  features: OwnerFeatures;
   salons?: { id: string; name: string }[];
   currentTenantId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
+  const links = ownerNav({ role, slug, productTryOn, productQueue, features });
+  const main = links.filter((link) => link.section === "main");
+  const more = links.filter((link) => link.section === "more");
   return (
     <div>
       <button className="btn secondary mb-3 w-full md:hidden" type="button" data-ready={ready ? "yes" : "no"} aria-expanded={open} aria-controls="salon-nav" onClick={() => setOpen((value) => !value)}>
@@ -67,12 +63,13 @@ export function AdminNav({
           </label>
         )}
         <nav className="mt-3 grid text-sm" aria-label="Salon">
-          {LINKS.map(([href, label]) => (
-            <Link key={href} href={href} onClick={() => setOpen(false)}>{label}</Link>
+          {main.map((link) => (
+            <Link key={link.href} href={link.href} onClick={() => setOpen(false)}>{link.label}</Link>
           ))}
-          {showAi && <Link href="/admin/ai" onClick={() => setOpen(false)}>AI settings</Link>}
-          {role === "OWNER" && <Link href="/admin/security" onClick={() => setOpen(false)}>Authenticator</Link>}
-          <Link href={`/s/${slug}`} onClick={() => setOpen(false)}>View try-on</Link>
+          <p className="mb-1 mt-3 text-xs uppercase tracking-[0.14em] text-[#d8cbe4]">More</p>
+          {more.map((link) => (
+            <Link key={link.href} href={link.href} onClick={() => setOpen(false)}>{link.label}</Link>
+          ))}
         </nav>
         <SignOutButton />
       </aside>

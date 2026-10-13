@@ -3,6 +3,7 @@ import { promises as dns } from "node:dns";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { planById } from "@/data/plans";
+import { ownerFeatures } from "@/lib/features";
 import { isPlatformHost } from "@/lib/host";
 import { prisma } from "@/lib/prisma";
 import { requireOwner } from "@/lib/session";
@@ -16,6 +17,7 @@ export async function POST(req: Request) {
   const access = await requireOwner();
   if ("error" in access && access.error) return access.error;
   if (!("tenant" in access)) return NextResponse.json({ error: "NO_TENANT" }, { status: 403 });
+  if (!ownerFeatures().customDomain) return NextResponse.json({ error: "OFF", message: "Custom domains are not available." }, { status: 404 });
   if (!planById(access.tenant.plan).customDomain) {
     return NextResponse.json({ error: "PLAN", message: "Custom domains are on Pro and Chain." }, { status: 403 });
   }

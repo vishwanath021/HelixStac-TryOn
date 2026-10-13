@@ -28,6 +28,10 @@ model Tenant {
   gstin               String?
   plan                String    @default("STARTER")
   status              String    @default("TRIAL")
+  /** Sell try-on for this salon. Off hides guest try-on and blocks preview APIs. */
+  productTryOn        Boolean   @default(true)
+  /** Sell queue and alerts. The queue itself is not built yet. */
+  productQueue        Boolean   @default(false)
   trialEndsAt         DateTime?
   removeBranding      Boolean   @default(false)
   allowedOrigins      String    @default("[]")

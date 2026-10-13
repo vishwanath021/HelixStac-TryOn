@@ -23,6 +23,7 @@ export default async function QrStandee({ params }: { params: Promise<{ slug: st
   const tenant = await loadTenantBySlug(slug);
   if (!tenant) notFound();
   if (tenant.status === "SUSPENDED") return <SalonPaused name={tenant.name} />;
+  if (!tenant.productTryOn) notFound();
   const target = `${await salonGuestOrigin(tenant.id, tenant.slug)}/?src=qr`;
   return (
     <main className="mx-auto max-w-md px-4 py-8 print:max-w-none" style={brandStyle(tenant.primaryColor, tenant.accentColor) as CSSProperties}>

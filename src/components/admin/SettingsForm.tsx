@@ -9,6 +9,8 @@ export function SettingsForm({
   enabledTools = ["hairstyle", "colour", "brows", "nails", "beard"],
   members,
   selfId,
+  showTryOn = true,
+  showDomain = false,
 }: {
   initial: {
     name: string;
@@ -37,6 +39,8 @@ export function SettingsForm({
   enabledTools?: ToolId[];
   members: { userId: string; name: string; email: string; role: string }[];
   selfId: string;
+  showTryOn?: boolean;
+  showDomain?: boolean;
 }) {
   const [form, setForm] = useState(initial);
   const [message, setMessage] = useState("");
@@ -152,6 +156,7 @@ export function SettingsForm({
         <label className="text-sm">Maps link<input className="field mt-1" value={form.mapsUrl} onChange={(event) => set("mapsUrl", event.target.value)} /></label>
         <label className="text-sm">City<input className="field mt-1" value={form.city} onChange={(event) => set("city", event.target.value)} /></label>
         <label className="text-sm">GSTIN<input className="field mt-1" value={form.gstin} onChange={(event) => set("gstin", event.target.value)} /></label>
+        {showTryOn ? <>
         <fieldset className="grid gap-2 text-sm">
           <legend className="font-medium">Tools on the try-on page</legend>
           {enabledTools.includes("colour") && <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolColour} onChange={(event) => set("toolColour", event.target.checked)} /> Live colour</label>}
@@ -167,6 +172,8 @@ export function SettingsForm({
           <label className="flex items-center gap-2"><input type="checkbox" checked={form.hairSuggestUsesCredits} onChange={(event) => set("hairSuggestUsesCredits", event.target.checked)} /> Charge 1 salon credit for each new suggestion. Repeat clicks on the same photo stay free.</label>
           <p className="text-xs text-muted">Suitable density, texture, and face shape are edited on Styles. The reading uses the platform OpenAI key. SUGGEST_MODEL chooses the vision model. The default is gpt-4.1-nano.</p>
         </fieldset>
+        </> : null}
+        {showTryOn ? <>
         <div className="grid grid-cols-2 gap-3">
           <label className="text-sm">Anonymous daily previews
             <input className="field mt-1" type="number" min={0} max={500} value={form.anonDailyCap} onChange={(event) => set("anonDailyCap", Number(event.target.value))} />
@@ -180,13 +187,14 @@ export function SettingsForm({
           <input type="checkbox" checked={form.requireLoginToBook} onChange={(event) => set("requireLoginToBook", event.target.checked)} />
           Require a phone login before an online booking request. When this is off, Book opens WhatsApp.
         </label>
+        </> : null}
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.removeBranding} disabled={!canRemoveBranding} onChange={(event) => set("removeBranding", event.target.checked)} />
           Remove “Powered by Lookuvi” {canRemoveBranding ? "" : "(Pro or Chain)"}
         </label>
         <button className="btn" type="submit">Save</button>
       </form>
-      <form className="card grid gap-2 p-4" onSubmit={(event) => { event.preventDefault(); void addDomain(false); }}>
+      {showDomain ? <form className="card grid gap-2 p-4" onSubmit={(event) => { event.preventDefault(); void addDomain(false); }}>
         <h2 className="font-serif text-2xl">Custom domain</h2>
         <input className="field" placeholder="try.yoursalon.in" value={host} onChange={(event) => setHost(event.target.value)} aria-label="Custom domain" />
         <div className="flex gap-2">
@@ -194,8 +202,8 @@ export function SettingsForm({
           <button className="btn secondary" type="button" onClick={() => void addDomain(true)}>Check DNS</button>
         </div>
         {domainNote && <p className="text-sm" role="status">{domainNote}</p>}
-      </form>
-      <section className="card grid gap-3 p-4">
+      </form> : null}
+      <section id="team" className="card grid gap-3 p-4">
         <h2 className="font-serif text-2xl">Team</h2>
         <ul className="space-y-2">
           {team.map((member) => {

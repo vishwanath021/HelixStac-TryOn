@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { closedGuestHub } from "@/lib/feature-gate";
 import { readGuestToken } from "@/lib/preview-access";
 import { prisma } from "@/lib/prisma";
 
@@ -19,6 +20,8 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
+  const closed = closedGuestHub();
+  if (closed) return closed;
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
   const customer = await customerFor(parsed.data.slug);
@@ -37,6 +40,8 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const closed = closedGuestHub();
+  if (closed) return closed;
   const url = new URL(req.url);
   const customer = await customerFor(url.searchParams.get("slug") || "");
   const id = url.searchParams.get("id") || "";

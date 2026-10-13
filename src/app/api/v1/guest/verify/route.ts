@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { closedGuestHub } from "@/lib/feature-gate";
 import { otpMatches, signGuestToken, normalizePhone } from "@/lib/preview-access";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({ slug: z.string().min(1), phone: z.string(), code: z.string().regex(/^\d{4,6}$/) });
 
 export async function POST(req: Request) {
+  const closed = closedGuestHub();
+  if (closed) return closed;
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "INVALID", message: "Enter the code from the message." }, { status: 400 });
   const phone = normalizePhone(parsed.data.phone);

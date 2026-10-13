@@ -76,6 +76,9 @@ export async function POST(req: Request) {
   if (tenant.status === "SUSPENDED") {
     return NextResponse.json({ error: "SUSPENDED", message: "This salon's try-on is paused." }, { status: 403 });
   }
+  if (!tenant.productTryOn) {
+    return NextResponse.json({ error: "PRODUCT", message: "Try-on is not available for this salon." }, { status: 404 });
+  }
 
   const consent = await prisma.consentLog.findFirst({
     where: { id: consentId, tenantId: tenant.id, sessionId, accepted: true, ageGate: true },
