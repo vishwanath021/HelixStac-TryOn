@@ -10,7 +10,7 @@ One colour ticket in a month is the story for Starter. Confirm the salon's real 
 
 ## One-pager
 
-**HelixStac TryOn** — your brand, their phone.
+**Lookuvi** — your brand, their phone.
 
 - Live colour, 16 shades, free, on the phone.
 - Cut preview, about 10 seconds, a guide for the stylist.
@@ -21,7 +21,7 @@ One colour ticket in a month is the story for Starter. Confirm the salon's real 
 
 ## Demo script (12 minutes)
 
-1. Open `/s/demo-salon` on your phone, then on theirs.
+1. Open `/s/demo` on your phone, then on theirs.
 2. Read the consent in one sentence: colour stays here, the cut preview is not saved.
 3. Camera, Cherry Red, intensity. Say it is a tint, not a balayage.
 4. Women's Soft Bob or Men's Mid Fade. Wait. Use the before/after slider.

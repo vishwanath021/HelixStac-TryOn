@@ -6,7 +6,7 @@ Scope is the guest try-on, salon owner and staff tools, and the platform admin. 
 
 | Surface | Entry | What it covers |
 | --- | --- | --- |
-| Guest try-on | `/` redirects to `/s/demo-salon`, also `/embed/[slug]` | Header, Book Now, WhatsApp, tool pill, camera, upload, consent, style/colour/brows/nails/beard, result slider, save, try another |
+| Guest try-on | `/s/demo` (platform `/` redirects to `/login`), also `/embed/[slug]` | Header, Book Now, WhatsApp, tool pill, camera, upload, consent, style/colour/brows/nails/beard, result slider, save, try another |
 | Guest account | `/s/[slug]/me`, OTP, bookings | Phone code, profile, booking request, delete |
 | QR and guide | `/s/[slug]/qr`, `/admin/qr`, `/s/[slug]/guide` | Salon link and QR |
 | Leads | guest concierge, `/admin/leads` | Lead capture and export |
@@ -16,7 +16,7 @@ Scope is the guest try-on, salon owner and staff tools, and the platform admin. 
 | Privacy | `/privacy`, `/terms`, consent, data requests | Photo use, retention, delete |
 | Health | `GET /api/health` | Database reachability |
 
-Demo owner: `owner@demo.helixstac.app` / `DemoSalon#2026`. Staff: `staff@demo.helixstac.app` / `DemoStaff#2026`. Super: `super@helixstac.app` / `SuperAdmin#2026`.
+Demo owner: `owner@demo.agenticbuildworks.com` / `DemoSalon#2026`. Staff: `staff@demo.agenticbuildworks.com` / `DemoStaff#2026`. Super: `super@agenticbuildworks.com` / `SuperAdmin#2026`.
 
 ## Cases
 

@@ -8,7 +8,7 @@ export const MAIL_NOT_CONFIGURED =
 
 /** Sends one plain-text message. The body can contain a one-time link, so callers must not log it. */
 export async function sendMail(to: string, subject: string, text: string) {
-  const from = process.env.EMAIL_FROM || "Lookuvi <noreply@localhost>";
+  const from = process.env.EMAIL_FROM || "Agentic Build Works <login@agenticbuildworks.com>";
   if (process.env.RESEND_API_KEY) {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",

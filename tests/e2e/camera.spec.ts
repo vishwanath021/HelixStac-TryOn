@@ -67,7 +67,7 @@ async function liveVideo(page: Page) {
 test("take selfie plays the fake camera, captures, and retakes", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "Chromium fake camera on desktop");
   await spyOnCamera(page);
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   await expect(page.getByRole("button", { name: "Take selfie" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Use the phone camera" })).toHaveCount(0);
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
@@ -140,7 +140,7 @@ test("denied camera tells the user how to allow it", async ({ page }, testInfo) 
       },
     });
   });
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   await expect(page.getByText(/permission was denied/i)).toHaveCount(0);
   await page.getByRole("button", { name: "Take selfie" }).click();
   await expect(page.getByText("Camera permission was denied. Allow the camera for this site from the address bar, then press Take selfie again.")).toBeVisible();

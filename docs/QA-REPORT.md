@@ -9,7 +9,7 @@ Date: 2026-10-10. No paid provider call. Playwright blanks provider keys. Guest 
 | Unit tests | 15 files, 119 tests passed |
 | Playwright | 49 passed, 1 failed, 7 skipped in the full run. The failure was an `EIO` while closing a screenshot file on the iPhone project. The same retake test passed on desktop in that run, and passed again on the iPhone project when re-run (1 passed). Responsive layouts passed on iPhone 13, iPhone 15, Pixel 7, iPad Mini, iPad Pro, Galaxy Tab S4, landscape tablets, and 1280/1440/1920. |
 | `npm run build` then `npm start` | Build exit 0. `GET /api/health` returned `ok: true`, `db: true`, `ai: mock`, `billing: mock`. |
-| Docker and Postgres | Image `lookuvi:local` built. Postgres 16 and the app container ran. Seed completed. `GET /api/health` was ok and `/s/demo-salon` returned 200. A container with no `AUTH_SECRET` exited 1. |
+| Docker and Postgres | Image `lookuvi:local` built. Postgres 16 and the app container ran. Seed completed. `GET /api/health` was ok and `/s/demo` returned 200. A container with no `AUTH_SECRET` exited 1. |
 | Production env | `next start` exits 1 in under a second when `AUTH_SECRET`, `AUTH_TRUST_HOST`, or `APP_BASE_URL` is missing, and when `ALLOW_DEV_MAGIC_LINK` or `ALLOW_DEV_OTP` is `true`. |
 
 ## Bugs

@@ -2,6 +2,10 @@ export function brandName() {
   return process.env.BRAND_NAME || "Lookuvi";
 }
 
+export function legalName() {
+  return process.env.BRAND_LEGAL_NAME || "Agentic Build Works";
+}
+
 export function appBaseUrl() {
   return (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 }

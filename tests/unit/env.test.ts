@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { productionEnvProblems } from "@/lib/env";
+import { legalName, productionEnvProblems } from "@/lib/env";
 
 const good = {
   NODE_ENV: "production",
@@ -18,6 +18,16 @@ const good = {
 };
 
 describe("production env", () => {
+  it("names Agentic Build Works unless BRAND_LEGAL_NAME is set", () => {
+    const previous = process.env.BRAND_LEGAL_NAME;
+    delete process.env.BRAND_LEGAL_NAME;
+    expect(legalName()).toBe("Agentic Build Works");
+    process.env.BRAND_LEGAL_NAME = "Custom Co";
+    expect(legalName()).toBe("Custom Co");
+    if (previous === undefined) delete process.env.BRAND_LEGAL_NAME;
+    else process.env.BRAND_LEGAL_NAME = previous;
+  });
+
   it("stays quiet outside production", () => {
     expect(productionEnvProblems({ NODE_ENV: "development" })).toEqual([]);
     expect(productionEnvProblems({ NODE_ENV: "test" })).toEqual([]);

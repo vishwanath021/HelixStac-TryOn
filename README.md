@@ -35,7 +35,7 @@ npm run seed
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), then the demo at [http://localhost:3000/s/demo-salon](http://localhost:3000/s/demo-salon).
+Open [http://localhost:3000](http://localhost:3000), then the demo at [http://localhost:3000/s/demo](http://localhost:3000/s/demo).
 
 Docker (Postgres):
 
@@ -51,9 +51,9 @@ These accounts exist only after seeding a local database. They are not productio
 
 | Role | Email | Password |
 |---|---|---|
-| Owner | `owner@demo.helixstac.app` | `DemoSalon#2026` |
-| Staff | `staff@demo.helixstac.app` | `DemoStaff#2026` |
-| Super-admin | `super@helixstac.app` | `SuperAdmin#2026` |
+| Owner | `owner@demo.agenticbuildworks.com` | `DemoSalon#2026` |
+| Staff | `staff@demo.agenticbuildworks.com` | `DemoStaff#2026` |
+| Super-admin | `super@agenticbuildworks.com` | `SuperAdmin#2026` |
 
 Demo WhatsApp number: `919800011122` (not a live handset).
 
@@ -215,7 +215,7 @@ Quote without a provider call:
 npm run benchmark:quote
 ```
 
-Paid run from the salon page: sign in as the super-admin, open `/s/demo-salon`, stay on Hairstyle, and turn on **Reference mode (test)**. That switch is not rendered for a guest. Upload or take a selfie, pick a style (that click quotes the cost and does not call the provider), read the estimate, tick the confirmation, and press **Try this hairstyle**. The result is the raw provider image beside the original, labelled Experimental, unvalidated. Actual cost, usage, and latency are on that page for the super-admin only. **Delete now** removes the saved stages. The same request uses the provider spend ledger, the ₹500 cap, and the ₹30 per-run cap. It does not retry, does not send a mask, and does not paste the original face back.
+Paid run from the salon page: sign in as the super-admin, open `/s/demo`, stay on Hairstyle, and turn on **Reference mode (test)**. That switch is not rendered for a guest. Upload or take a selfie, pick a style (that click quotes the cost and does not call the provider), read the estimate, tick the confirmation, and press **Try this hairstyle**. The result is the raw provider image beside the original, labelled Experimental, unvalidated. Actual cost, usage, and latency are on that page for the super-admin only. **Delete now** removes the saved stages. The same request uses the provider spend ledger, the ₹500 cap, and the ₹30 per-run cap. It does not retry, does not send a mask, and does not paste the original face back.
 
 **Hair-only composite** is a second checkbox, visible only after Reference mode is on. It is off by default. The paid call is the same single reference edit. After that image returns, a local MediaPipe pass keeps the selfie for the face, beard, clothes and background, and takes pixels from the generated image only in the hair region. The hair edge is an eroded matte with a 3-pixel feather. Removed hair is filled from the neighbouring wall, and the model's pale background is not blended onto that wall. The download is the composite. The raw provider image stays on screen and is not relabelled. If the local pass fails, the raw image is still shown and the paid call is not sent again. This needs Python 3 with `mediapipe==0.10.21` (`pip install -r scripts/requirements-vision.txt`) and the files in `assets/vision`. A missing model refuses the request before the paid call. An unreliable mask after the call keeps the raw image and does not retry. Guests never see this switch. The `/super/ai` benchmark form stays the pure reference edit, with no composite.
 
@@ -286,7 +286,7 @@ Guest URL: `https://{APP_BASE_URL}/s/{slug}` or `{slug}.try.{ROOT_DOMAIN}` once 
 ## Embed
 
 ```html
-<script src="https://your-domain/embed.js" data-salon="demo-salon" data-lang="kn" defer></script>
+<script src="https://your-domain/embed.js" data-salon="demo" data-lang="kn" defer></script>
 ```
 
 The script adds a button and an iframe to `/embed/{slug}` with `allow="camera"`. The iframe posts `{ type: "tryon:booked", look }` to the parent. The message does not include a photo.

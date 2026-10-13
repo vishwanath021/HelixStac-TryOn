@@ -28,7 +28,7 @@ test("style, colour, brows, beard, and nails preview on this screen", async ({ p
     if (request.method() === "POST" && request.url().includes("/api/v1/tryon/generate")) posts.count += 1;
   });
 
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await page.getByRole("button", { name: "Take selfie" }).click();
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
