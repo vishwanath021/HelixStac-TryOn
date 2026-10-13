@@ -61,7 +61,7 @@ describe("queue joins", () => {
     await prisma.tenant.deleteMany({ where: { slug: { startsWith: "queue-" } } });
   });
 
-  it("gives daily tokens, a wait, and one alert when someone is called", async () => {
+  it("gives daily tokens and a wait, and stays quiet until the wait is within the lead time", async () => {
     const { slug, service, tenant } = await salon();
     const first = await joinQueue({ slug, name: "Asha", phone: "9876500101", consent: true, ip: "join-a", serviceId: service.id, send });
     const second = await joinQueue({ slug, name: "Bea", phone: "9876500102", consent: true, ip: "join-b", send });
@@ -71,49 +71,47 @@ describe("queue joins", () => {
     expect(second.token).toBe(2);
     expect(second.ahead).toBe(1);
     expect(second.waitMin).toBe(15);
-    const joined = send.mock.calls.filter((call) => call[0].kind === "joined");
-    expect(joined).toHaveLength(2);
-    expect(joined[0][0].parameters).toEqual([String(first.token), expect.stringContaining(`/s/${slug}/q/`)]);
-    expect(joined[0][0].body).toContain(String(first.token));
-    expect(joined[0][0].body).not.toMatch(/min/);
+    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(0);
+    expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(0);
     const again = await joinQueue({ slug, name: "Asha", phone: "9876500101", consent: true, ip: "join-c", send });
     expect(again.ref).toBe(first.ref);
     const before = send.mock.calls.length;
     await sweepAlerts(tenant.id, send);
     expect(send.mock.calls.length).toBe(before);
     await callNext(tenant.id, send);
-    expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(1);
-    expect(send.mock.calls.some((call) => call[0].kind === "called")).toBe(false);
-    await sweepAlerts(tenant.id, send);
-    expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(1);
+    expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(0);
     const row = await prisma.queueEntry.findFirstOrThrow({ where: { cancelToken: first.ref } });
     expect(row.status).toBe("CALLED");
-    expect(row.alertSentAt).toBeTruthy();
+    expect(row.alertSentAt).toBeNull();
     await finishEntry(tenant.id, row.id, "DONE", send);
     await callNext(tenant.id, send);
-    expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(2);
+    expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(0);
   });
 
-  it("sends the near-turn alert once, and skips it again when that guest is called", async () => {
+  it("sends an online guest one near-turn alert and does not send it again when they are called", async () => {
     const { slug, tenant } = await salon();
     await saveQueueSettings(tenant.id, { units: 1, avgMinutes: 20, alertLeadMin: 5, mode: "LIVE", unitLabel: "chair" });
     const ticket = await joinQueue({ slug, name: "Asha", phone: "9876500111", consent: true, ip: "near", send });
     expect(ticket.waitMin).toBe(0);
-    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(1);
+    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(0);
     expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(1);
     await callNext(tenant.id, send);
-    expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(1);
-    expect(send.mock.calls.some((call) => call[0].kind === "called")).toBe(false);
+    expect(send.mock.calls).toHaveLength(1);
+    expect(send.mock.calls[0][0].kind).toBe("almost");
   });
 
-  it("sends a join message only when a walk-in has a phone", async () => {
-    const { tenant } = await salon();
+  it("sends a walk-in with a phone only the join message", async () => {
+    const { slug, tenant } = await salon();
+    await saveQueueSettings(tenant.id, { units: 1, avgMinutes: 20, alertLeadMin: 5, mode: "LIVE", unitLabel: "chair" });
     send.mockClear();
-    await addWalkIn(tenant.id, { name: "Desk" }, send);
-    expect(send.mock.calls).toHaveLength(0);
     await addWalkIn(tenant.id, { name: "Phone", phone: "9876500112" }, send);
-    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(1);
+    expect(send.mock.calls).toHaveLength(1);
+    expect(send.mock.calls[0][0].kind).toBe("joined");
     expect(send.mock.calls[0][0].to).toBe("919876500112");
+    expect(send.mock.calls[0][0].parameters[0]).toBe("1");
+    expect(send.mock.calls[0][0].parameters[1]).toContain(`/s/${slug}/q/`);
+    await addWalkIn(tenant.id, { name: "Desk" }, send);
+    expect(send.mock.calls).toHaveLength(1);
     await expect(addWalkIn(tenant.id, { name: "Bad", phone: "12345" }, send)).rejects.toMatchObject({ code: "PHONE" });
   });
 
@@ -156,7 +154,7 @@ describe("queue joins", () => {
     const saved = await prisma.queueEntry.findUniqueOrThrow({ where: { id: row.id } });
     expect(saved.status).toBe("CONFIRMED");
     expect(saved.requestedSlot).toBe("12:00");
-    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(1);
+    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(0);
     expect(send.mock.calls.filter((call) => call[0].kind === "confirmed")).toHaveLength(1);
     expect(send.mock.calls.some((call) => call[0].kind === "almost")).toBe(false);
     await prisma.queueEntry.create({

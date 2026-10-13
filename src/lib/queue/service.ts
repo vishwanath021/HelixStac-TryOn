@@ -124,7 +124,7 @@ export async function sweepAlerts(tenantId: string, send: Sender = notifyGuest) 
   if (!tenant?.productQueue) return { sent: 0 };
   let sent = 0;
   for (const entry of entries) {
-    if (entry.status !== "WAITING" || entry.alertSentAt || !entry.phone) continue;
+    if (entry.source !== "ONLINE" || entry.status !== "WAITING" || entry.alertSentAt || !entry.phone) continue;
     const wait = timing(entries, entry.id, state.avgMinutes, state.units);
     if (wait.waitMin > state.alertLeadMin) continue;
     const ok = await claimAndSend(entry, almostMessage({
@@ -255,8 +255,6 @@ export async function joinQueue(input: {
   const loaded = await loadDay(tenant.id, dayKey);
   const row = loaded.entries.find((entry) => entry.id === created.id) || (created as EntryRow);
   const wait = timing(loaded.entries, row.id, loaded.state.avgMinutes, loaded.state.units);
-  const link = statusUrl(tenant.slug, row.cancelToken);
-  await safeSend(send, { ...joinedMessage({ salon: tenant.name, token: row.token, link }), to: phone });
   if (state.mode !== "REQUEST") await sweepAlerts(tenant.id, send);
   return ticket(tenant.slug, row, state.mode, wait.waitMin, wait.ahead);
 }
@@ -380,7 +378,7 @@ function freeSlot(entries: EntryRow[], units: number) {
 }
 
 export async function callNext(tenantId: string, send: Sender = notifyGuest) {
-  const tenant = await requireDesk(tenantId);
+  await requireDesk(tenantId);
   const dayKey = kolkataDayKey();
   const { state, entries } = await loadDay(tenantId, dayKey);
   if (state.mode !== "LIVE") throw new QueueError("STATE", "This salon takes time requests, not a live line.", 409);
@@ -392,12 +390,6 @@ export async function callNext(tenantId: string, send: Sender = notifyGuest) {
     where: { id: next.id },
     data: { status: "CALLED", calledAt: new Date(), unitSlot: slot },
   });
-  await claimAndSend(next, almostMessage({
-    salon: tenant.name,
-    token: next.token,
-    waitMin: 0,
-    link: statusUrl(tenant.slug, next.cancelToken),
-  }), send);
   await sweepAlerts(tenantId, send);
   return deskSnapshot(tenantId);
 }

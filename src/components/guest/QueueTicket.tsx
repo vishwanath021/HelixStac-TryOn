@@ -71,7 +71,7 @@ export function QueueTicket({ slug, initial }: { slug: string; initial: Ticket }
   return (
     <div data-status={ticket.status} data-ready={ready ? "yes" : "no"}>
       <p className="mt-6 text-sm uppercase tracking-[0.14em] text-muted">{t(lang, "queueToken", { token: ticket.token })}</p>
-      <p className="font-serif text-7xl leading-none">{ticket.token}</p>
+      <p className="font-serif text-7xl leading-none" data-queue-token={ticket.token}>{ticket.token}</p>
       <p className="mt-4 text-lg">{line}</p>
       {ticket.serviceName ? <p className="mt-1 text-sm text-muted">{ticket.serviceName}</p> : null}
       {ticket.onTheWay ? <p className="mt-3 text-sm">{t(lang, "queueComing")}</p> : null}

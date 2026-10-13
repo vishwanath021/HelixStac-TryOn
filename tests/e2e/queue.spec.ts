@@ -53,6 +53,7 @@ test("a guest joins, sees a live token, and can rejoin from this phone", async (
   await page.getByRole("checkbox", { name: /queue updates/i }).check();
   await page.getByRole("button", { name: "Join the queue" }).click();
   await expect(page.locator("[data-status='WAITING'][data-ready='yes']")).toBeVisible();
+  await expect(page.locator("[data-status='WAITING'] [data-queue-token]")).toHaveClass(/text-7xl/);
   await expect(page.getByText(/Token \d+/)).toBeVisible();
   await page.getByRole("button", { name: "I'm on my way" }).click();
   await expect(page.getByText("The desk knows you are on the way.")).toBeVisible();
