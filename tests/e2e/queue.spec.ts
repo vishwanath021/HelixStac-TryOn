@@ -74,9 +74,12 @@ test("the desk calls the next guest, finishes the visit, and adds a walk-in", as
   await expect(page.getByText("Queue Guest")).toBeVisible();
   await page.getByRole("button", { name: "Done" }).click();
   await expect(page.getByText("Queue Guest")).toHaveCount(0);
+  await expect(page.getByLabel("Mobile number (optional)")).toBeVisible();
   await page.getByLabel("Walk-in name").fill("Desk Guest");
   await page.getByRole("button", { name: "Add walk-in" }).click();
   await expect(page.getByText("Desk Guest")).toBeVisible();
+  await expect(page.locator("[data-queue-token]")).toBeVisible();
+  await expect(page.locator("[data-queue-token]")).toHaveClass(/text-7xl/);
 });
 
 test("request mode asks for a time and the desk confirms it", async ({ page }) => {

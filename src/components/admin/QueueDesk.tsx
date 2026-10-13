@@ -122,7 +122,7 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
                 <p className="text-xs uppercase tracking-[0.14em] text-muted">{place} {seat.unit}</p>
                 {seat.entry ? (
                   <>
-                    <p className="font-serif text-4xl">{seat.entry.token}</p>
+                    <p className="font-serif text-7xl leading-none" data-queue-token={seat.entry.token}>{seat.entry.token}</p>
                     <p className="text-lg">{seat.entry.name}{seat.entry.serviceName ? ` · ${seat.entry.serviceName}` : ""}</p>
                     {seat.entry.onTheWay ? <p className="text-sm">{t(lang, "queueOnTheWayBadge")}</p> : null}
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -148,7 +148,7 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
           <div className="mt-3 grid gap-3">
             {desk.waiting.map((card) => (
               <article key={card.id} className="card p-4">
-                <p className="font-serif text-3xl">{card.token}</p>
+                <p className="font-serif text-7xl leading-none" data-queue-token={card.token}>{card.token}</p>
                 <p className="text-lg">{card.name}{card.serviceName ? ` · ${card.serviceName}` : ""}</p>
                 <p className="text-sm text-muted">{t(lang, "queueMinShort", { min: card.waitMin })} · {t(lang, "queueAheadShort", { ahead: card.ahead })}</p>
                 {card.onTheWay ? <p className="text-sm">{t(lang, "queueOnTheWayBadge")}</p> : null}
@@ -174,7 +174,7 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
             <label className="text-sm">{t(lang, "queueWalkName")}
               <input className="field mt-1" value={walkName} onChange={(event) => setWalkName(event.target.value)} />
             </label>
-            <label className="text-sm">{t(lang, "queuePhone")}
+            <label className="text-sm">{t(lang, "queuePhoneOptional")}
               <input className="field mt-1" inputMode="tel" value={walkPhone} onChange={(event) => setWalkPhone(event.target.value)} />
             </label>
             <button className="btn w-full" type="submit" disabled={busy}>{t(lang, "queueWalkIn")}</button>

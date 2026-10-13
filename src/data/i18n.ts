@@ -292,6 +292,7 @@ const en: Record<string, string> = {
   queueCall: "Call",
   queueWalkIn: "Add walk-in",
   queueWalkName: "Walk-in name",
+  queuePhoneOptional: "Mobile number (optional)",
   queuePause: "Pause queue",
   queueOpenBtn: "Open queue",
   queueNow: "Now serving",

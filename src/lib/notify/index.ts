@@ -1,6 +1,6 @@
 import { logInfo } from "@/lib/logger";
 
-export type NotifyKind = "joined" | "almost" | "called" | "confirmed";
+export type NotifyKind = "joined" | "almost" | "confirmed";
 
 export type NotifyMessage = {
   to: string;
@@ -16,11 +16,8 @@ export type NotifyEnv = {
   WHATSAPP_PHONE_ID?: string;
   WHATSAPP_TEMPLATE_JOIN?: string;
   WHATSAPP_TEMPLATE_ALERT?: string;
-  WHATSAPP_TEMPLATE_CALLED?: string;
   WHATSAPP_TEMPLATE_CONFIRMED?: string;
   WHATSAPP_TEMPLATE_LANG?: string;
-  MSG91_AUTH_KEY?: string;
-  MSG91_SENDER_ID?: string;
 };
 
 type FetchLike = typeof fetch;
@@ -29,14 +26,9 @@ export function whatsAppConfigured(env: NotifyEnv) {
   return Boolean(env.WHATSAPP_TOKEN && env.WHATSAPP_PHONE_ID);
 }
 
-export function msg91Configured(env: NotifyEnv) {
-  return Boolean(env.MSG91_AUTH_KEY && env.MSG91_SENDER_ID);
-}
-
 export function templateFor(kind: NotifyKind, env: NotifyEnv) {
   if (kind === "joined") return env.WHATSAPP_TEMPLATE_JOIN || "";
   if (kind === "almost") return env.WHATSAPP_TEMPLATE_ALERT || "";
-  if (kind === "called") return env.WHATSAPP_TEMPLATE_CALLED || "";
   return env.WHATSAPP_TEMPLATE_CONFIRMED || "";
 }
 
@@ -70,40 +62,19 @@ export async function sendWhatsApp(message: NotifyMessage, env: NotifyEnv, fetch
   return { ok: true, provider: "whatsapp" };
 }
 
-export async function sendMsg91(message: NotifyMessage, env: NotifyEnv, fetchImpl: FetchLike = fetch): Promise<NotifyResult> {
-  if (!msg91Configured(env)) return { ok: false, provider: "msg91", error: "OFF" };
-  const res = await fetchImpl("https://control.msg91.com/api/v5/sms", {
-    method: "POST",
-    headers: {
-      authkey: env.MSG91_AUTH_KEY || "",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      sender: env.MSG91_SENDER_ID,
-      route: "4",
-      country: "91",
-      sms: [{ message: message.body.slice(0, 480), to: [message.to] }],
-    }),
-  });
-  if (!res.ok) return { ok: false, provider: "msg91", error: `HTTP_${res.status}` };
-  return { ok: true, provider: "msg91" };
-}
-
 export async function sendLog(message: NotifyMessage): Promise<NotifyResult> {
   logInfo("queue notify", { provider: "log", kind: message.kind, tail: message.to.slice(-4) });
   return { ok: true, provider: "log" };
 }
 
-/** WhatsApp Cloud API when both env values are set, MSG91 SMS if that send cannot run, otherwise a log line. */
+/** WhatsApp Cloud API when it is configured and the send succeeds. A missing config or a failed send is logged and not retried. */
 export async function notifyGuest(message: NotifyMessage, env: NotifyEnv = process.env as NotifyEnv, fetchImpl: FetchLike = fetch): Promise<NotifyResult> {
   if (!message.to) return { ok: false, provider: "none", error: "PHONE" };
   if (whatsAppConfigured(env)) {
     const result = await sendWhatsApp(message, env, fetchImpl);
     if (result.ok) return result;
-    if (msg91Configured(env)) return sendMsg91(message, env, fetchImpl);
-    logInfo("queue notify skipped", { provider: "whatsapp", kind: message.kind, error: result.error || "" });
-    return result;
+    await sendLog(message);
+    return { ok: false, provider: "log", error: result.error };
   }
-  if (msg91Configured(env)) return sendMsg91(message, env, fetchImpl);
   return sendLog(message);
 }

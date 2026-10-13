@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { kolkataDayKey } from "@/lib/queue/day";
 import { peopleAhead, waitMinutes } from "@/lib/queue/estimate";
 import { indianMobile } from "@/lib/queue/phone";
-import { QueueError, callNext, confirmRequest, finishEntry, joinQueue, purgeOldQueueEntries, saveQueueSettings, setQueueOpen, sweepAlerts } from "@/lib/queue/service";
+import { QueueError, addWalkIn, callNext, confirmRequest, finishEntry, joinQueue, purgeOldQueueEntries, saveQueueSettings, setQueueOpen, sweepAlerts } from "@/lib/queue/service";
 import { resetRateLimits } from "@/lib/ratelimit";
 import { loadSalons } from "@/lib/super/directory";
 
@@ -71,21 +71,50 @@ describe("queue joins", () => {
     expect(second.token).toBe(2);
     expect(second.ahead).toBe(1);
     expect(second.waitMin).toBe(15);
+    const joined = send.mock.calls.filter((call) => call[0].kind === "joined");
+    expect(joined).toHaveLength(2);
+    expect(joined[0][0].parameters).toEqual([String(first.token), expect.stringContaining(`/s/${slug}/q/`)]);
+    expect(joined[0][0].body).toContain(String(first.token));
+    expect(joined[0][0].body).not.toMatch(/min/);
     const again = await joinQueue({ slug, name: "Asha", phone: "9876500101", consent: true, ip: "join-c", send });
     expect(again.ref).toBe(first.ref);
     const before = send.mock.calls.length;
     await sweepAlerts(tenant.id, send);
     expect(send.mock.calls.length).toBe(before);
     await callNext(tenant.id, send);
-    expect(send.mock.calls.filter((call) => call[0].kind === "called")).toHaveLength(1);
+    expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(1);
+    expect(send.mock.calls.some((call) => call[0].kind === "called")).toBe(false);
     await sweepAlerts(tenant.id, send);
-    expect(send.mock.calls.filter((call) => call[0].kind === "called")).toHaveLength(1);
+    expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(1);
     const row = await prisma.queueEntry.findFirstOrThrow({ where: { cancelToken: first.ref } });
     expect(row.status).toBe("CALLED");
     expect(row.alertSentAt).toBeTruthy();
     await finishEntry(tenant.id, row.id, "DONE", send);
     await callNext(tenant.id, send);
-    expect(send.mock.calls.filter((call) => call[0].kind === "called")).toHaveLength(2);
+    expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(2);
+  });
+
+  it("sends the near-turn alert once, and skips it again when that guest is called", async () => {
+    const { slug, tenant } = await salon();
+    await saveQueueSettings(tenant.id, { units: 1, avgMinutes: 20, alertLeadMin: 5, mode: "LIVE", unitLabel: "chair" });
+    const ticket = await joinQueue({ slug, name: "Asha", phone: "9876500111", consent: true, ip: "near", send });
+    expect(ticket.waitMin).toBe(0);
+    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(1);
+    expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(1);
+    await callNext(tenant.id, send);
+    expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(1);
+    expect(send.mock.calls.some((call) => call[0].kind === "called")).toBe(false);
+  });
+
+  it("sends a join message only when a walk-in has a phone", async () => {
+    const { tenant } = await salon();
+    send.mockClear();
+    await addWalkIn(tenant.id, { name: "Desk" }, send);
+    expect(send.mock.calls).toHaveLength(0);
+    await addWalkIn(tenant.id, { name: "Phone", phone: "9876500112" }, send);
+    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(1);
+    expect(send.mock.calls[0][0].to).toBe("919876500112");
+    await expect(addWalkIn(tenant.id, { name: "Bad", phone: "12345" }, send)).rejects.toMatchObject({ code: "PHONE" });
   });
 
   it("refuses a closed queue, a missing consent tick, a bad phone, and a salon without the product", async () => {
@@ -127,7 +156,9 @@ describe("queue joins", () => {
     const saved = await prisma.queueEntry.findUniqueOrThrow({ where: { id: row.id } });
     expect(saved.status).toBe("CONFIRMED");
     expect(saved.requestedSlot).toBe("12:00");
-    expect(send.mock.calls.some((call) => call[0].kind === "confirmed")).toBe(true);
+    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(1);
+    expect(send.mock.calls.filter((call) => call[0].kind === "confirmed")).toHaveLength(1);
+    expect(send.mock.calls.some((call) => call[0].kind === "almost")).toBe(false);
     await prisma.queueEntry.create({
       data: {
         tenantId: tenant.id,
@@ -191,32 +222,31 @@ describe("queue joins", () => {
 });
 
 describe("queue notify", () => {
-  it("uses WhatsApp templates, then MSG91, then a log line", async () => {
+  it("sends a WhatsApp template, and logs when WhatsApp is missing or the send fails", async () => {
     const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
-    const message: NotifyMessage = { to: "919876543210", kind: "called", body: "come in", parameters: ["Salon", "4", "https://example.test/s/a/q/ref"] };
+    const message: NotifyMessage = { to: "919876543210", kind: "almost", body: "come in", parameters: ["Salon", "4", "0", "https://example.test/s/a/q/ref"] };
     const sent = await sendWhatsApp(message, {
       WHATSAPP_TOKEN: "wa-token",
       WHATSAPP_PHONE_ID: "phone-1",
-      WHATSAPP_TEMPLATE_CALLED: "queue_called",
+      WHATSAPP_TEMPLATE_ALERT: "queue_alert",
     }, fetchImpl as unknown as typeof fetch);
     expect(sent).toEqual({ ok: true, provider: "whatsapp" });
     const payload = JSON.parse(String((fetchImpl.mock.calls[0] as unknown[])[1] && (fetchImpl.mock.calls[0][1] as { body: string }).body));
-    expect(payload.template.name).toBe("queue_called");
+    expect(payload.template.name).toBe("queue_alert");
     expect(payload.to).toBe("919876543210");
     expect(payload.messaging_product).toBe("whatsapp");
     const missing = await sendWhatsApp(message, { WHATSAPP_TOKEN: "wa-token", WHATSAPP_PHONE_ID: "phone-1" }, fetchImpl as unknown as typeof fetch);
     expect(missing.error).toBe("TEMPLATE");
 
-    const fallbackFetch = vi.fn()
-      .mockResolvedValueOnce(new Response("no", { status: 500 }))
-      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
-    const fallback = await notifyGuest(
-      { ...message, kind: "joined" },
-      { WHATSAPP_TOKEN: "wa-token", WHATSAPP_PHONE_ID: "phone-1", WHATSAPP_TEMPLATE_JOIN: "queue_join", MSG91_AUTH_KEY: "key", MSG91_SENDER_ID: "LOOKU" },
-      fallbackFetch as unknown as typeof fetch,
+    const failedFetch = vi.fn(async () => new Response("no", { status: 500 }));
+    const failed = await notifyGuest(
+      { ...message, kind: "joined", parameters: ["4", "https://example.test/s/a/q/ref"] },
+      { WHATSAPP_TOKEN: "wa-token", WHATSAPP_PHONE_ID: "phone-1", WHATSAPP_TEMPLATE_JOIN: "queue_join" },
+      failedFetch as unknown as typeof fetch,
     );
-    expect(fallback.provider).toBe("msg91");
-    expect(fallbackFetch).toHaveBeenCalledTimes(2);
+    expect(failed).toEqual({ ok: false, provider: "log", error: "HTTP_500" });
+    expect(failedFetch).toHaveBeenCalledTimes(1);
+    expect(String(failedFetch.mock.calls[0][0])).toContain("graph.facebook.com");
 
     const logged = await notifyGuest(message, {});
     expect(logged.provider).toBe("log");

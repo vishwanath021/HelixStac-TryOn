@@ -4,7 +4,7 @@ import { sharedRateLimit } from "@/lib/ratelimit";
 import { notifyGuest, type NotifyMessage, type NotifyResult } from "@/lib/notify";
 import { kolkataDayKey } from "@/lib/queue/day";
 import { peopleAhead, serviceMinutes, waitMinutes, type WaitRow } from "@/lib/queue/estimate";
-import { almostMessage, calledMessage, confirmedMessage, deskWhatsAppText, joinedMessage, statusPath, statusUrl } from "@/lib/queue/messages";
+import { almostMessage, confirmedMessage, deskWhatsAppText, joinedMessage, statusPath, statusUrl } from "@/lib/queue/messages";
 import { indianMobile } from "@/lib/queue/phone";
 
 export class QueueError extends Error {
@@ -256,16 +256,8 @@ export async function joinQueue(input: {
   const row = loaded.entries.find((entry) => entry.id === created.id) || (created as EntryRow);
   const wait = timing(loaded.entries, row.id, loaded.state.avgMinutes, loaded.state.units);
   const link = statusUrl(tenant.slug, row.cancelToken);
-  if (state.mode === "REQUEST") {
-    await safeSend(send, {
-      ...joinedMessage({ salon: tenant.name, token: row.token, waitMin: 0, ahead: 0, link }),
-      to: phone,
-      body: `${tenant.name}: request received for ${requestedDate} at ${requestedSlot}. We will confirm. ${link}`,
-    });
-  } else {
-    await safeSend(send, { ...joinedMessage({ salon: tenant.name, token: row.token, waitMin: wait.waitMin, ahead: wait.ahead, link }), to: phone });
-    await sweepAlerts(tenant.id, send);
-  }
+  await safeSend(send, { ...joinedMessage({ salon: tenant.name, token: row.token, link }), to: phone });
+  if (state.mode !== "REQUEST") await sweepAlerts(tenant.id, send);
   return ticket(tenant.slug, row, state.mode, wait.waitMin, wait.ahead);
 }
 
@@ -400,9 +392,10 @@ export async function callNext(tenantId: string, send: Sender = notifyGuest) {
     where: { id: next.id },
     data: { status: "CALLED", calledAt: new Date(), unitSlot: slot },
   });
-  await claimAndSend(next, calledMessage({
+  await claimAndSend(next, almostMessage({
     salon: tenant.name,
     token: next.token,
+    waitMin: 0,
     link: statusUrl(tenant.slug, next.cancelToken),
   }), send);
   await sweepAlerts(tenantId, send);
@@ -461,15 +454,10 @@ export async function addWalkIn(tenantId: string, input: { name?: string; phone?
     });
   });
   if (phone) {
-    const loaded = await loadDay(tenantId, dayKey);
-    const row = loaded.entries.find((entry) => entry.id === created.id);
-    const wait = row ? timing(loaded.entries, row.id, state.avgMinutes, state.units) : { waitMin: 0, ahead: 0 };
     await safeSend(send, {
       ...joinedMessage({
         salon: tenant.name,
         token: created.token,
-        waitMin: wait.waitMin,
-        ahead: wait.ahead,
         link: statusUrl(tenant.slug, created.cancelToken),
       }),
       to: phone,
