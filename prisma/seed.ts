@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { SHADES } from "../src/data/shades";
 import { STYLES } from "../src/data/styles";
 import { PLANS, TRIAL_DAYS } from "../src/data/plans";
+import { demoSlug } from "../src/lib/demo-slug";
 
 const prisma = new PrismaClient();
 
@@ -17,8 +18,9 @@ async function main() {
   }
   const trialEnds = new Date();
   trialEnds.setDate(trialEnds.getDate() + TRIAL_DAYS);
+  const slug = demoSlug();
   const tenant = await prisma.tenant.upsert({
-    where: { slug: "demo-salon" },
+    where: { slug },
     update: {
       creditBalance: PLANS.PRO.credits,
       status: "TRIAL",
@@ -34,7 +36,7 @@ async function main() {
       requireLoginToBook: false,
     },
     create: {
-      slug: "demo-salon",
+      slug,
       name: "Demo Salon – Bengaluru",
       logoUrl: "/brand/lookuvi-mark.svg",
       primaryColor: "#69517D",
@@ -128,19 +130,19 @@ async function main() {
   const staffHash = await hash(STAFF_PASSWORD, 10);
   const superHash = await hash(SUPER_PASSWORD, 10);
   const owner = await prisma.user.upsert({
-    where: { email: "owner@demo.helixstac.app" },
+    where: { email: "owner@demo.agenticbuildworks.com" },
     update: { passwordHash: ownerHash, name: "Demo Owner" },
-    create: { email: "owner@demo.helixstac.app", name: "Demo Owner", passwordHash: ownerHash },
+    create: { email: "owner@demo.agenticbuildworks.com", name: "Demo Owner", passwordHash: ownerHash },
   });
   const staff = await prisma.user.upsert({
-    where: { email: "staff@demo.helixstac.app" },
+    where: { email: "staff@demo.agenticbuildworks.com" },
     update: { passwordHash: staffHash, name: "Demo Staff" },
-    create: { email: "staff@demo.helixstac.app", name: "Demo Staff", passwordHash: staffHash },
+    create: { email: "staff@demo.agenticbuildworks.com", name: "Demo Staff", passwordHash: staffHash },
   });
   const superAdmin = await prisma.user.upsert({
-    where: { email: "super@helixstac.app" },
+    where: { email: "super@agenticbuildworks.com" },
     update: { passwordHash: superHash, name: "Lookuvi Admin", isSuperAdmin: true },
-    create: { email: "super@helixstac.app", name: "Lookuvi Admin", passwordHash: superHash, isSuperAdmin: true },
+    create: { email: "super@agenticbuildworks.com", name: "Lookuvi Admin", passwordHash: superHash, isSuperAdmin: true },
   });
   await prisma.membership.upsert({
     where: { userId_tenantId: { userId: owner.id, tenantId: tenant.id } },
@@ -167,10 +169,10 @@ async function main() {
   }
 
   console.log(`Seeded ${tenant.name}`);
-  console.log("  Public:  /s/demo-salon");
-  console.log(`  Owner:   owner@demo.helixstac.app  /  ${DEMO_PASSWORD}`);
-  console.log(`  Staff:   staff@demo.helixstac.app  /  ${STAFF_PASSWORD}`);
-  console.log(`  Super:   super@helixstac.app  /  ${SUPER_PASSWORD}`);
+  console.log(`  Public:  /s/${slug}`);
+  console.log(`  Owner:   owner@demo.agenticbuildworks.com  /  ${DEMO_PASSWORD}`);
+  console.log(`  Staff:   staff@demo.agenticbuildworks.com  /  ${STAFF_PASSWORD}`);
+  console.log(`  Super:   super@agenticbuildworks.com  /  ${SUPER_PASSWORD}`);
   console.log("  These are demo logins for a local database, not production secrets.");
   void superAdmin;
 }

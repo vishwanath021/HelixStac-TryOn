@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { demoSlug } from "@/lib/demo-slug";
 
 export function PrivacyRequest() {
-  const [slug, setSlug] = useState("demo-salon");
+  const [slug, setSlug] = useState(() => demoSlug());
   const [contact, setContact] = useState("");
   const [kind, setKind] = useState("delete");
   const [message, setMessage] = useState("");

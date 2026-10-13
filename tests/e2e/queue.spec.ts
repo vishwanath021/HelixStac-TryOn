@@ -9,7 +9,7 @@ async function salonDb() {
 async function signIn(page: import("@playwright/test").Page) {
   await page.goto("/login");
   await page.locator("form[data-ready='yes']").waitFor();
-  await page.getByLabel("Email").fill("owner@demo.helixstac.app");
+  await page.getByLabel("Email").fill("owner@demo.agenticbuildworks.com");
   await page.getByLabel("Password").fill("DemoSalon#2026");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: /this month/i })).toBeVisible();
@@ -20,7 +20,7 @@ test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => {
   const prisma = await salonDb();
   const tenant = await prisma.tenant.update({
-    where: { slug: "demo-salon" },
+    where: { slug: "demo" },
     data: { productQueue: true, productTryOn: true },
   });
   await prisma.queueState.upsert({
@@ -35,7 +35,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   const prisma = await salonDb();
   const tenant = await prisma.tenant.update({
-    where: { slug: "demo-salon" },
+    where: { slug: "demo" },
     data: { productQueue: false },
   });
   await prisma.queueEntry.deleteMany({ where: { tenantId: tenant.id } });
@@ -45,7 +45,7 @@ test.afterAll(async () => {
 
 test("a guest joins, sees a live token, and can rejoin from this phone", async ({ page }) => {
   const phone = `9${String(Date.now()).slice(-9)}`;
-  await page.goto("/s/demo-salon/queue");
+  await page.goto("/s/demo/queue");
   await page.locator("form[data-ready='yes']").waitFor();
   await expect(page.getByText(/You're next|\d+ min/)).toBeVisible();
   await page.getByLabel("Name", { exact: true }).fill("Queue Guest");
@@ -59,7 +59,7 @@ test("a guest joins, sees a live token, and can rejoin from this phone", async (
   await expect(page.getByText(/Token \d+/)).toBeVisible();
   await page.getByRole("button", { name: "I'm on my way" }).click();
   await expect(page.getByText("The desk knows you are on the way.")).toBeVisible();
-  await page.goto("/s/demo-salon/queue");
+  await page.goto("/s/demo/queue");
   await expect(page.getByRole("link", { name: "See your place in line" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Join again" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Try a look while you wait" })).toBeVisible();
@@ -94,7 +94,7 @@ test("request mode asks for a time and the desk confirms it", async ({ page }) =
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.locator("[data-queue-mode='REQUEST']")).toBeVisible();
   const phone = `8${String(Date.now()).slice(-9)}`;
-  await page.goto("/s/demo-salon/queue");
+  await page.goto("/s/demo/queue");
   await page.locator("form[data-ready='yes']").waitFor();
   await page.getByLabel("Name", { exact: true }).fill("Bridal Guest");
   await page.getByLabel("Mobile number").fill(phone);
@@ -121,7 +121,7 @@ test("a paused queue tells the guest to ask at the desk", async ({ page }) => {
   await page.getByRole("button", { name: "Save settings" }).click();
   await page.getByRole("button", { name: "Pause queue" }).click();
   await expect(page.locator("[data-queue-open='no']")).toBeVisible();
-  await page.goto("/s/demo-salon/queue");
+  await page.goto("/s/demo/queue");
   await expect(page.getByText(/queue is paused/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Join the queue" })).toBeDisabled();
 });
@@ -132,9 +132,9 @@ test("try-on links to the queue when both products are on", async ({ page }) => 
   await page.locator("[data-queue-mode][data-ready='yes']").waitFor();
   await page.getByRole("button", { name: "Open queue" }).click();
   await expect(page.locator("[data-queue-open='yes']")).toBeVisible();
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   await expect(page.getByRole("link", { name: "Join queue" })).toBeVisible();
   await page.getByRole("link", { name: "Join queue" }).click();
-  await expect(page).toHaveURL(/\/s\/demo-salon\/queue/);
+  await expect(page).toHaveURL(/\/s\/demo\/queue/);
   await expect(page.getByRole("button", { name: "Join the queue" })).toBeVisible();
 });

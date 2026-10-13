@@ -1,6 +1,6 @@
 import { BillingPanel } from "@/components/admin/BillingPanel";
 import { ownerSelfServeBlocked } from "@/lib/billing/access";
-import { billingProviderName } from "@/lib/env";
+import { billingProviderName, legalName } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { pageTenant } from "@/lib/session";
 
@@ -17,6 +17,7 @@ export default async function BillingPage() {
       <h1 className="mb-4 page-title">Billing</h1>
       <BillingPanel plan={tenant.plan} status={tenant.status} credits={tenant.creditBalance} provider={billingProviderName()} locked={ownerSelfServeBlocked()} />
       <h2 className="mb-2 mt-6 font-serif text-2xl">Invoices</h2>
+      <p className="mb-2 text-sm text-muted">Issued by {legalName()}.</p>
       {invoices.length === 0 && <p className="text-sm text-muted">{ownerSelfServeBlocked() ? "Invoices appear after Lookuvi activates the plan." : "No invoices yet. A mock payment writes one immediately."}</p>}
       <ul className="text-sm">
         {invoices.map((invoice) => (

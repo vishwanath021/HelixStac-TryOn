@@ -47,7 +47,7 @@ async function waitForLiveFrame(page: Page) {
 
 test("tool pill stays one row and the brand bar stays readable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "the test sets its own widths");
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   const mark = page.locator('header svg[viewBox="0 0 64 64"]');
   await expect(mark).toBeVisible();
   await expect(page.locator("header img")).toHaveCount(0);
@@ -178,7 +178,7 @@ test("retake and try another each open a new camera frame", async ({ page }, tes
     });
   });
 
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   await shot(page, `guest-header-${device}`);
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await page.getByRole("button", { name: "Take selfie" }).click();
@@ -227,7 +227,7 @@ test("staff cannot change salon settings or open the platform admin", async ({ p
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/login");
   await expect(page.locator("form").first()).toHaveAttribute("data-ready", "yes");
-  await page.getByLabel("Email").fill("staff@demo.helixstac.app");
+  await page.getByLabel("Email").fill("staff@demo.agenticbuildworks.com");
   await page.getByLabel("Password").fill("DemoStaff#2026");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/admin/);
@@ -242,7 +242,7 @@ test("staff cannot change salon settings or open the platform admin", async ({ p
     return res.status;
   });
   expect(status).toBe(403);
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   await expect(page.getByText("Demo preview")).toHaveCount(0);
   await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
   await page.goto("/super");
@@ -253,11 +253,11 @@ test("an owner can replace the salon logo and restore the Lookuvi mark", async (
   test.skip(testInfo.project.name !== "desktop");
   process.env.DATABASE_URL ||= "file:./dev.db";
   const prisma = new (await import("@prisma/client")).PrismaClient();
-  const before = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo-salon" }, select: { logoUrl: true } });
+  const before = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo" }, select: { logoUrl: true } });
   try {
     await page.goto("/login");
     await expect(page.locator("form").first()).toHaveAttribute("data-ready", "yes");
-    await page.getByLabel("Email").fill("owner@demo.helixstac.app");
+    await page.getByLabel("Email").fill("owner@demo.agenticbuildworks.com");
     await page.getByLabel("Password").fill("DemoSalon#2026");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/admin/);
@@ -271,18 +271,18 @@ test("an owner can replace the salon logo and restore the Lookuvi mark", async (
     await expect(page.locator("form img")).toBeVisible();
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("Settings saved.")).toBeVisible();
-    await page.goto("/s/demo-salon");
+    await page.goto("/s/demo");
     await expect(page.locator("header img")).toHaveAttribute("src", /^data:image\/jpeg/);
     await expect(page.getByText("Demo preview")).toBeVisible();
     await page.goto("/admin/settings");
     await page.getByRole("button", { name: "Use Lookuvi mark" }).click();
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("Settings saved.")).toBeVisible();
-    await page.goto("/s/demo-salon");
+    await page.goto("/s/demo");
     await expect(page.locator('header svg[viewBox="0 0 64 64"]')).toBeVisible();
     await expect(page.locator("header img")).toHaveCount(0);
   } finally {
-    await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { logoUrl: before.logoUrl } });
+    await prisma.tenant.update({ where: { slug: "demo" }, data: { logoUrl: before.logoUrl } });
     await prisma.$disconnect();
   }
 });

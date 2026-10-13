@@ -36,7 +36,7 @@ async function previewShifted(page: Page, shifted: Buffer) {
       body: shifted,
     });
   });
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   await page.locator("input[data-photo='gallery']").setInputFiles(selfiePath);
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await page.getByRole("checkbox", { name: /photo is used only/i }).check();
@@ -70,7 +70,7 @@ test("a super-admin can open the unaligned provider image", async ({ page }, tes
   const shifted = await shiftedProvider();
   await page.goto("/login");
   await expect(page.locator("form[data-ready='yes']")).toBeVisible();
-  await page.getByLabel("Email").fill("super@helixstac.app");
+  await page.getByLabel("Email").fill("super@agenticbuildworks.com");
   await page.getByLabel("Password").fill("SuperAdmin#2026");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Lookuvi" })).toBeVisible();

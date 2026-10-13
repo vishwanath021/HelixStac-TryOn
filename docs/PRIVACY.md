@@ -4,7 +4,7 @@ This is a product note for builders and a starting point for salon owners. It is
 
 ## Roles
 
-The salon decides why a guest's data is processed. In DPDP terms that is the data fiduciary. HelixStac runs the software and is the processor. Say that in the salon contract.
+The salon decides why a guest's data is processed. In DPDP terms that is the data fiduciary. Agentic Build Works runs Lookuvi and is the processor. Say that in the salon contract.
 
 ## What happens to a photo
 

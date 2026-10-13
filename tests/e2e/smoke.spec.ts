@@ -42,7 +42,7 @@ async function salonDb() {
 test.beforeAll(async () => {
   const prisma = await salonDb();
   await prisma.tenant.update({
-    where: { slug: "demo-salon" },
+    where: { slug: "demo" },
     data: { anonDailyCap: 200, requireLoginToBook: false, toolBeard: true, toolNails: true },
   });
   await prisma.$disconnect();
@@ -51,7 +51,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   const prisma = await salonDb();
   await prisma.tenant.update({
-    where: { slug: "demo-salon" },
+    where: { slug: "demo" },
     data: { anonDailyCap: 8, memberDailyCap: 30, requireLoginToBook: false },
   });
   await prisma.$disconnect();
@@ -59,7 +59,7 @@ test.afterAll(async () => {
 
 test("customer can consent, use the camera, preview a cut, and an owner can open the dashboard", async ({ page }) => {
   test.setTimeout(120_000);
-  await page.goto("/");
+  await page.goto("/s/demo");
   await expect(page.getByRole("heading", { name: "See your next look." })).toBeVisible();
   const salonName = page.getByRole("heading", { level: 1, name: "Demo Salon – Bengaluru" });
   await expect(salonName).toBeVisible();
@@ -161,7 +161,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   expect(booking).toContain("Haircut");
   await popup.close();
 
-  await page.goto("/s/demo-salon/guide");
+  await page.goto("/s/demo/guide");
   await expect(page.getByRole("heading", { name: "Hair-colour ideas" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Style ideas" })).toBeVisible();
   await page.getByRole("button", { name: "Show ideas" }).first().click();
@@ -169,7 +169,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.screenshot({ path: "docs/screenshots/10-guide.png", fullPage: true });
 
   await page.goto("/login");
-  await page.getByLabel("Email").fill("owner@demo.helixstac.app");
+  await page.getByLabel("Email").fill("owner@demo.agenticbuildworks.com");
   await page.getByLabel("Password").fill("DemoSalon#2026");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: /this month/i })).toBeVisible();
@@ -190,7 +190,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
 });
 
 test("colour, brows, nails, and beard are on the guest page", async ({ page }) => {
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   await expect(page.getByRole("tab", { name: "Hair style" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Hair colour" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Brows" })).toBeVisible();
@@ -207,7 +207,7 @@ test("colour, brows, nails, and beard are on the guest page", async ({ page }) =
 });
 
 test("camera view can switch to upload without a refresh", async ({ page }) => {
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   const upload = page.getByRole("button", { name: "Upload" });
   const take = page.getByRole("button", { name: "Take selfie" });
   await expect(upload).toBeVisible();
@@ -241,16 +241,16 @@ test("camera view can switch to upload without a refresh", async ({ page }) => {
 
 test("a near-black salon brand still has readable primary button text", async ({ page }) => {
   const prisma = await salonDb();
-  const before = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo-salon" }, select: { primaryColor: true } });
-  await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { primaryColor: "#111111" } });
+  const before = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo" }, select: { primaryColor: true } });
+  await prisma.tenant.update({ where: { slug: "demo" }, data: { primaryColor: "#111111" } });
   try {
-    await page.goto("/s/demo-salon");
+    await page.goto("/s/demo");
     const take = page.getByRole("button", { name: "Take selfie" });
     await expect(take).toBeVisible();
     expect(await buttonContrast(take)).toBeGreaterThanOrEqual(4.5);
     expect(await buttonContrast(page.getByRole("button", { name: "Upload" }))).toBeGreaterThanOrEqual(4.5);
   } finally {
-    await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { primaryColor: before.primaryColor } });
+    await prisma.tenant.update({ where: { slug: "demo" }, data: { primaryColor: before.primaryColor } });
     await prisma.$disconnect();
   }
 });
@@ -258,10 +258,10 @@ test("a near-black salon brand still has readable primary button text", async ({
 test("a renamed salon shows on the guest header and title", async ({ page }) => {
   test.setTimeout(120_000);
   const prisma = await salonDb();
-  const before = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo-salon" }, select: { name: true, id: true } });
+  const before = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo" }, select: { name: true, id: true } });
   try {
     await page.goto("/login");
-    await page.getByLabel("Email").fill("owner@demo.helixstac.app");
+    await page.getByLabel("Email").fill("owner@demo.agenticbuildworks.com");
     await page.getByLabel("Password").fill("DemoSalon#2026");
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("heading", { name: /this month/i })).toBeVisible();
@@ -269,30 +269,30 @@ test("a renamed salon shows on the guest header and title", async ({ page }) => 
     await page.getByLabel("Salon name").fill("Indiranagar Studio");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("Settings saved.")).toBeVisible();
-    await page.goto("/s/demo-salon");
+    await page.goto("/s/demo");
     await expect(page.getByRole("heading", { level: 1, name: "Indiranagar Studio" })).toBeVisible();
     await expect(page).toHaveTitle(/Indiranagar Studio/, { timeout: 15_000 });
     await page.goto("/admin");
     const signOut = page.getByRole("button", { name: "Sign out", exact: true });
     if (!(await signOut.isVisible())) await page.getByRole("button", { name: "Menu", exact: true }).click();
     await signOut.click();
-    await page.waitForURL(/\/s\/demo-salon/);
+    await page.waitForURL(/\/login/);
 
     await page.goto("/login");
-    await page.getByLabel("Email").fill("super@helixstac.app");
+    await page.getByLabel("Email").fill("super@agenticbuildworks.com");
     await page.getByLabel("Password").fill("SuperAdmin#2026");
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("heading", { name: "Lookuvi" })).toBeVisible();
     await page.goto("/super/salons");
-    await page.getByRole("row", { name: /demo-salon/ }).click();
-    const superName = page.getByLabel("Salon name for demo-salon");
+    await page.getByRole("row", { name: /demo/ }).click();
+    const superName = page.getByLabel("Salon name for demo");
     await superName.fill("Studio Indiranagar");
     await superName.locator("xpath=ancestor::form").getByRole("button", { name: "Save name" }).click();
-    await expect(page.getByText("Updated.")).toBeVisible();
-    await page.goto("/s/demo-salon");
+    await expect(page.locator("main").getByText("Updated.", { exact: true })).toBeVisible();
+    await page.goto("/s/demo");
     await expect(page.getByRole("heading", { level: 1, name: "Studio Indiranagar" })).toBeVisible();
     await expect(page).toHaveTitle(/Studio Indiranagar/, { timeout: 15_000 });
-    await page.goto("/s/demo-salon/qr");
+    await page.goto("/s/demo/qr");
     await expect(page.getByRole("heading", { level: 1, name: "Studio Indiranagar" })).toBeVisible();
   } finally {
     await prisma.tenant.update({ where: { id: before.id }, data: { name: before.name } });
@@ -309,7 +309,7 @@ test("denied camera offers an upload fallback", async ({ page }) => {
       },
     });
   });
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   await page.getByRole("button", { name: "Take selfie" }).click();
   await expect(page.getByText(/Camera permission was denied/i)).toBeVisible();
   await expect(page.getByText(/address bar/i)).toBeVisible();
@@ -320,9 +320,9 @@ test("denied camera offers an upload fallback", async ({ page }) => {
 
 test("anonymous daily cap explains the limit and salon mode lifts it", async ({ page }) => {
   const prisma = await salonDb();
-  await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { anonDailyCap: 0 } });
+  await prisma.tenant.update({ where: { slug: "demo" }, data: { anonDailyCap: 0 } });
   try {
-    await page.goto("/s/demo-salon");
+    await page.goto("/s/demo");
     await expect(page.getByLabel("Password")).toHaveCount(0);
     await acceptPhotoUse(page);
     await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
@@ -331,11 +331,11 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
     await expect(page.getByText(/today's previews used up/i)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("heading", { name: "Phone code" })).toHaveCount(0);
 
-    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo-salon" } });
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo" } });
     const nonce = randomBytes(9).toString("base64url");
     await prisma.tenant.update({ where: { id: tenant.id }, data: { salonNonce: nonce } });
     const token = salonModeToken(tenant.id, nonce);
-    await page.goto(`/s/demo-salon?salon=${encodeURIComponent(token)}&tool=style`);
+    await page.goto(`/s/demo?salon=${encodeURIComponent(token)}&tool=style`);
     await expect(page.locator("[data-salon-mode='yes']")).toBeVisible();
     await acceptPhotoUse(page);
     await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
@@ -343,7 +343,7 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
     await page.getByRole("button", { name: "Try this look" }).click();
     await expect(page.getByRole("heading", { name: "Pixie" })).toBeVisible({ timeout: 20_000 });
   } finally {
-    await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { anonDailyCap: 200 } });
+    await prisma.tenant.update({ where: { slug: "demo" }, data: { anonDailyCap: 200 } });
     await prisma.$disconnect();
   }
 });
@@ -353,9 +353,9 @@ test("booking asks for a phone code only when the salon requires it", async ({ p
   process.env.DATABASE_URL ||= "file:./dev.db";
   const { PrismaClient } = await import("@prisma/client");
   const prisma = new PrismaClient();
-  await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { requireLoginToBook: true, anonDailyCap: 40 } });
+  await prisma.tenant.update({ where: { slug: "demo" }, data: { requireLoginToBook: true, anonDailyCap: 40 } });
   try {
-    await page.goto("/s/demo-salon/me?book=1&look=French%20Bob");
+    await page.goto("/s/demo/me?book=1&look=French%20Bob");
     await page.screenshot({ path: "docs/screenshots/11-hub.png", fullPage: true });
     await page.getByLabel("Mobile number").fill("9800099111");
     await page.getByRole("button", { name: "Send code" }).click();
@@ -377,7 +377,7 @@ test("booking asks for a phone code only when the salon requires it", async ({ p
     await expect(page.getByText("Pending").first()).toBeVisible();
 
     await page.goto("/login");
-    await page.getByLabel("Email").fill("owner@demo.helixstac.app");
+    await page.getByLabel("Email").fill("owner@demo.agenticbuildworks.com");
     await page.getByLabel("Password").fill("DemoSalon#2026");
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("heading", { name: /this month/i })).toBeVisible();
@@ -391,14 +391,14 @@ test("booking asks for a phone code only when the salon requires it", async ({ p
     await expect(popup).toHaveURL(/919800099111/);
     await popup.close();
   } finally {
-    await prisma.tenant.update({ where: { slug: "demo-salon" }, data: { requireLoginToBook: false, anonDailyCap: 200 } });
+    await prisma.tenant.update({ where: { slug: "demo" }, data: { requireLoginToBook: false, anonDailyCap: 200 } });
     await prisma.customer.deleteMany({ where: { phone: "919800099111" } });
     await prisma.$disconnect();
   }
 });
 
 test("style gallery uses portraits and the demo result is not a flat placeholder", async ({ page }) => {
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   const gallery = page.getByRole("region", { name: "Styles" });
   await expect(gallery.locator("img")).toHaveCount(26);
   const womenPhoto = gallery.locator("img").first();
@@ -446,7 +446,7 @@ test("style gallery uses portraits and the demo result is not a flat placeholder
 test("super admin chooses the salon hairstyle model without calling a provider", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/login");
-  await page.getByLabel("Email").fill("super@helixstac.app");
+  await page.getByLabel("Email").fill("super@agenticbuildworks.com");
   await page.getByLabel("Password").fill("SuperAdmin#2026");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Lookuvi" })).toBeVisible();
@@ -456,7 +456,7 @@ test("super admin chooses the salon hairstyle model without calling a provider",
   await expect(model.getByRole("radio", { name: /FLUX\.3/ })).toBeChecked();
   await expect(model.getByRole("radio", { name: /sunburst/i })).toBeVisible();
   await artifact(page, "super-provider");
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   await expect(page.getByText("Reference mode")).toHaveCount(0);
   await expect(page.getByText("Hair texture")).toHaveCount(0);
   await expect(page.getByText(/one paid call/i)).toHaveCount(0);
@@ -471,7 +471,7 @@ test("super admin chooses the salon hairstyle model without calling a provider",
 
 test("super admin sees assumed COGS", async ({ page }) => {
   await page.goto("/login");
-  await page.getByLabel("Email").fill("super@helixstac.app");
+  await page.getByLabel("Email").fill("super@agenticbuildworks.com");
   await page.getByLabel("Password").fill("SuperAdmin#2026");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByText(/assumption/i)).toBeVisible();

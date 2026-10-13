@@ -21,7 +21,7 @@ test("brow cards are distinct diagrams and chips do not generate", async ({ page
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().includes("/api/v1/tryon/generate")) posts.push(request.url());
   });
-  await page.goto("/s/demo-salon");
+  await page.goto("/s/demo");
   await page.getByRole("tab", { name: "Brows" }).click();
   const region = page.getByRole("region", { name: "Brows" });
   const photos = await region.locator("img").count();

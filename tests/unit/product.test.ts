@@ -106,8 +106,8 @@ describe("hosts", () => {
   it("resolves platform, try subdomains, and custom domains", () => {
     expect(parseHost("localhost:3000").kind).toBe("platform");
     expect(parseHost("demo-salon.localhost:3000")).toEqual({ kind: "subdomain", host: "demo-salon.localhost", slug: "demo-salon" });
-    expect(parseHost("demo-salon.try.helixstac.in", "helixstac.in")).toMatchObject({ kind: "subdomain", slug: "demo-salon" });
-    expect(parseHost("try.mysalon.in", "helixstac.in").kind).toBe("custom");
+    expect(parseHost("demo-salon.try.agenticbuildworks.com", "agenticbuildworks.com")).toMatchObject({ kind: "subdomain", slug: "demo-salon" });
+    expect(parseHost("try.mysalon.in", "agenticbuildworks.com").kind).toBe("custom");
     expect(parseHost("admin.localhost").kind).toBe("custom");
   });
 });

@@ -1,6 +1,6 @@
 # Feature parity against the reference inventory
 
-The inventory describes a single-salon site. HelixStac TryOn is a white-label product for many salons. Nothing here copies that site's code, images, prompts, or name. "Shipped" means an original version of the behaviour, not a clone of the option list.
+The inventory describes a single-salon site. Lookuvi is a white-label product for many salons. Nothing here copies that site's code, images, prompts, or name. "Shipped" means an original version of the behaviour, not a clone of the option list.
 
 ## Shipped (P0 and P1 from the product brief)
 

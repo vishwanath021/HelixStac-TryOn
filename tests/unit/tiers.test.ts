@@ -230,10 +230,10 @@ describe("cost privacy", () => {
     vi.mocked(auth).mockResolvedValue(null);
     const guest = await costGet(new Request("http://localhost/api/v1/super/ai/costs"));
     expect(guest.status).toBe(403);
-    vi.mocked(auth).mockResolvedValue({ user: { id: "owner", isSuperAdmin: false, email: "owner@demo.helixstac.app" }, expires: "2099-01-01T00:00:00.000Z" });
+    vi.mocked(auth).mockResolvedValue({ user: { id: "owner", isSuperAdmin: false, email: "owner@demo.agenticbuildworks.com" }, expires: "2099-01-01T00:00:00.000Z" });
     const owner = await costGet(new Request("http://localhost/api/v1/super/ai/costs"));
     expect(owner.status).toBe(403);
-    vi.mocked(auth).mockResolvedValue({ user: { id: "super", isSuperAdmin: true, email: "super@helixstac.app" }, expires: "2099-01-01T00:00:00.000Z" });
+    vi.mocked(auth).mockResolvedValue({ user: { id: "super", isSuperAdmin: true, email: "super@agenticbuildworks.com" }, expires: "2099-01-01T00:00:00.000Z" });
     const allowed = await costGet(new Request("http://localhost/api/v1/super/ai/costs?imagesPerMonth=100"));
     expect(allowed.status).toBe(200);
     const body = await allowed.json();

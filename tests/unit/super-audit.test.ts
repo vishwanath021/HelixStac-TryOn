@@ -18,13 +18,13 @@ describe("super audit and salon usage", () => {
     vi.mocked(auth).mockResolvedValue(null);
     const guest = await GET(new Request("http://localhost/api/v1/super/audit"));
     expect(guest.status).toBe(403);
-    vi.mocked(auth).mockResolvedValue({ user: { id: "owner", isSuperAdmin: false, email: "owner@demo.helixstac.app" }, expires: "2099-01-01T00:00:00.000Z" });
+    vi.mocked(auth).mockResolvedValue({ user: { id: "owner", isSuperAdmin: false, email: "owner@demo.agenticbuildworks.com" }, expires: "2099-01-01T00:00:00.000Z" });
     const owner = await GET(new Request("http://localhost/api/v1/super/audit"));
     expect(owner.status).toBe(403);
   });
 
   it("lists audit rows and filters by action", async () => {
-    vi.mocked(auth).mockResolvedValue({ user: { id: "super", isSuperAdmin: true, email: "super@helixstac.app" }, expires: "2099-01-01T00:00:00.000Z" });
+    vi.mocked(auth).mockResolvedValue({ user: { id: "super", isSuperAdmin: true, email: "super@agenticbuildworks.com" }, expires: "2099-01-01T00:00:00.000Z" });
     await prisma.auditLog.create({ data: { actorId: "super", action: "CREDIT_ADJUST", target: "test-audit-1", meta: "{\"note\":\"goodwill\"}" } });
     await prisma.auditLog.create({ data: { actorId: "super", action: "TENANT_UPDATE", target: "test-audit-2", meta: "{}" } });
     const all = await GET(new Request("http://localhost/api/v1/super/audit"));

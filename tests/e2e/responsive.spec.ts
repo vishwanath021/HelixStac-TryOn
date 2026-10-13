@@ -81,7 +81,7 @@ async function signIn(page: Page, email: string, password: string) {
 
 test("guest, owner, and super layouts fit the device", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
-  await page.goto("/");
+  await page.goto("/s/demo");
   await expect(page.getByRole("heading", { name: "See your next look." })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: "Demo Salon – Bengaluru" })).toBeVisible();
   await expect(page.locator("input[data-photo='gallery']")).toHaveAttribute("accept", "image/*");
@@ -93,7 +93,7 @@ test("guest, owner, and super layouts fit the device", async ({ page }, testInfo
   await fits(page);
   await shot(page, testInfo.project.name, "guest");
 
-  await signIn(page, "owner@demo.helixstac.app", "DemoSalon#2026");
+  await signIn(page, "owner@demo.agenticbuildworks.com", "DemoSalon#2026");
   await expect(page.getByRole("heading", { name: /this month/i })).toBeVisible();
   await expect(page.locator("#salon-nav")).toHaveAttribute("data-ready", "yes");
   const width = page.viewportSize()?.width ?? 0;
@@ -104,9 +104,9 @@ test("guest, owner, and super layouts fit the device", async ({ page }, testInfo
   await fits(page);
   await shot(page, testInfo.project.name, "owner");
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await page.waitForURL(/\/s\/demo-salon/);
+  await page.waitForURL(/\/login/);
 
-  await signIn(page, "super@helixstac.app", "SuperAdmin#2026");
+  await signIn(page, "super@agenticbuildworks.com", "SuperAdmin#2026");
   await expect(page.getByRole("heading", { name: "Lookuvi" })).toBeVisible();
   process.env.DATABASE_URL ||= "file:./dev.db";
   const { PrismaClient } = await import("@prisma/client");

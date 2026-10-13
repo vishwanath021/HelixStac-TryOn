@@ -42,11 +42,11 @@ At your DNS host, create:
 
 | Name | Type | Value |
 |---|---|---|
-| `lookuvi.example` | A | droplet IPv4 |
-| `www.lookuvi.example` | A or CNAME | the same |
-| `*.try.lookuvi.example` | A | the same |
+| `agenticbuildworks.com` | A | droplet IPv4 |
+| `www.agenticbuildworks.com` | A or CNAME | the same |
+| `*.try.agenticbuildworks.com` | A | the same |
 
-Replace `lookuvi.example` with your domain. Salon sites are `https://<slug>.try.<your-domain>`.
+Replace `agenticbuildworks.com` with your domain. Salon sites are `https://<slug>.try.<your-domain>`.
 
 Caddy gets a certificate per hostname (HTTP-01). It does **not** get one wildcard certificate. A real `*.try.example` wildcard needs DNS-01 and a custom Caddy image, which this repo does not ship. The ask endpoint `GET /api/caddy/ask` returns 200 only for your apex, a salon slug that exists, or a verified custom domain. Strangers do not get a certificate.
 
@@ -103,7 +103,7 @@ The image runs as user `nextjs` (uid 1001), not root. It migrates Postgres, then
 Done when:
 
 ```bash
-curl -fsS https://lookuvi.example/api/ready
+curl -fsS https://agenticbuildworks.com/api/ready
 ```
 
 returns `{"ok":true,"db":true}`.

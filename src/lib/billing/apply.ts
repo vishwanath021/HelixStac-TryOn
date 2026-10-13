@@ -5,7 +5,7 @@ import { withGst } from "@/lib/pricing";
 
 async function nextInvoiceNumber() {
   const count = await prisma.invoice.count();
-  return `HS-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+  return `ABW-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
 }
 
 export async function activatePlan(input: {

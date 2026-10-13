@@ -1,4 +1,4 @@
-// HelixStac TryOn
+// Lookuvi
 // Provider is sqlite by default so `npm run db:push` works with no extra services.
 // scripts/prepare-prisma.mjs switches this to postgresql when DATABASE_URL is a postgres URL.
 // JSON columns are stored as strings so the same schema runs on SQLite and PostgreSQL.
