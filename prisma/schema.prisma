@@ -30,7 +30,7 @@ model Tenant {
   status              String    @default("TRIAL")
   /** Sell try-on for this salon. Off hides guest try-on and blocks preview APIs. */
   productTryOn        Boolean   @default(true)
-  /** Sell queue and alerts. The queue itself is not built yet. */
+  /** Sell the live queue and visit alerts. */
   productQueue        Boolean   @default(false)
   trialEndsAt         DateTime?
   removeBranding      Boolean   @default(false)
@@ -77,6 +77,8 @@ model Tenant {
   invoices            Invoice[]
   customers           Customer[]
   bookings            Booking[]
+  queueState          QueueState?
+  queueEntries        QueueEntry[]
 }
 
 model Domain {
@@ -139,7 +141,8 @@ model Service {
   priceInr    Int
   durationMin Int?
   active      Boolean @default(true)
-  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  queueEntries QueueEntry[]
 
   @@unique([tenantId, key])
   @@index([tenantId])
@@ -489,6 +492,50 @@ model SavedLook {
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
+}
+
+/// One row per salon. Chairs, stations, or rooms share this shape.
+model QueueState {
+  id           String @id @default(cuid())
+  tenantId     String @unique
+  isOpen       Boolean @default(false)
+  units        Int     @default(1)
+  unitLabel    String  @default("chair")
+  avgMinutes   Int     @default(20)
+  alertLeadMin Int     @default(5)
+  mode         String  @default("LIVE")
+  tenant       Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// A guest's place in today's line, or a requested visit.
+model QueueEntry {
+  id            String    @id @default(cuid())
+  tenantId      String
+  dayKey        String
+  token         Int
+  name          String    @default("")
+  phone         String    @default("")
+  serviceId     String?
+  status        String
+  source        String
+  unitSlot      Int?
+  joinedAt      DateTime  @default(now())
+  calledAt      DateTime?
+  startedAt     DateTime?
+  doneAt        DateTime?
+  requestedDate String    @default("")
+  requestedSlot String    @default("")
+  alertSentAt   DateTime?
+  cancelToken   String    @unique
+  onTheWay      Boolean   @default(false)
+  consentAt     DateTime?
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service       Service?  @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, dayKey, token])
+  @@index([tenantId, dayKey, status])
+  @@index([tenantId, phone])
+  @@index([joinedAt])
 }
 
 /// Fixed-window counter shared by every app instance. The id is the limit key plus the window.

@@ -260,6 +260,7 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
                 <div><dt className="text-muted">Previews this month</dt><dd className="font-medium">{selected.previewsThisMonth}</dd></div>
                 <div><dt className="text-muted">All previews</dt><dd className="font-medium">{selected.tryOns}</dd></div>
                 <div><dt className="text-muted">Leads</dt><dd className="font-medium">{selected.leads}</dd></div>
+                <div><dt className="text-muted">In the queue today</dt><dd className="font-medium">{selected.queueToday}</dd></div>
               </dl>
             </TabsContent>
           </Tabs>

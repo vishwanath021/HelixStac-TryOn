@@ -1,6 +1,7 @@
 import { PLANS } from "@/data/plans";
 import { kolkataMonthStart } from "@/lib/ai/spend";
 import { prisma } from "@/lib/prisma";
+import { kolkataDayKey } from "@/lib/queue/day";
 
 export type SalonRecord = {
   id: string;
@@ -20,12 +21,13 @@ export type SalonRecord = {
   trialEndsAt: string | null;
   productTryOn: boolean;
   productQueue: boolean;
+  queueToday: number;
 };
 
 /** One tenant query plus one grouped preview count for the Kolkata month. */
 export async function loadSalons(): Promise<SalonRecord[]> {
   const since = kolkataMonthStart();
-  const [tenants, grouped] = await Promise.all([
+  const [tenants, grouped, queued] = await Promise.all([
     prisma.tenant.findMany({
       orderBy: { createdAt: "desc" },
       include: {
@@ -43,8 +45,14 @@ export async function loadSalons(): Promise<SalonRecord[]> {
       where: { createdAt: { gte: since }, status: "SUCCEEDED" },
       _count: { _all: true },
     }),
+    prisma.queueEntry.groupBy({
+      by: ["tenantId"],
+      where: { dayKey: kolkataDayKey() },
+      _count: { _all: true },
+    }),
   ]);
   const month = new Map(grouped.map((row) => [row.tenantId, row._count._all]));
+  const today = new Map(queued.map((row) => [row.tenantId, row._count._all]));
   return tenants.map((tenant) => {
     const plan = PLANS[tenant.plan as keyof typeof PLANS];
     const owner = tenant.members[0]?.user;
@@ -66,6 +74,7 @@ export async function loadSalons(): Promise<SalonRecord[]> {
       trialEndsAt: tenant.trialEndsAt?.toISOString() || null,
       productTryOn: tenant.productTryOn,
       productQueue: tenant.productQueue,
+      queueToday: today.get(tenant.id) || 0,
     };
   });
 }

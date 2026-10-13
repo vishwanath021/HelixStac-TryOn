@@ -103,6 +103,7 @@ export function TryOnApp({
   salonMode = false,
   demoHint = false,
   poseDebug = false,
+  showQueue = false,
 }: {
   config: SalonConfig;
   embed?: boolean;
@@ -114,6 +115,7 @@ export function TryOnApp({
   demoHint?: boolean;
   /** Signed-in super-admin only. Guests never receive the numbers. */
   poseDebug?: boolean;
+  showQueue?: boolean;
 }) {
   const lang = config.defaultLang || "en";
   const [sid, setSid] = useState("");
@@ -814,6 +816,7 @@ export function TryOnApp({
       </header>
 
       <h2 className="page-title">{t(lang, "pageTitle")}</h2>
+      {showQueue ? <p className="mt-3"><a className="btn secondary" href={`/s/${config.slug}/queue`}>{t(lang, "queueJoinLook")}</a></p> : null}
 
       {visibleTools.length > 1 && (
       <div className="seg-fade mt-4">
