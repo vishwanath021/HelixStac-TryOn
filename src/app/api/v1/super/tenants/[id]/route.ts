@@ -50,7 +50,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         actorId: access.session.user.id,
         action: "CREDIT_ADJUST",
         target: id,
-        meta: JSON.stringify({ creditDelta: parsed.data.creditDelta, balanceAfter: balance }),
+        meta: JSON.stringify({ creditDelta: parsed.data.creditDelta, balanceAfter: balance, note: parsed.data.note || "" }),
       },
     });
   }
