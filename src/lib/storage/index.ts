@@ -42,6 +42,15 @@ export function verifyObjectSig(key: string, exp: number, sig: string) {
   return timingSafeEqual(a, b);
 }
 
+/** App-hosted share link. The signature expires, and the media route reads local disk or S3. */
+export function appMediaUrl(key: string, ttlSeconds = 300) {
+  const exp = Date.now() + ttlSeconds * 1000;
+  const sig = signObjectKey(key, exp);
+  const base = (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+  const params = new URLSearchParams({ key, exp: String(exp), sig });
+  return `${base}/api/v1/media?${params.toString()}`;
+}
+
 export async function signedGetUrl(key: string, ttlSeconds = 300) {
   if (driver() === "s3") {
     const { s3SignedGet } = await import("@/lib/storage/s3");

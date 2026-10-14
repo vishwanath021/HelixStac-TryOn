@@ -48,7 +48,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     });
   }
   if (parsed.data.creditDelta) {
-    const balance = await grantCredits(id, parsed.data.creditDelta, "ADJUSTMENT", "super");
+    const balance = await grantCredits(id, parsed.data.creditDelta, "ADJUSTMENT", "super", parsed.data.note || "");
     await prisma.auditLog.create({
       data: {
         actorId: access.session.user.id,

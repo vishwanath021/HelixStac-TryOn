@@ -9,10 +9,9 @@ async function look(page: Page, tab: string, region: string, name: string, posts
   await page.getByRole("tab", { name: tab }).click();
   const before = posts.count;
   await page.getByRole("region", { name: region }).getByRole("button", { name }).click();
-  await expect.poll(() => posts.count).toBe(before);
-  await expect(page.getByText(/Too many/i)).toHaveCount(0);
-  await page.getByRole("button", { name: "Try this look" }).click();
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible({ timeout: 20_000 });
+  expect(posts.count).toBe(before + 1);
+  await expect(page.getByText(/Too many/i)).toHaveCount(0);
   const slider = page.getByRole("slider", { name: /BEFORE \/ AFTER/i });
   await expect(slider).toBeVisible();
   await slider.fill("28");
@@ -44,15 +43,10 @@ test("style, colour, brows, beard, and nails preview on this screen", async ({ p
   await usePhoto(page, "public/samples/portrait.jpg");
   await page.getByRole("tab", { name: "Hair colour" }).click();
   const beforeColour = posts.count;
-  await page.getByRole("button", { name: "Cherry Red" }).click();
-  await expect(page.getByRole("region", { name: "Photo" }).locator("canvas")).toHaveAttribute("aria-label", "Cherry Red");
   const intensity = page.getByRole("slider").last();
   await intensity.fill("40");
   await expect(intensity).toHaveValue("40");
   await page.getByRole("button", { name: "Honey Blonde" }).click();
-  await expect(page.getByRole("region", { name: "Photo" }).locator("canvas")).toHaveAttribute("aria-label", "Honey Blonde");
-  expect(posts.count).toBe(beforeColour);
-  await page.getByRole("button", { name: "Generate" }).click();
   await expect(page.getByRole("heading", { name: "Honey Blonde", exact: true })).toBeVisible({ timeout: 20_000 });
   const colourSlider = page.getByRole("slider", { name: /BEFORE \/ AFTER/i });
   await expect(colourSlider).toBeVisible();

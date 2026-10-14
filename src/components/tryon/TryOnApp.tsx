@@ -67,7 +67,10 @@ type Look = {
   serviceKeys: string[];
   tool: "style" | "brows" | "beard" | "nails" | "colour";
   demo?: boolean;
+  lookShare?: string;
 };
+
+type Chosen = { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] };
 
 type TryTool = "colour" | "style" | "brows" | "beard" | "nails";
 type Audience = "women" | "men" | "kids";
@@ -144,6 +147,9 @@ export function TryOnApp({
   const [suggestCost, setSuggestCost] = useState("");
   const [suggestBusy, setSuggestBusy] = useState(false);
   const previewLock = useRef(false);
+  const faceRef = useRef<Shot | null>(null);
+  const handRef = useRef<Shot | null>(null);
+  const pendingLook = useRef<Chosen | null>(null);
   const [pendingName, setPendingName] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -273,6 +279,7 @@ export function TryOnApp({
     setAccepted(true);
     setError("");
     track("consent_accepted", { lang });
+    continuePending();
   }
 
   function clearPickers() {
@@ -320,10 +327,16 @@ export function TryOnApp({
   }
 
   function dropLiveShot(nextFacing: "user" | "environment") {
-    const shot = nextFacing === "environment" ? handShot : faceShot;
+    const hand = nextFacing === "environment";
+    const shot = hand ? handRef.current : faceRef.current;
     if (shot?.url.startsWith("blob:")) URL.revokeObjectURL(shot.url);
-    if (nextFacing === "environment") setHandShot(null);
-    else setFaceShot(null);
+    if (hand) {
+      handRef.current = null;
+      setHandShot(null);
+    } else {
+      faceRef.current = null;
+      setFaceShot(null);
+    }
   }
 
   function startCamera(nextFacing: "user" | "environment" = facing) {
@@ -445,7 +458,7 @@ export function TryOnApp({
       setError(t(lang, "faceNotHand"));
       return;
     }
-    const previous = slot === "hand" ? handShot : faceShot;
+    const previous = slot === "hand" ? handRef.current : faceRef.current;
     if (previous) URL.revokeObjectURL(previous.url);
     const url = URL.createObjectURL(blob);
     const img = new Image();
@@ -453,11 +466,17 @@ export function TryOnApp({
     await img.decode();
     stopCamera();
     const shot = { blob, url, el: img };
-    if (slot === "hand") setHandShot(shot);
-    else setFaceShot(shot);
+    if (slot === "hand") {
+      handRef.current = shot;
+      setHandShot(shot);
+    } else {
+      faceRef.current = shot;
+      setFaceShot(shot);
+    }
     setError("");
     setStylePhase("pick");
     track("photo_captured", {});
+    continuePending();
   }
 
   async function jpegFromBitmap(bitmap: ImageBitmap) {
@@ -538,6 +557,7 @@ export function TryOnApp({
     }
     for (const url of blobs) URL.revokeObjectURL(url);
     setActive(null);
+    pendingLook.current = null;
     setStyleId("");
     setHairReading(null);
     setPickedDensity("");
@@ -597,39 +617,61 @@ export function TryOnApp({
     }
   }
 
-  function selectLook(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }) {
+  function shotRefFor(next: Look["tool"]) {
+    return next === "nails" ? handRef.current : faceRef.current;
+  }
+
+  function continuePending() {
+    const chosen = pendingLook.current;
+    if (!chosen || previewLock.current || !consentRef.current) return;
+    if (!shotRefFor(chosen.tool)) return;
+    void preview(chosen);
+  }
+
+  function selectLook(chosen: Chosen) {
     setStyleId(chosen.id);
     setTool(chosen.tool);
     setError("");
-    const shot = chosen.tool === "nails" ? handShot : faceShot;
-    if (!shot) {
-      setError(t(lang, chosen.tool === "nails" ? "uploadHand" : "addPhotoFirst"));
-      frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }
-
-  async function preview(chosen: { id: string; name: string; serviceKeys: string[]; tool: Look["tool"] }) {
-    setStyleId(chosen.id);
-    setTool(chosen.tool);
-    const shot = chosen.tool === "nails" ? handShot : faceShot;
-    if (!shot) {
+    if (!shotRefFor(chosen.tool)) {
+      pendingLook.current = chosen;
       setError(t(lang, chosen.tool === "nails" ? "uploadHand" : "addPhotoFirst"));
       frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
-    const consent = consentRef.current || (await consenting.current) || "";
-    if (!consent) {
+    void preview(chosen);
+  }
+
+  async function preview(chosen: Chosen) {
+    setStyleId(chosen.id);
+    setTool(chosen.tool);
+    const shot = shotRefFor(chosen.tool);
+    if (!shot) {
+      pendingLook.current = chosen;
+      setError(t(lang, chosen.tool === "nails" ? "uploadHand" : "addPhotoFirst"));
+      frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (previewLock.current) return;
+    if (!consentRef.current && !consenting.current) {
+      pendingLook.current = chosen;
       setError(t(lang, "privacyTick"));
       return;
     }
-    consentRef.current = consent;
-    if (previewLock.current || busy) return;
     previewLock.current = true;
+    pendingLook.current = null;
     setError("");
     setPoseNote(null);
     setPendingName(chosen.name);
+    setStylePhase("pick");
     setBusy(true);
     try {
+      const consent = consentRef.current || (await consenting.current) || "";
+      if (!consent) {
+        pendingLook.current = chosen;
+        setError(t(lang, "privacyTick"));
+        return;
+      }
+      consentRef.current = consent;
       track("generate_requested", { styleId: chosen.id, tool: chosen.tool });
       const body = new FormData();
       body.set("photo", shot.blob, "selfie.jpg");
@@ -696,6 +738,7 @@ export function TryOnApp({
         serviceKeys: chosen.serviceKeys,
         tool: chosen.tool,
         demo: sample,
+        lookShare: res.headers.get("x-look-share") || "",
       });
       setStylePhase("result");
       frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -706,26 +749,24 @@ export function TryOnApp({
     }
   }
 
-  async function tryLook() {
-    if (tool === "colour" || !styleId || busy) return;
+  function chosenNow(): Chosen | null {
+    if (tool === "colour") {
+      if (!shade) return null;
+      return { id: shade.id, name: shade.name, serviceKeys: shade.serviceKeys ?? [], tool: "colour" };
+    }
     const chosen =
       tool === "style" ? config.styles.find((item) => item.id === styleId)
       : tool === "brows" ? config.brows.find((item) => item.id === styleId)
       : tool === "beard" ? config.beards.find((item) => item.id === styleId)
       : config.nails.find((item) => item.id === styleId);
-    if (!chosen) return;
-    await preview({ id: chosen.id, name: chosen.name, serviceKeys: chosen.serviceKeys ?? [], tool });
-  }
-
-  async function generateColour() {
-    if (!shade || busy) return;
-    await preview({ id: shade.id, name: shade.name, serviceKeys: shade.serviceKeys ?? [], tool: "colour" });
+    if (!chosen) return null;
+    return { id: chosen.id, name: chosen.name, serviceKeys: chosen.serviceKeys ?? [], tool };
   }
 
   function pickShade(id: string) {
+    const item = config.shades.find((shade) => shade.id === id);
+    if (!item) return;
     setShadeId(id);
-    setTool("colour");
-    setError("");
     if (active?.tool === "colour") {
       if (active.before.startsWith("blob:")) URL.revokeObjectURL(active.before);
       if (active.after.startsWith("blob:")) URL.revokeObjectURL(active.after);
@@ -734,7 +775,7 @@ export function TryOnApp({
       setStylePhase("pick");
     }
     track("colour_selected", { shade: id });
-    if (!faceShot && !cameraOn) needPhoto();
+    selectLook({ id: item.id, name: item.name, serviceKeys: item.serviceKeys ?? [], tool: "colour" });
   }
 
   async function book() {
@@ -750,6 +791,7 @@ export function TryOnApp({
         shadeId: active.tool === "colour" ? active.styleId : active.tool === "style" ? shadeId || null : null,
         lang,
         src: embed ? "embed" : "tryon",
+        lookUrl: active.lookShare || null,
       }),
     });
     const data = await res.json();
@@ -806,11 +848,17 @@ export function TryOnApp({
             <h1 className="min-w-0 flex-1 break-words text-lg leading-tight sm:text-xl">{config.name}</h1>
           </div>
           <div className="flex gap-2">
-            <a className="btn bar-book flex-1 whitespace-nowrap sm:flex-none" href={bookHref || undefined} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
-            <a className="btn bar-chat flex-1 whitespace-nowrap sm:flex-none" href={chatHref || undefined} target="_blank" rel="noreferrer">
-              <WhatsAppGlyph />
-              {t(lang, "whatsappBtn")}
-            </a>
+            {phone ? (
+              <>
+                <a className="btn bar-book flex-1 whitespace-nowrap sm:flex-none" href={bookHref} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
+                <a className="btn bar-chat flex-1 whitespace-nowrap sm:flex-none" href={chatHref} target="_blank" rel="noreferrer">
+                  <WhatsAppGlyph />
+                  {t(lang, "whatsappBtn")}
+                </a>
+              </>
+            ) : (
+              <p className="max-w-xs text-sm leading-snug">{t(lang, "whatsappMissing")}</p>
+            )}
           </div>
         </div>
       </header>
@@ -859,6 +907,12 @@ export function TryOnApp({
               eyeDelta={active.eyeDelta}
             />
           </div>
+        ) : !cameraOn && !activeShot ? (
+          <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
+            <button className="btn w-full" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "takeSelfie")}</button>
+            <button className="btn secondary w-full" type="button" onClick={() => pickFile(fileRef.current)}>{t(lang, "uploadPhoto")}</button>
+            {cameraError && <p className="text-center text-sm text-[var(--bad)] sm:col-span-2" role="alert">{cameraError}</p>}
+          </div>
         ) : (
           <div className="relative aspect-[3/4]">
             <video
@@ -883,13 +937,6 @@ export function TryOnApp({
                   mirror={cameraOn && facing === "user"}
                   onStatus={setModelStatus}
                 />
-              </div>
-            )}
-            {!cameraOn && !activeShot && (
-              <div className="absolute inset-0 grid content-center justify-items-center gap-3 px-6">
-                <button className="btn min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "takeSelfie")}</button>
-                <button className="btn secondary min-w-44" type="button" onClick={() => pickFile(fileRef.current)}>{t(lang, "uploadPhoto")}</button>
-                {cameraError && <p className="text-center text-sm text-[var(--bad)]" role="alert">{cameraError}</p>}
               </div>
             )}
             {cameraOn && (
@@ -975,7 +1022,7 @@ export function TryOnApp({
       {poseDebug && poseNote && (error || showResult) && <PoseReadout debug={poseNote} />}
       {notice && <p className="mt-3 text-center text-sm" role="status">{notice}</p>}
 
-      {!showResult && tool === "brows" && styleId && (
+      {!showResult && tool === "brows" && (
         <div className="mt-4 grid gap-3">
           <div className="flex flex-wrap gap-2" role="group" aria-label="Brow thickness">
             {BROW_THICKNESS.map((item) => (
@@ -989,11 +1036,8 @@ export function TryOnApp({
           </div>
         </div>
       )}
-      {!showResult && tool !== "colour" && styleId && (
-        <button className="btn mt-4 w-full" type="button" disabled={busy} onClick={() => void tryLook()}>{t(lang, "tryThisLook")}</button>
-      )}
-      {!showResult && tool === "colour" && shadeId && faceShot && (
-        <button className="btn mt-4 w-full" type="button" disabled={busy} onClick={() => void generateColour()}>{t(lang, "generateColour")}</button>
+      {!showResult && !busy && error && (tool === "nails" ? handShot : faceShot) && chosenNow() && (
+        <button className="btn mt-4 w-full" type="button" onClick={() => { const chosen = chosenNow(); if (chosen) void preview(chosen); }}>{t(lang, "retry")}</button>
       )}
       {showResult && active && (
         <div className="mt-4 grid gap-2">
@@ -1002,7 +1046,11 @@ export function TryOnApp({
           {poseDebug && active.raw && (
             <a className="text-center text-sm underline" href={active.raw} target="_blank" rel="noreferrer" data-testid="provider-image">Provider image</a>
           )}
-          <button className="btn secondary" type="button" onClick={() => void book()}>{t(lang, "bookLook")}</button>
+          {phone ? (
+            <button className="btn secondary" type="button" onClick={() => void book()}>{t(lang, "bookLook")}</button>
+          ) : (
+            <p className="text-center text-sm" role="status">{t(lang, "whatsappMissing")}</p>
+          )}
           <button className="btn secondary" type="button" onClick={() => resetForAnotherPhoto()}>{t(lang, "tryAnotherShort")}</button>
         </div>
       )}
@@ -1063,6 +1111,7 @@ export function TryOnApp({
                 type="button"
                 aria-pressed={item.id === shadeId}
                 className={`${pickClass(item.id === shadeId)} p-2 text-center text-sm`}
+                disabled={busy}
                 onClick={() => pickShade(item.id)}
               >
                 <PickMark on={item.id === shadeId} />

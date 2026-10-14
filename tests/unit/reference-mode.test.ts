@@ -366,7 +366,8 @@ describe("salon reference switch", () => {
     expect(guest).toContain("See your next look.");
     expect(guest).toContain("Take selfie");
     const guestSource = readFileSync("src/components/tryon/TryOnApp.tsx", "utf8");
-    expect(guestSource).toContain("tryThisLook");
+    expect(guestSource).toContain('t(lang, "retry")');
+    expect(guestSource).toContain("void preview(chosen)");
     expect(guestSource).not.toContain("Hair-only composite");
     expect(guestSource).not.toContain("referenceMode");
     const page = readFileSync("src/app/s/[slug]/page.tsx", "utf8");

@@ -24,11 +24,9 @@ type Panel = {
 
 export function SuperAiForm({
   initial,
-  salons,
   advanced,
 }: {
   initial: PlatformAiSettings;
-  salons: { id: string; name: string; hairstyleEngine: string }[];
   advanced?: ReactNode;
 }) {
   const [provider, setProvider] = useState<ImageProviderName>(initial.provider);
@@ -51,9 +49,6 @@ export function SuperAiForm({
   const [openaiDraft, setOpenaiDraft] = useState("");
   const [geminiDraft, setGeminiDraft] = useState("");
   const [guestEngine, setGuestEngine] = useState<GuestEngine>(initial.guestEngine || "fal");
-  const [salonRows, setSalonRows] = useState(salons);
-  const [salonId, setSalonId] = useState(salons[0]?.id || "");
-  const [salonEngine, setSalonEngine] = useState(salons[0]?.hairstyleEngine || "");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [panels, setPanels] = useState<Panel[]>([]);
@@ -95,27 +90,6 @@ export function SuperAiForm({
     }
     applyView(data);
     setMessage(engine === "fal" ? "Salon screens use FLUX.3." : "Salon screens use OpenAI sunburst, quality medium.");
-  }
-
-  async function saveSalon(engine: string) {
-    if (!salonId) return;
-    setBusy(true);
-    setMessage("");
-    const res = await fetch("/api/v1/super/ai", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ salonEngineOnly: true, salonId, salonEngine: engine }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) {
-      setMessage(data.message || "Could not save that salon override.");
-      return;
-    }
-    setSalonRows((rows) => rows.map((row) => (row.id === salonId ? { ...row, hairstyleEngine: engine } : row)));
-    setSalonEngine(engine);
-    setMessage(engine ? "That salon uses its own hairstyle model." : "That salon follows the global default.");
-    if (data.guestEngine) applyView(data);
   }
 
   async function save(overrides?: { provider?: ImageProviderName; apiKey?: string }) {
@@ -249,32 +223,6 @@ export function SuperAiForm({
             OpenAI gpt-image-2.5-sunburst, quality medium
           </label>
           <button className="btn w-fit" type="button" disabled={busy} onClick={() => void saveGuest(guestEngine)}>Save salon default</button>
-          <label className="text-sm">
-            Salon override
-            <select
-              className="field mt-1"
-              aria-label="Salon override"
-              value={salonId}
-              onChange={(event) => {
-                const next = event.target.value;
-                setSalonId(next);
-                setSalonEngine(salonRows.find((row) => row.id === next)?.hairstyleEngine || "");
-              }}
-            >
-              {salonRows.map((salon) => (
-                <option key={salon.id} value={salon.id}>{salon.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            This salon
-            <select className="field mt-1" aria-label="This salon model" value={salonEngine} onChange={(event) => setSalonEngine(event.target.value)}>
-              <option value="">Use global default</option>
-              <option value="fal">fal FLUX.3</option>
-              <option value="openai">OpenAI sunburst</option>
-            </select>
-          </label>
-          <button className="btn secondary w-fit" type="button" disabled={busy || !salonId} onClick={() => void saveSalon(salonEngine)}>Save override</button>
         </fieldset>
 
         <section className="grid gap-3">

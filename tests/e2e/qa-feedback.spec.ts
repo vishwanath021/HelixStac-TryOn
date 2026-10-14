@@ -206,7 +206,6 @@ test("retake and try another each open a new camera frame", async ({ page }, tes
 
   await page.getByRole("checkbox", { name: /photo is used only/i }).check();
   await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Soft Bob" }).click();
-  await page.getByRole("button", { name: "Try this look" }).click();
   await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('section[aria-label="Photo"]')).toHaveClass(/is-ready/);
   await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);

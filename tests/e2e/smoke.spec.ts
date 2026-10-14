@@ -120,8 +120,6 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
 
   await acceptPhotoUse(page);
-  await gallery.getByRole("button", { name: "Soft Bob" }).click();
-  await page.getByRole("button", { name: "Try this look" }).click();
   await expect(page.getByText("Styling your look...")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator("section[aria-label=Photo]")).toHaveClass(/is-ready/);
@@ -150,7 +148,6 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await gallery.getByRole("button", { name: "Women", exact: true }).click();
   await gallery.getByRole("button", { name: "Wolf Cut" }).click();
-  await page.getByRole("button", { name: "Try this look" }).click();
   await expect(page.getByRole("heading", { name: "Wolf Cut" })).toBeVisible({ timeout: 20_000 });
   const popupPromise = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Book this look" }).click();
@@ -159,6 +156,8 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   const booking = decodeURIComponent(popup.url()).replaceAll("+", " ");
   expect(booking).toContain("Look: Wolf Cut");
   expect(booking).toContain("Haircut");
+  expect(booking).toContain("Look image:");
+  expect(booking).toContain("/api/v1/media");
   await popup.close();
 
   await page.goto("/s/demo/guide");
@@ -327,7 +326,6 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
     await acceptPhotoUse(page);
     await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
     await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" }).click();
-    await page.getByRole("button", { name: "Try this look" }).click();
     await expect(page.getByText(/today's previews used up/i)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("heading", { name: "Phone code" })).toHaveCount(0);
 
@@ -340,7 +338,6 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
     await acceptPhotoUse(page);
     await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
     await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" }).click();
-    await page.getByRole("button", { name: "Try this look" }).click();
     await expect(page.getByRole("heading", { name: "Pixie" })).toBeVisible({ timeout: 20_000 });
   } finally {
     await prisma.tenant.update({ where: { slug: "demo" }, data: { anonDailyCap: 200 } });
@@ -409,7 +406,6 @@ test("style gallery uses portraits and the demo result is not a flat placeholder
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
   await acceptPhotoUse(page);
   await gallery.getByRole("button", { name: "Soft Bob" }).click();
-  await page.getByRole("button", { name: "Try this look" }).click();
   await expect(page.getByText("Styling your look...")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });
   const slider = page.getByRole("slider", { name: /BEFORE \/ AFTER/i });

@@ -24,6 +24,7 @@ const en: Record<string, string> = {
   saveLookHint: "Save look",
   takeSelfie: "Take selfie",
   tryThisLook: "Try this look",
+  retry: "Retry",
   generateColour: "Generate",
   privacyLine: "Your photo is used only for this preview",
   addPhotoFirst: "Add your photo first",

@@ -6,12 +6,13 @@ export function salonOutcome(demoReason?: string) {
 }
 
 /** Headers a guest is allowed to see. No model, provider, or cost. */
-export function guestPreviewHeaders(args: { tryOnId: string; creditsLeft: number; demoReason?: string }) {
+export function guestPreviewHeaders(args: { tryOnId: string; creditsLeft: number; demoReason?: string; lookShare?: string }) {
   return {
     "content-type": "image/jpeg",
     "cache-control": "no-store",
     "x-tryon-id": args.tryOnId,
     "x-credits-left": String(args.creditsLeft),
     "x-demo-reason": args.demoReason || "",
+    ...(args.lookShare ? { "x-look-share": args.lookShare } : {}),
   };
 }

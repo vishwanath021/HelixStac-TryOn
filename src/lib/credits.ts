@@ -50,7 +50,7 @@ export async function settleCredits(tenantId: string, refId: string, outcome: "C
   });
 }
 
-export async function grantCredits(tenantId: string, amount: number, reason: string, refId?: string) {
+export async function grantCredits(tenantId: string, amount: number, reason: string, refId?: string, note?: string) {
   return prisma.$transaction(async (tx) => {
     const tenant = await tx.tenant.update({
       where: { id: tenantId },
@@ -60,7 +60,7 @@ export async function grantCredits(tenantId: string, amount: number, reason: str
       throw new CreditError("INSUFFICIENT");
     }
     await tx.creditLedger.create({
-      data: { tenantId, delta: amount, reason, refId, balanceAfter: tenant.creditBalance },
+      data: { tenantId, delta: amount, reason, refId, note: (note || "").slice(0, 200), balanceAfter: tenant.creditBalance },
     });
     return tenant.creditBalance;
   });

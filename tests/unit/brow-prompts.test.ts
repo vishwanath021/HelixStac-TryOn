@@ -112,7 +112,7 @@ describe("brow prompts", () => {
     expect(app).toContain("<BrowCard ");
     const card = readFileSync("src/components/tryon/BrowCard.tsx", "utf8");
     expect(card).toContain("browCardPhoto");
-    expect(card).toContain("absolute bottom-1 right-1 h-9 w-9");
+    expect(card).not.toContain("absolute bottom-1 right-1 h-9 w-9");
     expect(card).toContain("object-cover object-center");
     expect(card).toContain("aspect-video");
     expect(card).toContain("onError");
