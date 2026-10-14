@@ -10,7 +10,7 @@ import { kolkataDayKey } from "@/lib/queue/day";
 import { peopleAhead, waitMinutes } from "@/lib/queue/estimate";
 import { displayedWait } from "@/lib/queue/wait-display";
 import { indianMobile } from "@/lib/queue/phone";
-import { QueueError, addWalkIn, callNext, confirmRequest, finishEntry, joinQueue, purgeOldQueueEntries, saveQueueSettings, setQueueOpen, sweepAlerts } from "@/lib/queue/service";
+import { QueueError, addWalkIn, callNext, confirmRequest, ensureQueueState, finishEntry, joinQueue, publicBoard, purgeOldQueueEntries, saveQueueSettings, setQueueOpen, sweepAlerts } from "@/lib/queue/service";
 import { resetRateLimits } from "@/lib/ratelimit";
 import { loadSalons } from "@/lib/super/directory";
 
@@ -201,6 +201,14 @@ describe("queue joins", () => {
     expect(rows.find((row) => row.id === tenant.id)?.queueToday).toBe(1);
   });
 
+  it("opens a new queue when the salon has the product", async () => {
+    const slug = `queue-fresh-${Date.now()}`;
+    const tenant = await prisma.tenant.create({ data: { slug, name: "Fresh queue", productQueue: true } });
+    const state = await ensureQueueState(tenant.id);
+    expect(state.isOpen).toBe(true);
+    expect((await publicBoard(slug)).open).toBe(true);
+  });
+
   it("shows the consent line on the join form and rejects a join without it", async () => {
     const html = renderToStaticMarkup(createElement(QueueJoinForm, {
       initial: {
@@ -217,6 +225,22 @@ describe("queue joins", () => {
     }));
     expect(html).toContain("I agree to receive queue updates on this phone.");
     expect(html).toContain("15 min");
+    expect(html).not.toContain("disabled");
+    const paused = renderToStaticMarkup(createElement(QueueJoinForm, {
+      initial: {
+        name: "Queue salon",
+        slug: "queue-render",
+        open: false,
+        mode: "LIVE",
+        waitMin: 0,
+        ahead: 0,
+        tryOn: false,
+        lang: "en",
+        services: [],
+      },
+    }));
+    expect(paused).toContain("The queue is paused. Please ask at the desk.");
+    expect(paused).toContain("disabled");
     expect(html).toContain("EST WAIT");
     expect(html).toContain("3 ahead");
     expect(html).toContain("Join the queue");

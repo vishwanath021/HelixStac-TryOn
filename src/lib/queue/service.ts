@@ -47,7 +47,7 @@ function asWait(row: EntryRow): WaitRow {
 export async function ensureQueueState(tenantId: string) {
   return prisma.queueState.upsert({
     where: { tenantId },
-    create: { tenantId },
+    create: { tenantId, isOpen: true },
     update: {},
   });
 }

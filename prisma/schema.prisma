@@ -499,7 +499,7 @@ model SavedLook {
 model QueueState {
   id           String @id @default(cuid())
   tenantId     String @unique
-  isOpen       Boolean @default(false)
+  isOpen       Boolean @default(true)
   units        Int     @default(1)
   unitLabel    String  @default("chair")
   avgMinutes   Int     @default(20)

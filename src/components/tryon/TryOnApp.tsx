@@ -122,7 +122,6 @@ export function TryOnApp({
 }) {
   const lang = config.defaultLang || "en";
   const [sid, setSid] = useState("");
-  const [accepted, setAccepted] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState("");
@@ -247,14 +246,9 @@ export function TryOnApp({
     frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  async function acceptPrivacy(checked: boolean) {
-    if (!checked) {
-      setAccepted(false);
-      consentRef.current = "";
-      consenting.current = null;
-      return;
-    }
-    setAccepted(true);
+  async function recordPhotoConsent() {
+    if (consentRef.current) return consentRef.current;
+    if (consenting.current) return consenting.current;
     const session = sid || sessionId();
     if (!sid) setSid(session);
     const job = (async () => {
@@ -264,22 +258,20 @@ export function TryOnApp({
         body: JSON.stringify({ slug: config.slug, sessionId: session, lang, accepted: true, ageGate: true }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.id) return null;
+      if (!res.ok || !data.id) return "";
       return String(data.id);
     })();
     consenting.current = job;
-    const id = await job;
-    if (!id) {
-      setAccepted(false);
-      consentRef.current = "";
-      setError(t(lang, "privacyTick"));
-      return;
+    try {
+      const id = await job;
+      if (id) {
+        consentRef.current = id;
+        track("consent_accepted", { lang });
+      }
+      return consentRef.current;
+    } finally {
+      if (consenting.current === job) consenting.current = null;
     }
-    consentRef.current = id;
-    setAccepted(true);
-    setError("");
-    track("consent_accepted", { lang });
-    continuePending();
   }
 
   function clearPickers() {
@@ -476,6 +468,7 @@ export function TryOnApp({
     setError("");
     setStylePhase("pick");
     track("photo_captured", {});
+    await recordPhotoConsent();
     continuePending();
   }
 
@@ -576,11 +569,7 @@ export function TryOnApp({
       needPhoto();
       return;
     }
-    const consent = consentRef.current || (await consenting.current) || "";
-    if (!consent) {
-      setError(t(lang, "privacyTick"));
-      return;
-    }
+    const consent = (await recordPhotoConsent()) || "";
     consentRef.current = consent;
     if (suggestBusy || busy) return;
     setSuggestBusy(true);
@@ -623,7 +612,7 @@ export function TryOnApp({
 
   function continuePending() {
     const chosen = pendingLook.current;
-    if (!chosen || previewLock.current || !consentRef.current) return;
+    if (!chosen || previewLock.current) return;
     if (!shotRefFor(chosen.tool)) return;
     void preview(chosen);
   }
@@ -652,11 +641,6 @@ export function TryOnApp({
       return;
     }
     if (previewLock.current) return;
-    if (!consentRef.current && !consenting.current) {
-      pendingLook.current = chosen;
-      setError(t(lang, "privacyTick"));
-      return;
-    }
     previewLock.current = true;
     pendingLook.current = null;
     setError("");
@@ -665,12 +649,7 @@ export function TryOnApp({
     setStylePhase("pick");
     setBusy(true);
     try {
-      const consent = consentRef.current || (await consenting.current) || "";
-      if (!consent) {
-        pendingLook.current = chosen;
-        setError(t(lang, "privacyTick"));
-        return;
-      }
+      const consent = (await recordPhotoConsent()) || "";
       consentRef.current = consent;
       track("generate_requested", { styleId: chosen.id, tool: chosen.tool });
       const body = new FormData();
@@ -907,12 +886,6 @@ export function TryOnApp({
               eyeDelta={active.eyeDelta}
             />
           </div>
-        ) : !cameraOn && !activeShot ? (
-          <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
-            <button className="btn w-full" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "takeSelfie")}</button>
-            <button className="btn secondary w-full" type="button" onClick={() => pickFile(fileRef.current)}>{t(lang, "uploadPhoto")}</button>
-            {cameraError && <p className="text-center text-sm text-[var(--bad)] sm:col-span-2" role="alert">{cameraError}</p>}
-          </div>
         ) : (
           <div className="relative aspect-[3/4]">
             <video
@@ -937,6 +910,17 @@ export function TryOnApp({
                   mirror={cameraOn && facing === "user"}
                   onStatus={setModelStatus}
                 />
+              </div>
+            )}
+            {!cameraOn && !activeShot && (
+              <div className="absolute inset-0 grid content-center justify-items-center gap-3 px-6">
+                <button className="btn min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "takeSelfie")}</button>
+                <button className="btn secondary min-w-44" type="button" onClick={() => pickFile(fileRef.current)}>{t(lang, "uploadPhoto")}</button>
+                <p className="max-w-xs text-center text-sm text-muted">
+                  {t(lang, "privacyLine")}.{" "}
+                  <a className="underline" href="/privacy">Details</a>
+                </p>
+                {cameraError && <p className="text-center text-sm text-[var(--bad)]" role="alert">{cameraError}</p>}
               </div>
             )}
             {cameraOn && (
@@ -975,13 +959,12 @@ export function TryOnApp({
         </div>
       </section>
 
-      <label className="mt-3 flex min-h-11 items-center gap-3 text-sm">
-        <input type="checkbox" className="h-5 w-5 shrink-0" checked={accepted} onChange={(event) => void acceptPrivacy(event.target.checked)} />
-        <span>
-          {t(lang, "privacyLine")}{" "}
+      {(cameraOn || activeShot || showResult) && (
+        <p className="mt-3 text-center text-sm text-muted">
+          {t(lang, "privacyLine")}.{" "}
           <a className="underline" href="/privacy">Details</a>
-        </span>
-      </label>
+        </p>
+      )}
 
       <input
         ref={fileRef}

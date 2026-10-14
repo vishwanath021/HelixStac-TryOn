@@ -39,7 +39,6 @@ async function previewShifted(page: Page, shifted: Buffer) {
   await page.goto("/s/demo");
   await page.locator("input[data-photo='gallery']").setInputFiles(selfiePath);
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
-  await page.getByRole("checkbox", { name: /photo is used only/i }).check();
   await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Soft Bob" }).click();
   await expect(page.getByRole("heading", { name: "Soft Bob", exact: true })).toBeVisible({ timeout: 60_000 });
 }

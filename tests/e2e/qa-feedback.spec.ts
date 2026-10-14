@@ -204,7 +204,6 @@ test("retake and try another each open a new camera frame", async ({ page }, tes
   const distance = Math.abs(first[0] - second[0]) + Math.abs(first[2] - second[2]);
   expect(distance).toBeGreaterThan(40);
 
-  await page.getByRole("checkbox", { name: /photo is used only/i }).check();
   await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Soft Bob" }).click();
   await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('section[aria-label="Photo"]')).toHaveClass(/is-ready/);

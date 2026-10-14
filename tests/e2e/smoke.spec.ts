@@ -23,10 +23,6 @@ function salonModeToken(tenantId: string, nonce: string) {
   return Buffer.from(`${body}.${sig}`).toString("base64url");
 }
 
-async function acceptPhotoUse(page: import("@playwright/test").Page) {
-  await page.getByRole("checkbox", { name: /photo is used only/i }).check();
-}
-
 async function artifact(page: import("@playwright/test").Page, name: string) {
   const width = page.viewportSize()?.width ?? 0;
   const device = width >= 768 ? "desktop" : "phone";
@@ -82,6 +78,14 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await expect(page.getByRole("tab")).toHaveCount(5);
   await artifact(page, "guest-before");
   await expect(page.getByText(/before we use a photo/i)).toHaveCount(0);
+  const photo = page.getByRole("region", { name: "Photo" });
+  const frame = photo.locator("div.relative").first();
+  await expect(frame).toBeVisible();
+  const frameBox = await frame.boundingBox();
+  expect((frameBox?.height ?? 0) / (frameBox?.width ?? 1)).toBeGreaterThan(1.15);
+  await expect(page.getByRole("checkbox", { name: /photo is used only/i })).toHaveCount(0);
+  await expect(photo.getByRole("link", { name: "Details" })).toHaveAttribute("href", "/privacy");
+  await expect(photo.getByText("Your photo is used only for this preview.")).toBeVisible();
   const gallery = page.getByRole("region", { name: "Styles" });
   await expect(gallery.getByRole("button", { name: "Women", exact: true })).toBeVisible();
   await expect(gallery.locator("img")).toHaveCount(26);
@@ -119,7 +123,6 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
 
-  await acceptPhotoUse(page);
   await expect(page.getByText("Styling your look...")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator("section[aria-label=Photo]")).toHaveClass(/is-ready/);
@@ -323,7 +326,6 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
   try {
     await page.goto("/s/demo");
     await expect(page.getByLabel("Password")).toHaveCount(0);
-    await acceptPhotoUse(page);
     await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
     await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" }).click();
     await expect(page.getByText(/today's previews used up/i)).toBeVisible({ timeout: 20_000 });
@@ -335,7 +337,6 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
     const token = salonModeToken(tenant.id, nonce);
     await page.goto(`/s/demo?salon=${encodeURIComponent(token)}&tool=style`);
     await expect(page.locator("[data-salon-mode='yes']")).toBeVisible();
-    await acceptPhotoUse(page);
     await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
     await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" }).click();
     await expect(page.getByRole("heading", { name: "Pixie" })).toBeVisible({ timeout: 20_000 });
@@ -404,7 +405,6 @@ test("style gallery uses portraits and the demo result is not a flat placeholder
   await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
-  await acceptPhotoUse(page);
   await gallery.getByRole("button", { name: "Soft Bob" }).click();
   await expect(page.getByText("Styling your look...")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });

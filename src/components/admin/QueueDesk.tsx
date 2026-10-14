@@ -102,8 +102,8 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
   return (
     <div data-ready={ready ? "yes" : "no"} data-queue-mode={desk.state.mode} data-queue-open={desk.state.isOpen ? "yes" : "no"}>
       <div className="mt-4 grid gap-3">
-        <button className="btn secondary w-full text-lg" type="button" disabled={busy} onClick={() => void act({ action: desk.state.isOpen ? "pause" : "open" })}>
-          {desk.state.isOpen ? t(lang, "queuePause") : t(lang, "queueOpenBtn")}
+        <button className="btn w-full text-lg" type="button" disabled={busy} onClick={() => void act({ action: desk.state.isOpen ? "pause" : "open" })}>
+          {desk.state.isOpen ? t(lang, "queueToggleOpen") : t(lang, "queueTogglePaused")}
         </button>
         {live ? (
           <button className="btn w-full text-2xl" type="button" disabled={busy || desk.waiting.length === 0} onClick={() => void act({ action: "next" })}>

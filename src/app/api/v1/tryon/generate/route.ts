@@ -14,6 +14,7 @@ import { sanitizeSelfie, ImageError } from "@/lib/images";
 import { logPlacementRejection, poseGate, TRY_ANOTHER_PHOTO } from "@/lib/face/region";
 import { parseLandmarks, type PlacementDebug } from "@/lib/face/pose";
 import { AI_PREVIEW_KINDS, actorKeyFor, capForTier, hashIp, readGuestToken, verifySalonToken, type PreviewTier } from "@/lib/preview-access";
+import { ensurePhotoConsent } from "@/lib/photo-consent";
 import { prisma } from "@/lib/prisma";
 import { requestClientIp } from "@/lib/ratelimit";
 export const runtime = "nodejs";
@@ -80,12 +81,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "PRODUCT", message: "Try-on is not available for this salon." }, { status: 404 });
   }
 
-  const consent = await prisma.consentLog.findFirst({
-    where: { id: consentId, tenantId: tenant.id, sessionId, accepted: true, ageGate: true },
+  await ensurePhotoConsent({
+    tenantId: tenant.id,
+    sessionId,
+    consentId,
+    userAgent: req.headers.get("user-agent") || "",
   });
-  if (!consent || Date.now() - consent.createdAt.getTime() > 24 * 60 * 60 * 1000) {
-    return NextResponse.json({ error: "CONSENT", message: "Agree to the preview notice before a style preview." }, { status: 403 });
-  }
 
   const ip = requestClientIp(req);
   const staffId = await signedInOwnerOrSuper(tenant.id);
