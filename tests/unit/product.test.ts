@@ -99,6 +99,15 @@ describe("whatsapp", () => {
     expect(link.url.startsWith("https://wa.me/919800011122?text=")).toBe(true);
     expect(decodeURIComponent(link.url)).toContain("सॉफ्ट बॉब");
     expect(decodeURIComponent(link.url)).toContain("₹499");
+    const withLook = buildWhatsAppLink({
+      phone: "9800011122",
+      salonName: "Demo Salon",
+      lookName: "Soft Bob",
+      services: [],
+      lookUrl: "http://localhost:3000/api/v1/media?key=generations%2Fa%2Fb%2Fresult.jpg&exp=1&sig=abc",
+    });
+    expect(decodeURIComponent(withLook.url)).toContain("Look image: http://localhost:3000/api/v1/media");
+    expect(buildWhatsAppLink({ phone: "", salonName: "Demo Salon", lookName: "Soft Bob", services: [] }).url).toBe("");
   });
 });
 

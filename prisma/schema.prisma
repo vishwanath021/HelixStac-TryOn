@@ -223,6 +223,7 @@ model CreditLedger {
   delta        Int
   reason       String
   refId        String?
+  note         String    @default("")
   balanceAfter Int
   expiresAt    DateTime?
   createdAt    DateTime  @default(now())

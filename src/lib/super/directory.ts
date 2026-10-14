@@ -24,14 +24,17 @@ export type SalonRecord = {
   queueToday: number;
 };
 
-/** One tenant query plus one grouped preview count for the Kolkata month. */
+/** Succeeded try-ons only. Demo samples and failed attempts are not previews. */
+const REAL_PREVIEW = { status: "SUCCEEDED" } as const;
+
+/** One tenant query plus grouped succeeded-preview counts. The month starts in Asia/Kolkata. */
 export async function loadSalons(): Promise<SalonRecord[]> {
   const since = kolkataMonthStart();
-  const [tenants, grouped, queued] = await Promise.all([
+  const [tenants, grouped, allPreviews, queued] = await Promise.all([
     prisma.tenant.findMany({
       orderBy: { createdAt: "desc" },
       include: {
-        _count: { select: { leads: true, tryOns: true } },
+        _count: { select: { leads: true } },
         members: {
           where: { role: "OWNER" },
           take: 1,
@@ -42,7 +45,12 @@ export async function loadSalons(): Promise<SalonRecord[]> {
     }),
     prisma.tryOn.groupBy({
       by: ["tenantId"],
-      where: { createdAt: { gte: since }, status: "SUCCEEDED" },
+      where: { createdAt: { gte: since }, ...REAL_PREVIEW },
+      _count: { _all: true },
+    }),
+    prisma.tryOn.groupBy({
+      by: ["tenantId"],
+      where: REAL_PREVIEW,
       _count: { _all: true },
     }),
     prisma.queueEntry.groupBy({
@@ -52,6 +60,7 @@ export async function loadSalons(): Promise<SalonRecord[]> {
     }),
   ]);
   const month = new Map(grouped.map((row) => [row.tenantId, row._count._all]));
+  const all = new Map(allPreviews.map((row) => [row.tenantId, row._count._all]));
   const today = new Map(queued.map((row) => [row.tenantId, row._count._all]));
   return tenants.map((tenant) => {
     const plan = PLANS[tenant.plan as keyof typeof PLANS];
@@ -65,7 +74,7 @@ export async function loadSalons(): Promise<SalonRecord[]> {
       status: tenant.status,
       credits: tenant.creditBalance,
       leads: tenant._count.leads,
-      tryOns: tenant._count.tryOns,
+      tryOns: all.get(tenant.id) || 0,
       previewsThisMonth: month.get(tenant.id) || 0,
       ownerName: owner?.name || "",
       ownerEmail: owner?.email || "",

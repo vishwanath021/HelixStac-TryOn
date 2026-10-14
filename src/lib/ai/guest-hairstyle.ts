@@ -12,7 +12,9 @@ import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { executeReferenceEdit } from "@/lib/ai/reference-run";
 import { readHairstyleReference, thumbnailFolder } from "@/lib/ai/style-reference";
 import { CreditError, reserveCredits, settleCredits } from "@/lib/credits";
+import { numberEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
+import { appMediaUrl } from "@/lib/storage";
 import { buildBeardPrompt, buildBrowPrompt, buildColourPrompt, buildNailPrompt } from "@/lib/prompts";
 import { guestLimitMessage } from "@/lib/tools";
 
@@ -87,6 +89,28 @@ export async function saveSalonGuestEngine(tenantId: string, engine: "" | GuestE
   await prisma.tenant.update({ where: { id: tenantId }, data: { hairstyleEngine: engine } });
   await prisma.auditLog.create({
     data: { actorId, action: "GUEST_ENGINE", target: tenantId, meta: JSON.stringify({ engine: engine || "inherit" }) },
+  });
+}
+
+function lookShareUrl(tenantId: string, requestId: string) {
+  if (!requestId) return "";
+  try {
+    const hours = numberEnv("GENERATION_JOB_TTL_HOURS", 24);
+    return appMediaUrl(`generations/${tenantId}/${requestId}/result.jpg`, Math.max(60, Math.round(hours * 3600)));
+  } catch {
+    return "";
+  }
+}
+
+/** One row per real preview. Demo samples are not logged. */
+export async function logGenerateEvent(args: { tenantId: string; sessionId: string; styleId: string; tool: string; tryOnId: string }) {
+  await prisma.usageEvent.create({
+    data: {
+      tenantId: args.tenantId,
+      sessionId: args.sessionId,
+      name: "generate",
+      props: JSON.stringify({ styleId: args.styleId, tool: args.tool, tryOnId: args.tryOnId }),
+    },
   });
 }
 
@@ -220,6 +244,13 @@ async function runGuestEdit(args: GuestEditArgs): Promise<NextResponse | null> {
     },
   });
   await settleCredits(args.tenantId, creditRef, "COMMIT");
+  await logGenerateEvent({
+    tenantId: args.tenantId,
+    sessionId: args.sessionId,
+    styleId: args.styleId,
+    tool: args.tool,
+    tryOnId: tryOn.id,
+  });
   if (args.requestId) {
     await completeGenerationJob(args.jobId, {
       tenantId: args.tenantId,
@@ -232,7 +263,12 @@ async function runGuestEdit(args: GuestEditArgs): Promise<NextResponse | null> {
   const balance = await prisma.tenant.findUnique({ where: { id: args.tenantId }, select: { creditBalance: true } });
   return new NextResponse(new Uint8Array(jpegOut), {
     status: 200,
-    headers: guestPreviewHeaders({ tryOnId: tryOn.id, creditsLeft: balance?.creditBalance ?? 0, demoReason: "" }),
+    headers: guestPreviewHeaders({
+      tryOnId: tryOn.id,
+      creditsLeft: balance?.creditBalance ?? 0,
+      demoReason: "",
+      lookShare: lookShareUrl(args.tenantId, args.requestId),
+    }),
   });
 }
 
@@ -275,6 +311,11 @@ export async function demoGuestPreview(args: Omit<GuestEditArgs, "guest" | "orig
   const balance = await prisma.tenant.findUnique({ where: { id: args.tenantId }, select: { creditBalance: true } });
   return new NextResponse(new Uint8Array(image), {
     status: 200,
-    headers: guestPreviewHeaders({ tryOnId: tryOn.id, creditsLeft: balance?.creditBalance ?? 0, demoReason: "no-key" }),
+    headers: guestPreviewHeaders({
+      tryOnId: tryOn.id,
+      creditsLeft: balance?.creditBalance ?? 0,
+      demoReason: "no-key",
+      lookShare: lookShareUrl(args.tenantId, args.requestId),
+    }),
   });
 }

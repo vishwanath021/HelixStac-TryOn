@@ -18,7 +18,23 @@ const bodySchema = z.object({
   phone: z.string().max(20).optional().nullable(),
   src: z.string().max(40).optional().nullable(),
   outletId: z.string().optional().nullable(),
+  lookUrl: z.string().max(2000).optional().nullable(),
 });
+
+function shareableLookUrl(value: string | null | undefined) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    const base = new URL(process.env.APP_BASE_URL || "http://localhost:3000");
+    if (url.origin !== base.origin) return "";
+    if (url.pathname !== "/api/v1/media") return "";
+    const key = url.searchParams.get("key") || "";
+    if (!key.startsWith("generations/") || !url.searchParams.get("exp") || !url.searchParams.get("sig")) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
 
 export async function POST(req: Request) {
   const limited = await tooMany(req, "leads", 30, 60 * 60 * 1000);
@@ -53,7 +69,11 @@ export async function POST(req: Request) {
     shadeName: shade?.name,
     services,
     lang: parsed.data.lang,
+    lookUrl: shareableLookUrl(parsed.data.lookUrl),
   });
+  if (!link.url) {
+    return NextResponse.json({ error: "WHATSAPP", message: "This salon has not added a WhatsApp number yet." }, { status: 400 });
+  }
   const lead = await prisma.lead.create({
     data: {
       tenantId: tenant.id,

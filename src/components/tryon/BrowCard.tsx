@@ -4,7 +4,7 @@ import { useState } from "react";
 import { browCardPhoto } from "@/data/brow-cards";
 import { browShapeById } from "@/data/brow-shapes";
 
-function BrowDiagram({ id, name, badge }: { id: string; name: string; badge: boolean }) {
+function BrowDiagram({ id, name }: { id: string; name: string }) {
   const shape = browShapeById(id);
   if (!shape) return null;
   const shared = shape.fill
@@ -17,12 +17,8 @@ function BrowDiagram({ id, name, badge }: { id: string; name: string; badge: boo
         strokeLinejoin: shape.join ?? "round",
       };
   return (
-    <svg
-      viewBox="0 0 240 240"
-      className={badge ? "pointer-events-none absolute bottom-1 right-1 h-9 w-9 overflow-hidden rounded-md ring-2 ring-white" : "aspect-square w-full"}
-      aria-hidden={badge ? true : undefined}
-    >
-      {badge ? null : <title>{name}</title>}
+    <svg viewBox="0 0 240 240" className="aspect-square w-full">
+      <title>{name}</title>
       <rect width="240" height="240" fill="#E6C3A4" />
       <path d={shape.d} {...shared} />
       <path d={shape.d} transform="translate(240 0) scale(-1 1)" {...shared} />
@@ -37,7 +33,7 @@ export function BrowCard({ id, name }: { id: string; name: string }) {
   if (!shape) {
     return <div className="grid aspect-square place-items-center bg-[#E6C3A4] px-2 text-center text-sm" />;
   }
-  if (!photo || missing) return <BrowDiagram id={id} name={name} badge={false} />;
+  if (!photo || missing) return <BrowDiagram id={id} name={name} />;
   return (
     <span className="relative block aspect-video w-full overflow-hidden" data-brow-card="photo">
       <img
@@ -48,7 +44,6 @@ export function BrowCard({ id, name }: { id: string; name: string }) {
         className="aspect-video h-full w-full object-cover object-center"
         onError={() => setMissing(true)}
       />
-      <BrowDiagram id={id} name={name} badge />
     </span>
   );
 }

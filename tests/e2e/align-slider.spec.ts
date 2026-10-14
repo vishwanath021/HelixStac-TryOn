@@ -41,7 +41,6 @@ async function previewShifted(page: Page, shifted: Buffer) {
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await page.getByRole("checkbox", { name: /photo is used only/i }).check();
   await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Soft Bob" }).click();
-  await page.getByRole("button", { name: "Try this look" }).click();
   await expect(page.getByRole("heading", { name: "Soft Bob", exact: true })).toBeVisible({ timeout: 60_000 });
 }
 

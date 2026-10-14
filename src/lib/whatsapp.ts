@@ -5,6 +5,7 @@ export type WhatsAppInput = {
   shadeName?: string | null;
   services: { name: string; priceInr: number }[];
   lang?: string;
+  lookUrl?: string | null;
 };
 
 const INTRO: Record<string, string> = {
@@ -26,6 +27,7 @@ export function buildWhatsAppText(input: WhatsAppInput) {
   const intro = (INTRO[input.lang || "en"] ?? INTRO.en).replace("{salon}", input.salonName);
   const lines = [intro, `Look: ${input.lookName}`];
   if (input.shadeName) lines.push(`Colour: ${input.shadeName}`);
+  if (input.lookUrl) lines.push(`Look image: ${input.lookUrl}`);
   if (input.services.length) {
     const priced = input.services.map((service) => `${service.name} (₹${service.priceInr.toLocaleString("en-IN")})`).join(", ");
     lines.push(`Suggested services: ${priced}`);

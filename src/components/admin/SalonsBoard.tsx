@@ -43,6 +43,7 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
   const [nextPlan, setNextPlan] = useState<PlanId>("STARTER");
   const [delta, setDelta] = useState("50");
   const [reason, setReason] = useState("");
+  const [goodwillConfirm, setGoodwillConfirm] = useState(false);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -73,6 +74,7 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
     setSelected(row);
     setDelta("50");
     setReason("");
+    setGoodwillConfirm(false);
     setCreditOpen(true);
   }
 
@@ -309,8 +311,8 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={creditOpen} onOpenChange={setCreditOpen}>
-        <DialogContent title="Adjust credits" description="A reason is stored on the audit event.">
+      <Dialog open={creditOpen} onOpenChange={(open) => { setCreditOpen(open); if (!open) setGoodwillConfirm(false); }}>
+        <DialogContent title="Adjust credits" description="1 credit is 1 AI preview. The credits are free to the salon. The reason is saved on the credit ledger and the audit log.">
           <form
             className="grid gap-3"
             onSubmit={(event) => {
@@ -327,17 +329,34 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
             </label>
             <div className="flex flex-wrap gap-2">
               <button className="btn" type="submit" disabled={busy || !reason.trim()}>{busy ? "Saving…" : "Adjust credits"}</button>
-              <button
-                className="btn secondary"
-                type="button"
-                disabled={busy || !selected}
-                onClick={() => {
-                  if (!selected) return;
-                  void update(selected.id, { creditDelta: 50, note: "goodwill" });
-                }}
-              >
-                +50 goodwill
-              </button>
+              {goodwillConfirm ? (
+                <div className="grid w-full gap-2 rounded-[10px] border border-line p-3">
+                  <p className="text-sm">Add 50 credits as goodwill? That is about ₹115–150 of AI cost. It is free to the salon. The reason “goodwill” is saved on the credit ledger and the audit log.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={busy || !selected}
+                      onClick={() => {
+                        if (!selected) return;
+                        void update(selected.id, { creditDelta: 50, note: "goodwill" });
+                      }}
+                    >
+                      Confirm +50 goodwill
+                    </button>
+                    <button className="btn secondary" type="button" onClick={() => setGoodwillConfirm(false)}>Back</button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  className="btn secondary"
+                  type="button"
+                  disabled={busy || !selected}
+                  onClick={() => setGoodwillConfirm(true)}
+                >
+                  +50 goodwill
+                </button>
+              )}
             </div>
           </form>
         </DialogContent>

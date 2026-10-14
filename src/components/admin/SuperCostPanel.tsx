@@ -164,9 +164,10 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
           </ul>
         )}
       </div>
-      <label className="text-sm">Images per salon per month
+      <label className="text-sm">Estimate only: images per month
         <input className="field mt-1 max-w-[8rem]" type="number" min={0} value={images} onChange={(event) => setImages(Math.max(0, Number(event.target.value) || 0))} />
       </label>
+      <p className="text-sm text-muted">This number is only for the projection below. It limits nothing.</p>
       <p className="text-sm">Projected cost {money(report.plans[0]?.projectedInr ?? 0)} at {money(report.averageInr)} average.</p>
       <ul className="text-sm">
         {report.plans.map((plan) => (
