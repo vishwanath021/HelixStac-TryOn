@@ -30,7 +30,7 @@ export function LoginForm({ defaultEmail = "" }: { defaultEmail?: string }) {
       <LookuviLockup />
       <h1 className="page-title mt-6">Salon login</h1>
       <p className="mt-2 text-sm text-muted">Owners and staff sign in with email and password.</p>
-      <form className="mt-4 space-y-3" data-ready={ready ? "yes" : "no"} onSubmit={onPassword}>
+      <form className="mt-4 space-y-3" method="post" action="/login" data-ready={ready ? "yes" : "no"} onSubmit={onPassword}>
         <label className="block text-sm">Email
           <input className="field mt-1" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
         </label>
@@ -42,7 +42,7 @@ export function LoginForm({ defaultEmail = "" }: { defaultEmail?: string }) {
             <input className="field mt-1" inputMode="text" autoComplete="one-time-code" value={totp} onChange={(event) => setTotp(event.target.value)} required />
           </label>
         )}
-        <button className="btn w-full" type="submit">Sign in</button>
+        <button className="btn w-full" type="submit" disabled={!ready}>{ready ? "Sign in" : "Loading…"}</button>
       </form>
       <p className="mt-3 text-sm"><a href="/login/reset">Forgot password</a></p>
       {message && <p className="mt-3 text-sm" role="status">{message}</p>}

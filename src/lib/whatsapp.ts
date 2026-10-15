@@ -9,12 +9,12 @@ export type WhatsAppInput = {
 };
 
 const INTRO: Record<string, string> = {
-  en: "Hi {salon}, I tried a look on your try-on page and I would like to book it.",
-  hi: "नमस्ते {salon}, मैंने आपके ट्राई-ऑन पर एक लुक आज़माया है और उसे बुक करना चाहता/चाहती हूँ।",
-  kn: "ನಮಸ್ಕಾರ {salon}, ನಿಮ್ಮ ಟ್ರೈ-ಆನ್‌ನಲ್ಲಿ ಒಂದು ಲುಕ್ ನೋಡಿದ್ದೇನೆ ಮತ್ತು ಅದನ್ನು ಬುಕ್ ಮಾಡಲು ಇಚ್ಛಿಸುತ್ತೇನೆ.",
-  ta: "வணக்கம் {salon}, உங்கள் ட்ரை-ஆனில் ஒரு லுக்கை பார்த்தேன். அதை பதிவு செய்ய விரும்புகிறேன்.",
-  te: "నమస్తే {salon}, మీ ట్రై-ఆన్‌లో ఒక లుక్ చూశాను. దాన్ని బుక్ చేయాలనుకుంటున్నాను.",
-  mr: "नमस्कार {salon}, मी तुमच्या ट्राय-ऑनवर एक लुक पाहिला आहे आणि तो बुक करू इच्छितो/इच्छिते.",
+  en: "Hi! I'd like to book this look: {look}.",
+  hi: "नमस्ते! मैं यह लुक बुक करना चाहता/चाहती हूँ: {look}.",
+  kn: "ನಮಸ್ಕಾರ! ನಾನು ಈ ಲುಕ್ ಬುಕ್ ಮಾಡಲು ಇಚ್ಛಿಸುತ್ತೇನೆ: {look}.",
+  ta: "வணக்கம்! இந்த லுக்கை பதிவு செய்ய விரும்புகிறேன்: {look}.",
+  te: "నమస్తే! ఈ లుక్‌ను బుక్ చేయాలనుకుంటున్నాను: {look}.",
+  mr: "नमस्कार! मला हा लुक बुक करायचा आहे: {look}.",
 };
 
 export function normalizeWhatsAppPhone(phone: string) {
@@ -24,16 +24,9 @@ export function normalizeWhatsAppPhone(phone: string) {
 }
 
 export function buildWhatsAppText(input: WhatsAppInput) {
-  const intro = (INTRO[input.lang || "en"] ?? INTRO.en).replace("{salon}", input.salonName);
-  const lines = [intro, `Look: ${input.lookName}`];
-  if (input.shadeName) lines.push(`Colour: ${input.shadeName}`);
-  if (input.lookUrl) lines.push(`Look image: ${input.lookUrl}`);
-  if (input.services.length) {
-    const priced = input.services.map((service) => `${service.name} (₹${service.priceInr.toLocaleString("en-IN")})`).join(", ");
-    lines.push(`Suggested services: ${priced}`);
-  }
-  lines.push("This preview is a guide. Please confirm the cut in the salon.");
-  return lines.join("\n");
+  const look = input.shadeName ? `${input.lookName} (${input.shadeName})` : input.lookName;
+  const intro = (INTRO[input.lang || "en"] ?? INTRO.en).replace("{look}", look);
+  return input.lookUrl ? `${intro} ${input.lookUrl}` : intro;
 }
 
 export function buildWhatsAppLink(input: WhatsAppInput) {

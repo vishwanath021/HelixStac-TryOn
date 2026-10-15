@@ -1,4 +1,5 @@
 import { Hint } from "@/components/ui/tooltip";
+import { formatAiInr, formatIst } from "@/lib/display";
 import { spendSummary } from "@/lib/ai/spend";
 import { numberEnv } from "@/lib/env";
 import { auditLabel, listAudit } from "@/lib/super/audit";
@@ -9,16 +10,6 @@ export const dynamic = "force-dynamic";
 
 function inr(value: number) {
   return `₹${value.toLocaleString("en-IN")}`;
-}
-
-function when(value: string) {
-  return new Date(value).toLocaleString("en-IN", {
-    timeZone: "Asia/Kolkata",
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 export default async function SuperPage() {
@@ -64,8 +55,8 @@ export default async function SuperPage() {
             </Hint>
           </div>
           <p className="font-serif text-3xl">
-            ₹{spend.spentInr.toFixed(0)}
-            <span className="text-base text-muted"> / ₹{spend.capInr.toFixed(0)}</span>
+            {formatAiInr(spend.spentInr)}
+            <span className="text-base text-muted"> / {formatAiInr(spend.capInr)}</span>
           </p>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-sand" aria-hidden>
             <div className="h-full bg-aubergine" style={{ width: `${cap}%` }} />
@@ -91,9 +82,11 @@ export default async function SuperPage() {
               <li key={item.id} className="flex items-baseline justify-between gap-3 py-2 text-sm">
                 <span>
                   {auditLabel(item.action)}
-                  <span className="ml-2 text-muted">{item.target}</span>
+                  {item.detail ? <span className="ml-2">{item.detail}</span> : null}
+                  <span className="ml-2 text-muted">{item.salonName || item.target}</span>
+                  {item.actorEmail ? <span className="ml-2 text-muted">{item.actorEmail}</span> : null}
                 </span>
-                <time className="shrink-0 text-xs text-muted" dateTime={item.createdAt}>{when(item.createdAt)}</time>
+                <time className="shrink-0 text-xs text-muted" dateTime={item.createdAt}>{formatIst(item.createdAt)}</time>
               </li>
             ))}
           </ul>

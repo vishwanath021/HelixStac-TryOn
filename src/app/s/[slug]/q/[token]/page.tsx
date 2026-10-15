@@ -9,7 +9,15 @@ export const dynamic = "force-dynamic";
 export default async function QueueStatusPage({ params }: { params: Promise<{ slug: string; token: string }> }) {
   const { slug, token } = await params;
   const tenant = await loadTenantBySlug(slug);
-  if (!tenant || !tenant.productQueue) notFound();
+  if (!tenant) notFound();
+  if (!tenant.productQueue) {
+    return (
+      <main className="mx-auto max-w-lg px-4 py-16 text-center">
+        <h1 className="page-title">{tenant.name}</h1>
+        <p className="mt-3 text-sm">The queue is turned off for this salon.</p>
+      </main>
+    );
+  }
   if (tenant.status === "SUSPENDED") return <SalonPaused name={tenant.name} />;
   try {
     const ticket = await guestTicket(tenant.slug, token);
@@ -20,7 +28,14 @@ export default async function QueueStatusPage({ params }: { params: Promise<{ sl
       </main>
     );
   } catch (error) {
-    if (error instanceof QueueError) notFound();
+    if (error instanceof QueueError) {
+      return (
+        <main className="mx-auto max-w-lg px-4 py-16 text-center">
+          <h1 className="page-title">{tenant.name}</h1>
+          <p className="mt-3 text-sm">That visit was not found.</p>
+        </main>
+      );
+    }
     throw error;
   }
 }

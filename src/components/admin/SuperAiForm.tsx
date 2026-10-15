@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import type { GuestEngine } from "@/lib/ai/guest-hairstyle";
 import type { PlatformAiSettings, StoredKeyStatus } from "@/lib/ai/settings-store";
+import { formatAiInr } from "@/lib/display";
 import { productionModelNotice } from "@/lib/ai/model-notices";
 import type { ImageProviderName, TierRequest } from "@/lib/ai/tiers";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +55,7 @@ export function SuperAiForm({
   const [panels, setPanels] = useState<Panel[]>([]);
   const [total, setTotal] = useState("");
   const choices = initial.choices[provider];
+  const retiringHigh = Object.values(initial.choices).some((rows) => rows.some((row) => row.model === "gpt-image-1"));
   const capPct = initial.spend.capInr > 0 ? Math.min(100, (initial.spend.spentInr / initial.spend.capInr) * 100) : 0;
 
   function applyView(data: PlatformAiSettings) {
@@ -242,17 +244,6 @@ export function SuperAiForm({
               onSave={() => void save({ provider: "openai", apiKey: openaiDraft })}
               onTest={() => void testConnection("openai", openaiDraft)}
             />
-            <KeyCard
-              title="Gemini"
-              status={geminiKey}
-              draft={geminiDraft}
-              onDraft={setGeminiDraft}
-              ariaLabel="Gemini key"
-              helper="Used when calibration selects Gemini."
-              busy={busy}
-              onSave={() => void save({ provider: "gemini", apiKey: geminiDraft })}
-              onTest={() => void testConnection("gemini", geminiDraft)}
-            />
             <article className="card grid gap-3 p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-base font-semibold">fal</h3>
@@ -284,6 +275,40 @@ export function SuperAiForm({
                 <button className="btn secondary" type="button" disabled={busy} onClick={() => setMessage("fal has no connection test. Save the key and enable it.")}>Test</button>
               </div>
             </article>
+          </div>
+        </section>
+
+        <section className="card grid gap-2 p-5">
+          <div className="flex items-center gap-1">
+            <h2 className="text-base font-semibold">Spend cap</h2>
+            <Hint label="About the spend cap">Further paid calls stop at the cap and return a labelled sample.</Hint>
+          </div>
+          <p className="text-sm">{formatAiInr(initial.spend.spentInr)} of {formatAiInr(initial.spend.capInr)} · {initial.spend.calls} calls</p>
+          <div className="h-2 overflow-hidden rounded-full bg-sand" aria-hidden>
+            <div className="h-full bg-aubergine" style={{ width: `${capPct}%` }} />
+          </div>
+        </section>
+
+        {retiringHigh ? (
+          <p className="text-sm" role="status">
+            Calibration high still names gpt-image-1, which shuts down 23 Oct 2026. Guest try-on does not use it. The salon default is fal FLUX.
+          </p>
+        ) : null}
+        <details className="card p-5">
+          <summary className="cursor-pointer text-base font-semibold">Advanced (internal)</summary>
+          <div className="mt-4 grid gap-4">
+            <p className="text-sm text-muted">Calibration tiers, benchmarks, Gemini, OpenRouter, and bring-your-own keys. Guest try-on does not use these tiers.</p>
+            <KeyCard
+              title="Gemini"
+              status={geminiKey}
+              draft={geminiDraft}
+              onDraft={setGeminiDraft}
+              ariaLabel="Gemini key"
+              helper="Used when calibration selects Gemini."
+              busy={busy}
+              onSave={() => void save({ provider: "gemini", apiKey: geminiDraft })}
+              onTest={() => void testConnection("gemini", geminiDraft)}
+            />
             <article className="card grid gap-3 p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-base font-semibold">OpenRouter</h3>
@@ -315,24 +340,6 @@ export function SuperAiForm({
                 <button className="btn secondary" type="button" disabled={busy} onClick={() => setMessage("OpenRouter has no connection test. Save the key and enable it.")}>Test</button>
               </div>
             </article>
-          </div>
-        </section>
-
-        <section className="card grid gap-2 p-5">
-          <div className="flex items-center gap-1">
-            <h2 className="text-base font-semibold">Spend cap</h2>
-            <Hint label="About the spend cap">Further paid calls stop at the cap and return a labelled sample.</Hint>
-          </div>
-          <p className="text-sm">₹{initial.spend.spentInr.toFixed(2)} of ₹{initial.spend.capInr.toFixed(0)} · {initial.spend.calls} calls</p>
-          <div className="h-2 overflow-hidden rounded-full bg-sand" aria-hidden>
-            <div className="h-full bg-aubergine" style={{ width: `${capPct}%` }} />
-          </div>
-        </section>
-
-        <details className="card p-5">
-          <summary className="cursor-pointer text-base font-semibold">Advanced (internal)</summary>
-          <div className="mt-4 grid gap-4">
-            <p className="text-sm text-muted">Calibration tiers, benchmarks, and bring-your-own keys. Guest try-on does not use these tiers.</p>
             <label className="text-sm">
               Provider
               <select className="field mt-1" value={provider} onChange={(event) => setProvider(event.target.value === "gemini" ? "gemini" : "openai")}>

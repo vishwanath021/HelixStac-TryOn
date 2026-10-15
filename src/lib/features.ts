@@ -48,21 +48,20 @@ export function ownerNav(input: {
   productTryOn: boolean;
   productQueue: boolean;
   features: OwnerFeatures;
+  /** Hidden once the first-run wizard is finished. */
+  onboardingDone?: boolean;
 }): OwnerNavLink[] {
-  const links: OwnerNavLink[] = [
-    { href: "/admin", label: "Overview", section: "main" },
-    { href: "/admin/onboarding", label: "Onboarding", section: "main" },
-  ];
-  if (input.productTryOn) links.push({ href: "/admin/styles", label: "Styles", section: "main" });
-  links.push({ href: "/admin/services", label: "Services", section: "main" });
-  links.push({ href: "/admin/leads", label: "Leads", section: "main" });
-  if (input.features.bookings) links.push({ href: "/admin/bookings", label: "Bookings", section: "main" });
-  if (input.productTryOn) links.push({ href: "/admin/qr", label: input.features.embed ? "QR and embed" : "QR", section: "main" });
-  if (input.productTryOn && input.features.salonAi && input.role === "OWNER") {
-    links.push({ href: "/admin/ai", label: "AI settings", section: "main" });
-  }
+  const links: OwnerNavLink[] = [];
+  if (input.onboardingDone === false) links.push({ href: "/admin/onboarding", label: "Onboarding", section: "main" });
   if (input.productQueue) links.push({ href: "/admin/queue", label: "Queue", section: "main" });
-  if (input.productTryOn) links.push({ href: `/s/${input.slug}`, label: "View try-on", section: "main" });
+  links.push({ href: "/admin/leads", label: "Leads", section: "main" });
+  if (input.productTryOn) links.push({ href: "/admin/qr", label: input.features.embed ? "QR and embed" : "QR", section: "main" });
+  if (input.productTryOn) links.push({ href: "/admin/styles", label: "Styles", section: "more" });
+  links.push({ href: "/admin/services", label: "Services", section: "more" });
+  if (input.features.bookings) links.push({ href: "/admin/bookings", label: "Bookings", section: "more" });
+  if (input.productTryOn && input.features.salonAi && input.role === "OWNER") {
+    links.push({ href: "/admin/ai", label: "AI settings", section: "more" });
+  }
   links.push({ href: "/admin/settings", label: "Settings", section: "more" });
   if (input.role === "OWNER") links.push({ href: "/admin/settings#team", label: "Team", section: "more" });
   links.push({ href: "/admin/billing", label: "Billing", section: "more" });

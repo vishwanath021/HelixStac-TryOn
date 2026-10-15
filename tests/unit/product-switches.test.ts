@@ -34,12 +34,19 @@ describe("owner feature flags", () => {
     expect(labels).toContain("Styles");
     expect(labels).toContain("QR");
     expect(labels).not.toContain("QR and embed");
+    expect(ownerNav(off).filter((link) => link.section === "main").map((link) => link.label)).toEqual([
+      "Leads",
+      "QR",
+    ]);
     expect(ownerNav(off).filter((link) => link.section === "more").map((link) => link.label)).toEqual([
+      "Styles",
+      "Services",
       "Settings",
       "Team",
       "Billing",
       "Security",
     ]);
+    expect(ownerNav({ ...off, onboardingDone: false }).map((link) => link.label)).toContain("Onboarding");
   });
 
   it("shows queue only when that product is on, and hides try-on pages when it is off", () => {

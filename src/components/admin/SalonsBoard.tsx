@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Sheet } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
+import { formatIst } from "@/lib/display";
 
 function applySalonPatch(row: SalonRecord, body: Record<string, unknown>): SalonRecord {
   return {
@@ -21,7 +22,11 @@ function applySalonPatch(row: SalonRecord, body: Record<string, unknown>): Salon
 
 function when(value: string | null) {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" });
+  return formatIst(value, false);
+}
+
+function slugFromName(value: string) {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 }
 
 export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
@@ -38,6 +43,8 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [createPlan, setCreatePlan] = useState<PlanId>("STARTER");
   const [ownerEmail, setOwnerEmail] = useState("");
   const [ownerPassword, setOwnerPassword] = useState("");
   const [nextPlan, setNextPlan] = useState<PlanId>("STARTER");
@@ -89,7 +96,7 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
     const res = await fetch("/api/v1/super/tenants", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, slug, ownerEmail: ownerEmail || undefined, ownerPassword: ownerPassword || undefined }),
+      body: JSON.stringify({ name, slug, plan: createPlan, ownerEmail: ownerEmail || undefined, ownerPassword: ownerPassword || undefined }),
     });
     const data = await res.json().catch(() => ({}));
     setBusy(false);
@@ -162,6 +169,8 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
                 <th className="py-2 pr-3">Status</th>
                 <th className="py-2 pr-3">Credits</th>
                 <th className="py-2 pr-3">Previews this month</th>
+                <th className="py-2 pr-3">Trial ends</th>
+                <th className="py-2 pr-3">Created</th>
                 <th className="py-2"></th>
               </tr>
             </thead>
@@ -176,6 +185,8 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
                   <td className="py-3 pr-3"><Badge tone={statusTone(row.status)}>{row.status}</Badge></td>
                   <td className="py-3 pr-3">{row.credits}</td>
                   <td className="py-3 pr-3">{row.previewsThisMonth}</td>
+                  <td className="py-3 pr-3">{when(row.trialEndsAt)}</td>
+                  <td className="py-3 pr-3">{when(row.createdAt)}</td>
                   <td className="py-3 text-right" onClick={(event) => event.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -221,7 +232,7 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
               <dl className="mt-4 grid gap-2 text-sm">
                 <div><dt className="text-muted">Slug</dt><dd><a className="underline" href={`/s/${selected.slug}`}>{selected.slug}</a></dd></div>
                 <div><dt className="text-muted">Owner</dt><dd>{selected.ownerName || "—"}{selected.ownerEmail ? ` · ${selected.ownerEmail}` : ""}</dd></div>
-                <div><dt className="text-muted">Domain</dt><dd>{selected.host || "None verified"}</dd></div>
+                <div><dt className="text-muted">Web address</dt><dd>{selected.host || "None verified"}<span className="block text-xs text-muted">The salon’s own site, after DNS is checked. Until then, guests use the Lookuvi link.</span></dd></div>
                 <div><dt className="text-muted">Created</dt><dd>{when(selected.createdAt)}</dd></div>
                 <div><dt className="text-muted">Trial ends</dt><dd>{when(selected.trialEndsAt)}</dd></div>
               </dl>
@@ -241,6 +252,7 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
                     onChange={(event) => void update(selected.id, { productTryOn: event.target.checked })}
                   />
                   AI Try-on
+                  <span className="block text-xs text-muted">Guests can preview a look on their photo.</span>
                 </label>
                 <label className="flex min-h-11 items-center gap-2 text-sm">
                   <input
@@ -248,7 +260,8 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
                     checked={selected.productQueue}
                     onChange={(event) => void update(selected.id, { productQueue: event.target.checked })}
                   />
-                  Queue & alerts
+                  Queue
+                  <span className="block text-xs text-muted">Guests can join a line and get a token.</span>
                 </label>
               </fieldset>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -260,7 +273,6 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
             <TabsContent value="usage">
               <dl className="grid gap-2 text-sm">
                 <div><dt className="text-muted">Previews this month</dt><dd className="font-medium">{selected.previewsThisMonth}</dd></div>
-                <div><dt className="text-muted">All previews</dt><dd className="font-medium">{selected.tryOns}</dd></div>
                 <div><dt className="text-muted">Leads</dt><dd className="font-medium">{selected.leads}</dd></div>
                 <div><dt className="text-muted">In the queue today</dt><dd className="font-medium">{selected.queueToday}</dd></div>
               </dl>
@@ -273,16 +285,29 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
         <DialogContent title="New salon" description="Starts a trial with the Starter credit grant.">
           <form className="grid gap-3" onSubmit={createSalon}>
             <label className="text-sm">Name
-              <input className="field mt-1" value={name} onChange={(event) => setName(event.target.value)} required minLength={2} />
+              <input className="field mt-1" value={name} onChange={(event) => {
+                const next = event.target.value;
+                setName(next);
+                if (!slugTouched) setSlug(slugFromName(next));
+              }} required minLength={2} />
             </label>
             <label className="text-sm">Slug
-              <input className="field mt-1" value={slug} onChange={(event) => setSlug(event.target.value)} required minLength={2} pattern="[a-z0-9]+(-[a-z0-9]+)*" />
+              <input className="field mt-1" value={slug} onChange={(event) => { setSlugTouched(true); setSlug(event.target.value); }} required minLength={2} pattern="[a-z0-9]+(-[a-z0-9]+)*" aria-describedby="slug-hint" />
+              <span id="slug-hint" className="mt-1 block text-xs text-muted">Lowercase letters, numbers, and hyphens. Example: demo-salon</span>
+            </label>
+            <label className="text-sm">Plan
+              <select className="field mt-1" aria-label="New salon plan" value={createPlan} onChange={(event) => setCreatePlan(event.target.value as PlanId)}>
+                {Object.values(PLANS).map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}{item.id === "STARTER" ? " trial" : ""}</option>
+                ))}
+              </select>
             </label>
             <label className="text-sm">Owner email
               <input className="field mt-1" type="email" value={ownerEmail} onChange={(event) => setOwnerEmail(event.target.value)} />
             </label>
             <label className="text-sm">Owner password
-              <input className="field mt-1" type="password" value={ownerPassword} onChange={(event) => setOwnerPassword(event.target.value)} minLength={12} />
+              <input className="field mt-1" type="password" value={ownerPassword} onChange={(event) => setOwnerPassword(event.target.value)} minLength={12} aria-describedby="password-rules" />
+              <span id="password-rules" className="mt-1 block text-xs text-muted">At least 12 characters. Do not reuse a demo password.</span>
             </label>
             <button className="btn" type="submit" disabled={busy}>{busy ? "Saving…" : "Create salon"}</button>
           </form>
@@ -328,7 +353,7 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
               <input className="field mt-1" aria-label="Credit reason" value={reason} onChange={(event) => setReason(event.target.value)} required maxLength={200} />
             </label>
             <div className="flex flex-wrap gap-2">
-              <button className="btn" type="submit" disabled={busy || !reason.trim()}>{busy ? "Saving…" : "Adjust credits"}</button>
+              <button className="btn" type="submit" disabled={busy || !reason.trim()}>{busy ? "Saving…" : "Confirm adjustment"}</button>
               {goodwillConfirm ? (
                 <div className="grid w-full gap-2 rounded-[10px] border border-line p-3">
                   <p className="text-sm">Add 50 credits as goodwill? That is about ₹115–150 of AI cost. It is free to the salon. The reason “goodwill” is saved on the credit ledger and the audit log.</p>
@@ -377,7 +402,7 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
                 void update(selected.id, { status: selected.status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED" });
               }}
             >
-              {busy ? "Saving…" : selected?.status === "SUSPENDED" ? "Resume" : "Suspend"}
+              {busy ? "Saving…" : selected?.status === "SUSPENDED" ? "Confirm resume" : "Confirm suspend"}
             </button>
             <button className="btn secondary" type="button" onClick={() => setSuspendOpen(false)}>Cancel</button>
           </div>

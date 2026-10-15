@@ -4,15 +4,20 @@ import { useState } from "react";
 
 type Row = { id: string; key: string; name: string; priceInr: number; durationMin: number | null; active: boolean };
 
+function serviceKey(name: string) {
+  const key = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  return key.length >= 2 ? key : "service";
+}
+
 export function ServiceEditor({ initial }: { initial: Row[] }) {
   const [rows, setRows] = useState(initial);
-  const [key, setKey] = useState("");
   const [name, setName] = useState("");
   const [price, setPrice] = useState(499);
   const [message, setMessage] = useState("");
 
   async function add(event: React.FormEvent) {
     event.preventDefault();
+    const key = serviceKey(name);
     const res = await fetch("/api/v1/admin/services", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -24,7 +29,6 @@ export function ServiceEditor({ initial }: { initial: Row[] }) {
       return;
     }
     setRows((current) => [...current.filter((row) => row.key !== key), { id: data.id, key, name, priceInr: price, durationMin: null, active: true }]);
-    setKey("");
     setName("");
     setMessage("Saved.");
   }
@@ -64,13 +68,14 @@ export function ServiceEditor({ initial }: { initial: Row[] }) {
 
   return (
     <div>
-      <ul className="space-y-2">
+      <h2 className="mb-2 font-serif text-2xl">Your services</h2>
+      {rows.length === 0 ? <p className="text-sm text-muted">No services yet.</p> : null}
+      <ul className="space-y-2" data-service-count={rows.length}>
         {rows.map((row) => (
           <li key={row.id} className="card flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
             <span>
               {row.name}
               {!row.active ? <span className="ml-2 rounded-full bg-[#f3ece4] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted">hidden</span> : null}
-              <span className="block text-xs text-muted">{row.key}</span>
             </span>
             <span className="flex flex-wrap items-center gap-2">
               <label className="text-xs">₹
@@ -82,8 +87,7 @@ export function ServiceEditor({ initial }: { initial: Row[] }) {
           </li>
         ))}
       </ul>
-      <form className="card mt-4 grid gap-2 p-4 sm:grid-cols-4" onSubmit={add}>
-        <input className="field" placeholder="key" value={key} onChange={(event) => setKey(event.target.value)} required pattern="[a-z0-9-]+" aria-label="Service key" />
+      <form className="card mt-4 grid gap-2 p-4 sm:grid-cols-3" onSubmit={add}>
         <input className="field" placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} required aria-label="Service name" />
         <input className="field" type="number" value={price} onChange={(event) => setPrice(Number(event.target.value))} aria-label="Price in rupees" />
         <button className="btn" type="submit">Add</button>

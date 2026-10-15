@@ -23,8 +23,8 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("noshow"), id: z.string().min(1) }),
   z.object({
     action: z.literal("walkin"),
-    name: z.string().max(80).optional(),
-    phone: z.string().max(20).optional(),
+    name: z.string().optional().transform((value) => (value ?? "").trim().slice(0, 80)),
+    phone: z.string().optional().transform((value) => (value ?? "").trim().slice(0, 20)),
     serviceId: z.string().max(40).optional(),
   }),
   z.object({

@@ -1,24 +1,27 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { SalonModeCard } from "@/components/admin/SalonModeCard";
 import { planById } from "@/data/plans";
 import { appBaseUrl } from "@/lib/env";
 import { ownerFeatures } from "@/lib/features";
-import { signSalonToken } from "@/lib/preview-access";
 import { salonGuestOrigin } from "@/lib/public-url";
 import { pageTenant } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function QrAdminPage() {
-  const { tenant, membership } = await pageTenant();
-  if (!tenant.productTryOn) notFound();
+  const { tenant } = await pageTenant();
+  if (!tenant.productTryOn) {
+    return (
+      <main>
+        <h1 className="page-title">QR</h1>
+        <p className="mt-3 text-sm">Try-on is turned off for this salon.</p>
+      </main>
+    );
+  }
   const embedOn = ownerFeatures().embed;
   const plan = planById(tenant.plan);
   const base = appBaseUrl();
   const origin = await salonGuestOrigin(tenant.id, tenant.slug);
   const pageUrl = `${origin}/?src=qr`;
-  const salonUrl = tenant.salonNonce ? `${origin}/?salon=${signSalonToken(tenant.id, tenant.salonNonce)}` : "";
   const snippet = `<script src="${base}/embed.js" data-salon="${tenant.slug}" data-lang="${tenant.defaultLang}" defer></script>`;
   return (
     <main>
@@ -46,8 +49,8 @@ export default async function QrAdminPage() {
             <p className="mt-2 text-sm">The embed widget is on Pro and Chain. Starter uses the hosted page and QR.</p>
           )}
         </article> : null}
-        <SalonModeCard initialUrl={salonUrl} canRotate={membership.role === "OWNER"} />
       </div>
+      <p className="mt-4 text-sm"><a href={`/s/${tenant.slug}`}>View try-on</a></p>
     </main>
   );
 }

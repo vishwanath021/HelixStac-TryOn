@@ -18,7 +18,7 @@ export default async function BillingPage() {
       <BillingPanel plan={tenant.plan} status={tenant.status} credits={tenant.creditBalance} provider={billingProviderName()} locked={ownerSelfServeBlocked()} />
       <h2 className="mb-2 mt-6 font-serif text-2xl">Invoices</h2>
       <p className="mb-2 text-sm text-muted">Issued by {legalName()}.</p>
-      {invoices.length === 0 && <p className="text-sm text-muted">{ownerSelfServeBlocked() ? "Invoices appear after Lookuvi activates the plan." : "No invoices yet. A mock payment writes one immediately."}</p>}
+      {invoices.length === 0 && <p className="text-sm text-muted">{ownerSelfServeBlocked() ? "Invoices appear after Lookuvi activates the plan." : "No invoices yet."}</p>}
       <ul className="text-sm">
         {invoices.map((invoice) => (
           <li key={invoice.id} className="flex justify-between border-b border-line py-2">

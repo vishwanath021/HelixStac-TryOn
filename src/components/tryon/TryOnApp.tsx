@@ -138,6 +138,8 @@ export function TryOnApp({
   const [browColour, setBrowColour] = useState<BrowColour>("natural");
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
   const [busy, setBusy] = useState(false);
+  const [styleGroup, setStyleGroup] = useState<"all" | "bridal">("all");
+  const [stageMs, setStageMs] = useState(0);
   const [pickedDensity, setPickedDensity] = useState("");
   const [pickedTexture, setPickedTexture] = useState("");
   const [showAllStyles, setShowAllStyles] = useState(false);
@@ -199,6 +201,16 @@ export function TryOnApp({
     };
   }, []);
 
+  useEffect(() => {
+    if (!busy) {
+      setStageMs(0);
+      return;
+    }
+    const started = Date.now();
+    const timer = window.setInterval(() => setStageMs(Date.now() - started), 400);
+    return () => window.clearInterval(timer);
+  }, [busy]);
+
   const shade = config.shades.find((item) => item.id === shadeId) ?? null;
   const activeShot = tool === "nails" ? handShot : faceShot;
   const styles = config.styles.filter((style) => style.gender === gender);
@@ -206,6 +218,15 @@ export function TryOnApp({
   const visibleStyles = config.hairPickerOn
     ? orderStylesForPicker(styles, { density: pickedDensity, texture: pickedTexture }, showAllStyles)
     : styles;
+  const hairFilterOn = Boolean(pickedDensity || pickedTexture);
+  const orderedStyles = gender === "women" && !hairFilterOn
+    ? [...visibleStyles].sort((a, b) => Number(b.category === "bridal") - Number(a.category === "bridal"))
+    : visibleStyles;
+  const shownStyles = gender === "women" && styleGroup === "bridal"
+    ? orderedStyles.filter((style) => style.category === "bridal")
+    : orderedStyles;
+  const stageCopy = stageMs < 8000 ? t(lang, "stageReading") : stageMs < 22000 ? t(lang, "stageStyling") : t(lang, "stageAlmost");
+  const stagePct = Math.min(92, Math.round((stageMs / 40000) * 100));
   const hairSuggestions = hairReading
     ? suggestStyles(styles, hairReading).map((row) => ({
         id: row.style.id,
@@ -914,8 +935,8 @@ export function TryOnApp({
             )}
             {!cameraOn && !activeShot && (
               <div className="absolute inset-0 grid content-center justify-items-center gap-3 px-6">
-                <button className="btn min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "takeSelfie")}</button>
-                <button className="btn secondary min-w-44" type="button" onClick={() => pickFile(fileRef.current)}>{t(lang, "uploadPhoto")}</button>
+                <button className="btn min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, tool === "nails" ? "takeHand" : "takeSelfie")}</button>
+                <button className="btn secondary min-w-44" type="button" onClick={() => pickFile(fileRef.current)}>{t(lang, tool === "nails" ? "uploadHandPhoto" : "uploadPhoto")}</button>
                 <p className="max-w-xs text-center text-sm text-muted">
                   {t(lang, "privacyLine")}.{" "}
                   <a className="underline" href="/privacy">Details</a>
@@ -949,8 +970,18 @@ export function TryOnApp({
             {busy && (
               <div className="absolute inset-0 z-20 grid place-items-center bg-[#3E304B]/80 px-6 text-center text-white" role="status">
                 <div className="w-full max-w-xs">
-                  <p className="font-serif text-3xl">{t(lang, "styling")}</p>
+                  <p className="font-serif text-3xl">{stageCopy}</p>
                   <p className="mt-1 text-sm">{pendingName}</p>
+                  <div
+                    className="mt-4 h-2 overflow-hidden rounded-full bg-white/25"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={stagePct}
+                    aria-label={stageCopy}
+                  >
+                    <div className="h-full bg-white transition-[width] duration-300" style={{ width: `${stagePct}%` }} />
+                  </div>
                 </div>
               </div>
             )}
@@ -972,7 +1003,7 @@ export function TryOnApp({
         type="file"
         accept="image/*"
         data-photo="gallery"
-        aria-label="Choose a selfie file"
+        aria-label={tool === "nails" ? "Choose a hand photo" : "Choose a selfie file"}
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
@@ -1043,10 +1074,16 @@ export function TryOnApp({
         {tool === "style" && (
           <>
             <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Style audience">
-              {config.showWomen && <button className="chip" type="button" aria-pressed={gender === "women"} onClick={() => chooseGender("women")}>{t(lang, "women")}</button>}
+              {config.showWomen && <button className="chip" type="button" aria-pressed={gender === "women"} onClick={() => { setStyleGroup("all"); chooseGender("women"); }}>{t(lang, "women")}</button>}
               {config.showMen && <button className="chip" type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
               {config.showKids && <button className="chip" type="button" aria-pressed={gender === "kids"} onClick={() => chooseGender("kids")}>{t(lang, "kids")}</button>}
             </div>
+            {gender === "women" && (
+              <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Style category">
+                <button className="chip" type="button" aria-pressed={styleGroup === "bridal"} onClick={() => setStyleGroup("bridal")}>Bridal</button>
+                <button className="chip" type="button" aria-pressed={styleGroup === "all"} onClick={() => setStyleGroup("all")}>All styles</button>
+              </div>
+            )}
             <HairTypePicker
               pickerOn={config.hairPickerOn}
               suggestOn={config.hairSuggestOn}
@@ -1069,7 +1106,7 @@ export function TryOnApp({
               <p className="mb-2 text-sm">No style photos for that hair type. Turn on Show all.</p>
             )}
             <div className="grid grid-cols-3 gap-3 max-[340px]:grid-cols-2">
-              {visibleStyles.map((style) => (
+              {shownStyles.map((style) => (
                 <button
                   key={style.id}
                   type="button"
@@ -1150,6 +1187,7 @@ export function TryOnApp({
           Powered by Lookuvi
         </p>
       )}
+      <p className="mt-6 text-center text-xs text-muted"><a href="/login">Salon login</a></p>
     </div>
   );
 }

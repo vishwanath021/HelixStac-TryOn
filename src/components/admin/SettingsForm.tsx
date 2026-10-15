@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SalonModeCard } from "@/components/admin/SalonModeCard";
 import type { ToolId } from "@/lib/tools";
 
 export function SettingsForm({
@@ -11,6 +12,7 @@ export function SettingsForm({
   selfId,
   showTryOn = true,
   showDomain = false,
+  salonModeUrl = "",
 }: {
   initial: {
     name: string;
@@ -41,6 +43,7 @@ export function SettingsForm({
   selfId: string;
   showTryOn?: boolean;
   showDomain?: boolean;
+  salonModeUrl?: string;
 }) {
   const [form, setForm] = useState(initial);
   const [message, setMessage] = useState("");
@@ -147,47 +150,62 @@ export function SettingsForm({
             </div>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="text-sm">Primary<input className="mt-1 h-10 w-full" type="color" value={form.primaryColor} onChange={(event) => set("primaryColor", event.target.value)} /></label>
-          <label className="text-sm">Accent<input className="mt-1 h-10 w-full" type="color" value={form.accentColor} onChange={(event) => set("accentColor", event.target.value)} /></label>
-        </div>
         <label className="text-sm">WhatsApp<input className="field mt-1" value={form.whatsapp} onChange={(event) => set("whatsapp", event.target.value)} /></label>
         <label className="text-sm">Address<input className="field mt-1" value={form.address} onChange={(event) => set("address", event.target.value)} /></label>
         <label className="text-sm">Maps link<input className="field mt-1" value={form.mapsUrl} onChange={(event) => set("mapsUrl", event.target.value)} /></label>
         <label className="text-sm">City<input className="field mt-1" value={form.city} onChange={(event) => set("city", event.target.value)} /></label>
-        <label className="text-sm">GSTIN<input className="field mt-1" value={form.gstin} onChange={(event) => set("gstin", event.target.value)} /></label>
         {showTryOn ? <>
         <fieldset className="grid gap-2 text-sm">
           <legend className="font-medium">Tools on the try-on page</legend>
           {enabledTools.includes("colour") && <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolColour} onChange={(event) => set("toolColour", event.target.checked)} /> Live colour</label>}
           {enabledTools.includes("hairstyle") && <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolStyle} onChange={(event) => set("toolStyle", event.target.checked)} /> Hairstyle preview</label>}
-          {enabledTools.includes("brows") && <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolBrows} onChange={(event) => set("toolBrows", event.target.checked)} /> Eyebrow mapping</label>}
           {enabledTools.includes("beard") && <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolBeard} onChange={(event) => set("toolBeard", event.target.checked)} /> Beard try-on</label>}
           {enabledTools.includes("nails") && <label className="flex items-center gap-2"><input type="checkbox" checked={form.toolNails} onChange={(event) => set("toolNails", event.target.checked)} /> Nail try-on</label>}
         </fieldset>
         <fieldset className="grid gap-2 text-sm">
           <legend className="font-medium">Hair suggestions</legend>
           <label className="flex items-center gap-2"><input type="checkbox" checked={form.hairPickerOn} onChange={(event) => set("hairPickerOn", event.target.checked)} /> Hair-type picker. Free, on by default. Density and texture chips filter the style photos.</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={form.hairSuggestOn} onChange={(event) => set("hairSuggestOn", event.target.checked)} /> Get AI suggestions. Paid, off by default. One vision reading of the selfie, then style photos from this menu.</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={form.hairSuggestUsesCredits} onChange={(event) => set("hairSuggestUsesCredits", event.target.checked)} /> Charge 1 salon credit for each new suggestion. Repeat clicks on the same photo stay free.</label>
-          <p className="text-xs text-muted">Suitable density, texture, and face shape are edited on Styles. The reading uses the platform OpenAI key. SUGGEST_MODEL chooses the vision model. The default is gpt-4.1-nano.</p>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.hairSuggestOn} onChange={(event) => set("hairSuggestOn", event.target.checked)} /> Get AI suggestions. Off by default. One reading of the photo, then style photos from this menu.</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.hairSuggestUsesCredits} onChange={(event) => set("hairSuggestUsesCredits", event.target.checked)} /> Use 1 try-on for each new suggestion. Repeat clicks on the same photo stay free.</label>
         </fieldset>
         </> : null}
-        {showTryOn ? <>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="text-sm">Anonymous daily previews
-            <input className="field mt-1" type="number" min={0} max={500} value={form.anonDailyCap} onChange={(event) => set("anonDailyCap", Number(event.target.value))} />
-          </label>
-          <label className="text-sm">Logged-in daily previews
-            <input className="field mt-1" type="number" min={0} max={500} value={form.memberDailyCap} onChange={(event) => set("memberDailyCap", Number(event.target.value))} />
-          </label>
-        </div>
-        <p className="text-xs text-muted">0 means no AI previews for that group. Salon-mode links are unlimited.{enabledTools.includes("colour") ? " Live colour stays free." : ""}</p>
+        <details className="rounded-xl border border-line p-3">
+          <summary className="cursor-pointer text-sm font-medium">Advanced</summary>
+          <div className="mt-3 grid gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-sm">Brand colour
+                <input className="mt-1 h-10 w-full" type="color" aria-label="Primary" value={form.primaryColor} onChange={(event) => set("primaryColor", event.target.value)} />
+              </label>
+              <label className="text-sm">Accent
+                <input className="mt-1 h-10 w-full" type="color" aria-label="Accent" value={form.accentColor} onChange={(event) => set("accentColor", event.target.value)} />
+              </label>
+            </div>
+            <label className="text-sm">GSTIN<input className="field mt-1" value={form.gstin} onChange={(event) => set("gstin", event.target.value)} /></label>
+            {showTryOn && enabledTools.includes("brows") ? (
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.toolBrows} onChange={(event) => set("toolBrows", event.target.checked)} /> Eyebrow mapping</label>
+            ) : null}
+            {showTryOn ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="text-sm">Anonymous daily previews
+                    <input className="field mt-1" type="number" min={0} max={500} value={form.anonDailyCap} onChange={(event) => set("anonDailyCap", Number(event.target.value))} />
+                  </label>
+                  <label className="text-sm">Logged-in daily previews
+                    <input className="field mt-1" type="number" min={0} max={500} value={form.memberDailyCap} onChange={(event) => set("memberDailyCap", Number(event.target.value))} />
+                  </label>
+                </div>
+                <p className="text-xs text-muted">0 means no AI previews for that group.{enabledTools.includes("colour") ? " Live colour stays free." : ""}</p>
+                <SalonModeCard initialUrl={salonModeUrl} canRotate />
+              </>
+            ) : null}
+          </div>
+        </details>
+        {showTryOn ? (
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.requireLoginToBook} onChange={(event) => set("requireLoginToBook", event.target.checked)} />
           Require a phone login before an online booking request. When this is off, Book opens WhatsApp.
         </label>
-        </> : null}
+        ) : null}
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.removeBranding} disabled={!canRemoveBranding} onChange={(event) => set("removeBranding", event.target.checked)} />
           Remove “Powered by Lookuvi” {canRemoveBranding ? "" : "(Pro or Chain)"}

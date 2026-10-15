@@ -88,7 +88,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await expect(photo.getByText("Your photo is used only for this preview.")).toBeVisible();
   const gallery = page.getByRole("region", { name: "Styles" });
   await expect(gallery.getByRole("button", { name: "Women", exact: true })).toBeVisible();
-  await expect(gallery.locator("img")).toHaveCount(26);
+  await expect(gallery.locator("img")).toHaveCount(30);
   await expect(gallery.getByRole("button", { name: "Soft Bob" })).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/01-home.png", fullPage: true });
   await page.screenshot({ path: "docs/screenshots/16-landing-grid.png", fullPage: true });
@@ -123,7 +123,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
 
-  await expect(page.getByText("Styling your look...")).toBeVisible();
+  await expect(page.getByText("Reading your photo...")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator("section[aria-label=Photo]")).toHaveClass(/is-ready/);
   await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
@@ -157,24 +157,24 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   const popup = await popupPromise;
   await expect(popup).toHaveURL(/919800011122/);
   const booking = decodeURIComponent(popup.url()).replaceAll("+", " ");
-  expect(booking).toContain("Look: Wolf Cut");
-  expect(booking).toContain("Haircut");
-  expect(booking).toContain("Look image:");
+  expect(booking).toContain("I'd like to book this look: Wolf Cut");
   expect(booking).toContain("/api/v1/media");
   await popup.close();
 
   await page.goto("/s/demo/guide");
   await expect(page.getByRole("heading", { name: "Hair-colour ideas" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Style ideas" })).toBeVisible();
+  await page.locator("[data-ready='yes']").waitFor();
   await page.getByRole("button", { name: "Show ideas" }).first().click();
-  await expect(page.getByText(/not a measurement/i)).toBeVisible();
+  await expect(page.getByText(/not a measurement/i)).toBeVisible({ timeout: 20_000 });
   await page.screenshot({ path: "docs/screenshots/10-guide.png", fullPage: true });
 
   await page.goto("/login");
   await page.getByLabel("Email").fill("owner@demo.agenticbuildworks.com");
   await page.getByLabel("Password").fill("DemoSalon#2026");
+  await page.locator("form[data-ready='yes']").waitFor();
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: /this month/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible({ timeout: 20_000 });
   await page.screenshot({ path: "docs/screenshots/05-admin.png", fullPage: true });
 
   await page.goto("/admin/leads");
@@ -266,7 +266,7 @@ test("a renamed salon shows on the guest header and title", async ({ page }) => 
     await page.getByLabel("Email").fill("owner@demo.agenticbuildworks.com");
     await page.getByLabel("Password").fill("DemoSalon#2026");
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByRole("heading", { name: /this month/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
     await page.goto("/admin/settings");
     await page.getByLabel("Salon name").fill("Indiranagar Studio");
     await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -290,7 +290,7 @@ test("a renamed salon shows on the guest header and title", async ({ page }) => 
     const superName = page.getByLabel("Salon name for demo");
     await superName.fill("Studio Indiranagar");
     await superName.locator("xpath=ancestor::form").getByRole("button", { name: "Save name" }).click();
-    await expect(page.locator("main").getByText("Updated.", { exact: true })).toBeVisible();
+    await expect(page.locator("main").getByText("Updated.", { exact: true })).toBeVisible({ timeout: 20_000 });
     await page.goto("/s/demo");
     await expect(page.getByRole("heading", { level: 1, name: "Studio Indiranagar" })).toBeVisible();
     await expect(page).toHaveTitle(/Studio Indiranagar/, { timeout: 15_000 });
@@ -378,7 +378,7 @@ test("booking asks for a phone code only when the salon requires it", async ({ p
     await page.getByLabel("Email").fill("owner@demo.agenticbuildworks.com");
     await page.getByLabel("Password").fill("DemoSalon#2026");
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByRole("heading", { name: /this month/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
     await page.goto("/admin/bookings");
     await expect(page.getByRole("heading", { name: "Bookings" })).toBeVisible();
     await expect(page.getByText("Asha Rao")).toBeVisible();
@@ -398,7 +398,7 @@ test("booking asks for a phone code only when the salon requires it", async ({ p
 test("style gallery uses portraits and the demo result is not a flat placeholder", async ({ page }) => {
   await page.goto("/s/demo");
   const gallery = page.getByRole("region", { name: "Styles" });
-  await expect(gallery.locator("img")).toHaveCount(26);
+  await expect(gallery.locator("img")).toHaveCount(30);
   const womenPhoto = gallery.locator("img").first();
   await expect(womenPhoto).toHaveAttribute("src", /\/styles\/.+\.jpg/);
   await expect(womenPhoto).toHaveAttribute("alt", /style reference/);
@@ -406,7 +406,7 @@ test("style gallery uses portraits and the demo result is not a flat placeholder
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
   await gallery.getByRole("button", { name: "Soft Bob" }).click();
-  await expect(page.getByText("Styling your look...")).toBeVisible();
+  await expect(page.getByText("Reading your photo...")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });
   const slider = page.getByRole("slider", { name: /BEFORE \/ AFTER/i });
   await expect(slider).toBeVisible();

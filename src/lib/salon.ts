@@ -85,10 +85,13 @@ export async function loadTenantByHost(host: string) {
 
 export function toSalonConfig(tenant: TenantWithRelations): SalonConfig {
   const plan = planById(tenant.plan);
-  const enabledStyles = new Set(tenant.styles.filter((row) => row.enabled).map((row) => row.styleId));
+  const styleRows = new Map(tenant.styles.map((row) => [row.styleId, row]));
   const customNames = new Map(tenant.styles.map((row) => [row.styleId, row.customName]));
   const suitability = new Map(tenant.styles.map((row) => [row.styleId, row.suitabilityJson]));
-  let styles = STYLES.filter((style) => enabledStyles.has(style.id)).map((style) => {
+  let styles = STYLES.filter((style) => {
+    const row = styleRows.get(style.id);
+    return row ? row.enabled : true;
+  }).map((style) => {
     const pub = toPublicStyle(style);
     const custom = customNames.get(style.id);
     const named = custom ? { ...pub, name: custom } : pub;

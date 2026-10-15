@@ -1,4 +1,5 @@
 import { LeadStatus } from "@/components/admin/LeadStatus";
+import { formatIst, humanLookName, humanShade } from "@/lib/display";
 import { prisma } from "@/lib/prisma";
 import { pageTenant } from "@/lib/session";
 
@@ -29,8 +30,8 @@ export default async function LeadsPage() {
           <tbody>
             {leads.map((lead) => (
               <tr key={lead.id} className="border-t border-line">
-                <td className="py-2">{lead.createdAt.toISOString().slice(0, 16).replace("T", " ")}</td>
-                <td>{lead.lookName}{lead.shadeName ? ` · ${lead.shadeName}` : ""}</td>
+                <td className="py-2">{formatIst(lead.createdAt)}</td>
+                <td>{humanLookName(lead.lookName)}{lead.shadeName ? ` · ${humanShade(lead.shadeName)}` : ""}</td>
                 <td>{lead.name || "—"} {lead.phone || ""}</td>
                 <td><LeadStatus id={lead.id} status={lead.status} /></td>
               </tr>

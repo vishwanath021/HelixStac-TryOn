@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { isLocale, LOCALE_LABELS, t, type Locale } from "@/data/i18n";
 import type { SalonConfig } from "@/lib/salon";
 
@@ -21,6 +21,8 @@ export function GuideScreen({ config }: { config: SalonConfig }) {
   const [face, setFace] = useState<{ label: string; styles: StyleHit[] } | null>(null);
   const [colour, setColour] = useState<{ label: string; shades: ShadeHit[] } | null>(null);
   const [quiz, setQuiz] = useState<{ label: string; styles: StyleHit[] } | null>(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
 
   async function ask<T>(body: unknown) {
     const res = await fetch("/api/v1/guide", {
@@ -33,7 +35,7 @@ export function GuideScreen({ config }: { config: SalonConfig }) {
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-4 px-4 py-6">
+    <div className="mx-auto max-w-lg space-y-4 px-4 py-6" data-ready={ready ? "yes" : "no"}>
       <header className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.16em] text-muted">{config.name}</p>
@@ -60,7 +62,7 @@ export function GuideScreen({ config }: { config: SalonConfig }) {
             <option value="kids">{t(lang, "kids")}</option>
           </select>
         </label>
-        <button className="btn" type="button" onClick={() => void ask<{ label: string; styles: StyleHit[] }>({ kind: "face", shape, who }).then((data) => data && setFace(data))}>{t(lang, "showIdeas")}</button>
+        <button className="btn" type="button" disabled={!ready} onClick={() => void ask<{ label: string; styles: StyleHit[] }>({ kind: "face", shape, who }).then((data) => data && setFace(data))}>{t(lang, "showIdeas")}</button>
         {face && (
           <div>
             <p className="text-sm" role="status">{face.label}</p>
@@ -87,7 +89,7 @@ export function GuideScreen({ config }: { config: SalonConfig }) {
             <option value="neutral">{t(lang, "neutral")}</option>
           </select>
         </label>
-        <button className="btn" type="button" onClick={() => void ask<{ label: string; shades: ShadeHit[] }>({ kind: "colour", grey, undertone }).then((data) => data && setColour(data))}>{t(lang, "showIdeas")}</button>
+        <button className="btn" type="button" disabled={!ready} onClick={() => void ask<{ label: string; shades: ShadeHit[] }>({ kind: "colour", grey, undertone }).then((data) => data && setColour(data))}>{t(lang, "showIdeas")}</button>
         {colour && (
           <div>
             <p className="text-sm" role="status">{colour.label}</p>
@@ -132,7 +134,7 @@ export function GuideScreen({ config }: { config: SalonConfig }) {
             <option value="wedding">{t(lang, "occWedding")}</option>
           </select>
         </label>
-        <button className="btn" type="button" onClick={() => void ask<{ label: string; styles: StyleHit[] }>({ kind: "quiz", who, length, texture, occasion }).then((data) => data && setQuiz(data))}>{t(lang, "showIdeas")}</button>
+        <button className="btn" type="button" disabled={!ready} onClick={() => void ask<{ label: string; styles: StyleHit[] }>({ kind: "quiz", who, length, texture, occasion }).then((data) => data && setQuiz(data))}>{t(lang, "showIdeas")}</button>
         {quiz && (
           <div>
             <p className="text-sm" role="status">{quiz.label}</p>

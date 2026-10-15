@@ -89,7 +89,7 @@ export function QueueJoinForm({ initial }: { initial: Board }) {
     <div>
       <div data-queue-open={board.open ? "yes" : "no"} data-queue-mode={board.mode}>
         {request ? <p className="mt-2 text-sm">{t(lang, "queueRequestNote")}</p> : board.open ? (
-          <QueueWait key={refreshKey} serverWait={board.waitMin} ahead={board.ahead} lang={lang} />
+          <QueueWait key={refreshKey} serverWait={board.waitMin} ahead={board.ahead} lang={lang} phrase="join" />
         ) : <p className="mt-2 text-sm">{t(lang, "queueClosed")}</p>}
       </div>
       <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted">{board.open ? t(lang, "queueOpenNow") : t(lang, "queueClosedNow")}</p>
@@ -130,8 +130,8 @@ export function QueueJoinForm({ initial }: { initial: Board }) {
             </label>
           </>
         ) : null}
-        <label className="flex min-h-11 items-start gap-2 text-sm">
-          <input className="mt-1" type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} required />
+        <label className="flex min-h-11 items-start gap-2 text-sm" htmlFor="queue-updates">
+          <input id="queue-updates" className="mt-1" type="checkbox" checked={consent} aria-label={t(lang, "queueConsent")} onChange={(event) => setConsent(event.target.checked)} required />
           <span>{t(lang, "queueConsent")}</span>
         </label>
         <button className="btn w-full text-lg" type="submit" disabled={busy || (!board.open && !request)}>{busy ? "…" : request ? t(lang, "queueRequest") : t(lang, "queueJoin")}</button>

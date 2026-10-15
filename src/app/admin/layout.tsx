@@ -22,6 +22,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         slug={tenant.slug}
         productTryOn={tenant.productTryOn}
         productQueue={tenant.productQueue}
+        onboardingDone={tenant.onboardingDone}
         features={ownerFeatures()}
         currentTenantId={tenant.id}
         salons={memberships.map((item) => ({ id: item.tenant.id, name: item.tenant.name }))}
