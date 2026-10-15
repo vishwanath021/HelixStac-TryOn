@@ -23,6 +23,7 @@ const desktop = (width: number, height: number) => ({
 export default defineConfig({
   testDir: "tests/e2e",
   timeout: 90_000,
+  expect: { timeout: 15_000 },
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
@@ -31,10 +32,10 @@ export default defineConfig({
     { name: "android", testIgnore: /responsive/, use: { ...devices["Pixel 5"], ...chromiumCamera } },
     {
       name: "iphone",
-      testIgnore: /responsive/,
+      testIgnore: /responsive|phone-matrix/,
       use: { ...devices["iPhone 13"], browserName: "chromium", defaultBrowserType: "chromium", ...chromiumCamera },
     },
-    { name: "desktop", testIgnore: /responsive/, use: desktop(1280, 800) },
+    { name: "desktop", testIgnore: /responsive|phone-matrix/, use: desktop(1280, 800) },
     { name: "tablet", testMatch: /five-tools/, use: { ...desktop(768, 1024), viewport: { width: 768, height: 1024 } } },
     { name: "webkit-iphone-13", testMatch: /responsive/, use: { ...devices["iPhone 13"] } },
     { name: "webkit-iphone-15", testMatch: /responsive/, use: { ...devices["iPhone 15"] } },

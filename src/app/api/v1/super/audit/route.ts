@@ -8,6 +8,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const page = Number(url.searchParams.get("page") || "1");
   const action = url.searchParams.get("action") || "";
-  const body = await listAudit({ action, page: Number.isFinite(page) ? page : 1 });
+  const tenantId = url.searchParams.get("salon") || "";
+  const body = await listAudit({ action, tenantId, page: Number.isFinite(page) ? page : 1 });
   return NextResponse.json(body);
 }

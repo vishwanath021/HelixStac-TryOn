@@ -94,13 +94,14 @@ test("guest, owner, and super layouts fit the device", async ({ page }, testInfo
   await shot(page, testInfo.project.name, "guest");
 
   await signIn(page, "owner@demo.agenticbuildworks.com", "DemoSalon#2026");
-  await expect(page.getByRole("heading", { name: /this month/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
   await expect(page.locator("#salon-nav")).toHaveAttribute("data-ready", "yes");
   const width = page.viewportSize()?.width ?? 0;
   if (width < 768) {
     await page.getByRole("button", { name: "Menu", exact: true }).click();
   }
-  await expect(page.getByRole("link", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Leads", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Overview", exact: true })).toHaveCount(0);
   await fits(page);
   await shot(page, testInfo.project.name, "owner");
   await page.getByRole("button", { name: "Sign out", exact: true }).click();

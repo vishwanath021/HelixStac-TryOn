@@ -1,29 +1,21 @@
 import Link from "next/link";
+import { formatIst } from "@/lib/display";
 import { auditLabel, listAudit } from "@/lib/super/audit";
 import { pageSuper } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-function when(value: string) {
-  return new Date(value).toLocaleString("en-IN", {
-    timeZone: "Asia/Kolkata",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-export default async function AuditPage({ searchParams }: { searchParams: Promise<{ action?: string; page?: string }> }) {
+export default async function AuditPage({ searchParams }: { searchParams: Promise<{ action?: string; page?: string; salon?: string }> }) {
   await pageSuper();
   const params = await searchParams;
   const action = params.action || "";
+  const salon = params.salon || "";
   const page = Math.max(1, Number(params.page) || 1);
-  const data = await listAudit({ action, page });
+  const data = await listAudit({ action, tenantId: salon, page });
   const href = (next: number) => {
     const query = new URLSearchParams();
     if (action) query.set("action", action);
+    if (salon) query.set("salon", salon);
     if (next > 1) query.set("page", String(next));
     const text = query.toString();
     return text ? `/super/audit?${text}` : "/super/audit";
@@ -39,6 +31,15 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
             <option value="">All actions</option>
             {data.actions.map((item) => (
               <option key={item} value={item}>{auditLabel(item)}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          Salon
+          <select className="field mt-1 min-w-48" name="salon" defaultValue={salon} aria-label="Salon">
+            <option value="">All salons</option>
+            {data.salons.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
             ))}
           </select>
         </label>
@@ -60,10 +61,10 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
             <tbody>
               {data.items.map((item) => (
                 <tr key={item.id} className="border-t border-line">
-                  <td className="py-2 pr-3 whitespace-nowrap">{when(item.createdAt)}</td>
-                  <td className="py-2 pr-3">{auditLabel(item.action)}</td>
-                  <td className="py-2 pr-3 break-all">{item.target}</td>
-                  <td className="py-2 break-all text-muted">{item.actorId}</td>
+                  <td className="py-2 pr-3 whitespace-nowrap">{formatIst(item.createdAt)}</td>
+                  <td className="py-2 pr-3">{auditLabel(item.action)}{item.detail ? ` · ${item.detail}` : ""}</td>
+                  <td className="py-2 pr-3 break-all">{item.salonName || item.target}</td>
+                  <td className="py-2 break-all text-muted">{item.actorEmail || item.actorId}</td>
                 </tr>
               ))}
             </tbody>

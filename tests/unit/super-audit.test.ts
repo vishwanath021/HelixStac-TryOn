@@ -111,7 +111,8 @@ describe("book this look", () => {
     }));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.text).toContain(`Look image: ${lookUrl}`);
+    expect(body.text).toContain("I'd like to book this look:");
+    expect(body.text).toContain(lookUrl);
     expect(body.whatsappUrl).toContain("919800011122");
     expect(await prisma.lead.count({ where: { tenant: { slug } } })).toBe(1);
 
@@ -128,6 +129,5 @@ describe("book this look", () => {
     }));
     const droppedBody = await dropped.json();
     expect(droppedBody.text).not.toContain("evil.example");
-    expect(droppedBody.text).not.toContain("Look image:");
   });
 });

@@ -262,6 +262,7 @@ test("an owner can replace the salon logo and restore the Lookuvi mark", async (
     await page.goto("/admin/settings");
     await expect(page.getByText("Hairstyle preview")).toBeVisible();
     await expect(page.getByText("Live colour", { exact: true })).toBeVisible();
+    await page.getByText("Advanced", { exact: true }).click();
     await expect(page.getByText("Eyebrow mapping")).toBeVisible();
     await expect(page.getByText("Beard try-on")).toBeVisible();
     await expect(page.getByText("Nail try-on")).toBeVisible();

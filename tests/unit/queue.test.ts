@@ -241,8 +241,9 @@ describe("queue joins", () => {
     }));
     expect(paused).toContain("The queue is paused. Please ask at the desk.");
     expect(paused).toContain("disabled");
-    expect(html).toContain("EST WAIT");
-    expect(html).toContain("3 ahead");
+    expect(html).toContain("Join the queue");
+    expect(html).toContain("3 waiting · about 15 min");
+    expect(html).toContain("aria-label=\"I agree to receive queue updates on this phone.\"");
     expect(html).toContain("Join the queue");
     expect(html).toContain("Try a look while you wait");
     const { slug } = await salon();

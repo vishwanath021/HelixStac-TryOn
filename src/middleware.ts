@@ -53,7 +53,8 @@ export function middleware(req: NextRequest) {
     pathname.startsWith("/mediapipe") ||
     pathname.startsWith("/brand") ||
     pathname.startsWith("/samples") ||
-    /\.(?:webp|png|jpe?g|gif|svg|avif|ico|json|txt|wasm|js|css)$/i.test(pathname)
+    pathname === "/manifest.webmanifest" ||
+    /\.(?:webp|png|jpe?g|gif|svg|avif|ico|json|txt|wasm|js|css|webmanifest)$/i.test(pathname)
   ) {
     return nextWithCsp(req, nonce);
   }

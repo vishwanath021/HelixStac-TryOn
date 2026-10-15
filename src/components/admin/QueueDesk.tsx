@@ -105,6 +105,7 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
         <button className="btn w-full text-lg" type="button" disabled={busy} onClick={() => void act({ action: desk.state.isOpen ? "pause" : "open" })}>
           {desk.state.isOpen ? t(lang, "queueToggleOpen") : t(lang, "queueTogglePaused")}
         </button>
+        <p className="text-sm text-muted">{desk.state.isOpen ? t(lang, "queueOpenNote") : t(lang, "queuePausedNote")}</p>
         {live ? (
           <button className="btn w-full text-2xl" type="button" disabled={busy || desk.waiting.length === 0} onClick={() => void act({ action: "next" })}>
             {t(lang, "queueNext")}
@@ -122,11 +123,11 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
                 <p className="text-xs uppercase tracking-[0.14em] text-muted">{place} {seat.unit}</p>
                 {seat.entry ? (
                   <>
+                    <p className="text-xs uppercase tracking-[0.14em] text-muted">Token</p>
                     <p className="font-serif text-7xl leading-none" data-queue-token={seat.entry.token}>{seat.entry.token}</p>
                     <p className="text-lg">{seat.entry.name}{seat.entry.serviceName ? ` · ${seat.entry.serviceName}` : ""}</p>
                     {seat.entry.onTheWay ? <p className="text-sm">{t(lang, "queueOnTheWayBadge")}</p> : null}
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {seat.entry.status === "CALLED" ? <button className="btn" type="button" disabled={busy} onClick={() => void act({ action: "start", id: seat.entry?.id })}>{t(lang, "queueStart")}</button> : null}
                       <button className="btn" type="button" disabled={busy} onClick={() => void act({ action: "done", id: seat.entry?.id })}>{t(lang, "queueDone")}</button>
                       <button className="btn secondary" type="button" disabled={busy} onClick={() => void act({ action: "noshow", id: seat.entry?.id })}>{t(lang, "queueNoShow")}</button>
                     </div>
@@ -148,12 +149,12 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
           <div className="mt-3 grid gap-3">
             {desk.waiting.map((card) => (
               <article key={card.id} className="card p-4">
+                <p className="text-xs uppercase tracking-[0.14em] text-muted">Token</p>
                 <p className="font-serif text-7xl leading-none" data-queue-token={card.token}>{card.token}</p>
                 <p className="text-lg">{card.name}{card.serviceName ? ` · ${card.serviceName}` : ""}</p>
                 <p className="text-sm text-muted">{t(lang, "queueMinShort", { min: card.waitMin })} · {t(lang, "queueAheadShort", { ahead: card.ahead })}</p>
                 {card.onTheWay ? <p className="text-sm">{t(lang, "queueOnTheWayBadge")}</p> : null}
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button className="btn" type="button" disabled={busy} onClick={() => void act({ action: "start", id: card.id })}>{t(lang, "queueStart")}</button>
                   <button className="btn secondary" type="button" disabled={busy} onClick={() => void act({ action: "noshow", id: card.id })}>{t(lang, "queueNoShow")}</button>
                 </div>
                 {links(card)}
@@ -172,7 +173,7 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
           >
             <h2 className="font-serif text-2xl">{t(lang, "queueWalkIn")}</h2>
             <label className="text-sm">{t(lang, "queueWalkName")}
-              <input className="field mt-1" value={walkName} onChange={(event) => setWalkName(event.target.value)} />
+              <input className="field mt-1" value={walkName} maxLength={80} onChange={(event) => setWalkName(event.target.value)} />
             </label>
             <label className="text-sm">{t(lang, "queuePhoneOptional")}
               <input className="field mt-1" inputMode="tel" value={walkPhone} onChange={(event) => setWalkPhone(event.target.value)} />
@@ -228,7 +229,7 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
             });
           }}
         >
-          <label className="text-sm">{t(lang, "queueUnits")}
+          <label className="text-sm">{t(lang, "queueUnits", { unit: unitLabel === "station" ? "Stations" : unitLabel === "room" ? "Rooms" : "Chairs" })}
             <input className="field mt-1" type="number" min={1} max={30} value={units} onChange={(event) => setUnits(event.target.value)} />
           </label>
           <label className="text-sm">{t(lang, "queueAvg")}

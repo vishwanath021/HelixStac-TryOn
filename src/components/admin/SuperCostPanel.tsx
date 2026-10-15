@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { formatAiInr, formatIst, friendlyModel } from "@/lib/display";
 
 type Call = {
   id: string;
@@ -40,11 +41,7 @@ type Report = {
 };
 
 function money(value: number) {
-  return `₹${value.toFixed(2)}`;
-}
-
-function when(value: string) {
-  return value.slice(0, 16).replace("T", " ");
+  return formatAiInr(value);
 }
 
 export function SuperCostPanel({ initial }: { initial: Report }) {
@@ -131,7 +128,7 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
       </div>
       <p className="text-sm">
         Last image: {last ? (last.actualKnown ? `${money(last.costInr)} (${last.sourceLabel}, ${last.status})` : `no actual yet (${last.sourceLabel}, ${last.status})`) : "none yet"}.
-        {" "}Session {money(report.sessionInr)} · today {money(report.dayInr)} · month {money(report.monthInr)} · cap {money(report.spentInr)} of ₹{report.capInr.toFixed(0)}.
+        {" "}Session {money(report.sessionInr)} · today {money(report.dayInr)} · month {money(report.monthInr)} · cap {money(report.spentInr)} of {money(report.capInr)}.
       </p>
       {report.usingEstimate && <p className="text-sm text-muted">No billed image yet. The projection uses the selected tier estimate.</p>}
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={applyFilters}>
@@ -183,10 +180,11 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
       <ul className="grid gap-3 md:hidden">
         {report.calls.map((row) => (
           <li key={row.id} className="rounded-[14px] border border-line p-3 text-sm">
-            <p className="font-medium">{when(row.at)}</p>
-            <p className="break-all">{row.model || "—"}</p>
-            {row.providerRequestId ? <p className="break-all text-muted">{row.providerRequestId}</p> : null}
-            <p>{row.imageSize || "—"} · {row.tenantName}</p>
+            <p className="font-medium">{formatIst(row.at)}</p>
+            <p>{row.tenantName || "—"}</p>
+            <p className="break-all">{friendlyModel(row.model || "")}</p>
+            {row.providerRequestId ? <details className="text-muted"><summary>Job id</summary><p className="break-all">{row.providerRequestId}</p></details> : null}
+            <p>{row.imageSize || "—"}</p>
             <p>Estimate (reserved) {money(row.estimateInr)}</p>
             <p>Actual {row.actualKnown ? `$${row.costUsd.toFixed(3)} (${money(row.costInr)})` : "—"}</p>
             <p>Source {row.sourceLabel}</p>
@@ -199,6 +197,7 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
           <thead>
             <tr>
               <th scope="col" className="py-2 pr-3">When</th>
+              <th scope="col" className="py-2 pr-3">Salon</th>
               <th scope="col" className="py-2 pr-3">Model</th>
               <th scope="col" className="py-2 pr-3">Size</th>
               <th scope="col" className="py-2 pr-3">Estimate (reserved)</th>
@@ -209,10 +208,11 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
           <tbody>
             {report.calls.map((row) => (
               <tr key={row.id} className="border-t border-line align-top">
-                <td className="py-2 pr-3">{when(row.at)}</td>
+                <td className="py-2 pr-3">{formatIst(row.at)}</td>
+                <td className="py-2 pr-3">{row.tenantName || "—"}</td>
                 <td className="py-2 pr-3">
-                  {row.model}
-                  {row.providerRequestId ? <span className="block break-all text-muted">{row.providerRequestId}</span> : null}
+                  {friendlyModel(row.model || "")}
+                  {row.providerRequestId ? <details className="text-muted"><summary>Job id</summary><span className="break-all">{row.providerRequestId}</span></details> : null}
                 </td>
                 <td className="py-2 pr-3">{row.imageSize}</td>
                 <td className="py-2 pr-3">{money(row.estimateInr)}</td>
@@ -231,7 +231,7 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
         <p className="text-sm">Page {page} of {pageCount}</p>
         <button className="btn secondary" type="button" disabled={page >= pageCount} onClick={() => void load(since, images, page + 1, draft)}>Next</button>
       </div>
-      {since && <p className="text-sm text-muted">Session started {when(since)}.</p>}
+      {since && <p className="text-sm text-muted">Session started {formatIst(since)}.</p>}
     </section>
   );
 }

@@ -37,9 +37,17 @@ export function QueueWait({
   ahead: number;
   token?: number;
   lang: string;
-  phrase?: "next" | "turn";
+  phrase?: "next" | "turn" | "join";
 }) {
   const minutes = useDisplayedWait(serverWait);
+  if (phrase === "join") {
+    return (
+      <div className="mt-6 text-center" data-queue-wait={String(minutes)} data-queue-join="yes">
+        <p className="text-4xl font-bold leading-none">{t(lang, "queueJoin")}</p>
+        <p className="mt-3 text-sm text-muted">{t(lang, "queueWaitingAbout", { ahead, min: minutes })}</p>
+      </div>
+    );
+  }
   const zero = phrase === "turn" || minutes <= 0;
   const label = phrase === "turn" ? t(lang, "queueTurnNow") : t(lang, "queueYoureNext");
 

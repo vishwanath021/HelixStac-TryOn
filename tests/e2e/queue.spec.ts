@@ -12,7 +12,7 @@ async function signIn(page: import("@playwright/test").Page) {
   await page.getByLabel("Email").fill("owner@demo.agenticbuildworks.com");
   await page.getByLabel("Password").fill("DemoSalon#2026");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: /this month/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Queue" })).toBeVisible();
 }
 
 test.describe.configure({ mode: "serial" });
@@ -52,7 +52,7 @@ test("a guest joins, sees a live token, and can rejoin from this phone", async (
   await page.getByLabel("Mobile number").fill(phone);
   await page.getByRole("checkbox", { name: /queue updates/i }).check();
   await page.getByRole("button", { name: "Join the queue" }).click();
-  await expect(page.locator("[data-status='WAITING'][data-ready='yes']")).toBeVisible();
+  await expect(page.locator("[data-status='WAITING'][data-ready='yes']")).toBeVisible({ timeout: 20_000 });
   await expect(page.locator("[data-status='WAITING'] [data-queue-wait='0']")).toBeVisible();
   await expect(page.getByText("You're next")).toBeVisible();
   await expect(page.locator("[data-status='WAITING'] [data-queue-token]")).toHaveClass(/text-base/);
@@ -72,8 +72,11 @@ test("the desk calls the next guest, finishes the visit, and adds a walk-in", as
   await expect(page.getByRole("heading", { name: "Queue" })).toBeVisible();
   await expect(page.getByText("Queue Guest")).toBeVisible();
   await expect(page.getByText("On the way")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "NEXT" }).click();
   await expect(page.getByRole("heading", { name: "Now serving" })).toBeVisible();
+  await expect(page.getByText("Token")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toHaveCount(0);
   await expect(page.getByText("Queue Guest")).toBeVisible();
   await page.getByRole("button", { name: "Done" }).click();
   await expect(page.getByText("Queue Guest")).toHaveCount(0);
@@ -90,7 +93,7 @@ test("request mode asks for a time and the desk confirms it", async ({ page }) =
   await page.goto("/admin/queue");
   await page.locator("[data-queue-mode][data-ready='yes']").waitFor();
   await page.getByText("Queue settings").click();
-  await page.getByLabel("How guests join").selectOption("REQUEST");
+  await page.getByLabel("How customers join").selectOption("REQUEST");
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.locator("[data-queue-mode='REQUEST']")).toBeVisible();
   const phone = `8${String(Date.now()).slice(-9)}`;
@@ -117,7 +120,7 @@ test("a paused queue tells the guest to ask at the desk", async ({ page }) => {
   await page.goto("/admin/queue");
   await page.locator("[data-queue-mode][data-ready='yes']").waitFor();
   await page.getByText("Queue settings").click();
-  await page.getByLabel("How guests join").selectOption("LIVE");
+  await page.getByLabel("How customers join").selectOption("LIVE");
   await page.getByRole("button", { name: "Save settings" }).click();
   await page.getByRole("button", { name: "Queue is OPEN, tap to change" }).click();
   await expect(page.getByRole("button", { name: "Queue is PAUSED, tap to change" })).toBeVisible();

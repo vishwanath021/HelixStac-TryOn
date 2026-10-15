@@ -35,12 +35,12 @@ import { recommendStyles } from "@/lib/recommendations";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 
 describe("catalogue", () => {
-  it("ships 26 women's styles, 29 men's styles, kids styles, and 16 shades", () => {
+  it("ships 30 women's styles, 29 men's styles, kids styles, and 16 shades", () => {
     const files = new Set(readdirSync("public/styles").filter((name) => name.endsWith(".jpg")).map((name) => name.replace(/\.jpg$/, "")));
     const ids = STYLES.map((style) => style.id);
     expect(ids.filter((id) => !files.has(id))).toEqual([]);
     expect([...files].filter((id) => !ids.includes(id))).toEqual([]);
-    expect(stylesForGender("women")).toHaveLength(26);
+    expect(stylesForGender("women")).toHaveLength(30);
     expect(stylesForGender("men")).toHaveLength(29);
     expect(stylesForGender("kids").length).toBeGreaterThanOrEqual(3);
     expect(SHADES).toHaveLength(16);
@@ -97,8 +97,8 @@ describe("whatsapp", () => {
     });
     expect(link.phone).toBe("919800011122");
     expect(link.url.startsWith("https://wa.me/919800011122?text=")).toBe(true);
-    expect(decodeURIComponent(link.url)).toContain("सॉफ्ट बॉब");
-    expect(decodeURIComponent(link.url)).toContain("₹499");
+    expect(decodeURIComponent(link.url)).toContain("सॉफ्ट बॉब (Cherry Red)");
+    expect(decodeURIComponent(link.url)).toContain("बुक करना");
     const withLook = buildWhatsAppLink({
       phone: "9800011122",
       salonName: "Demo Salon",
@@ -106,7 +106,8 @@ describe("whatsapp", () => {
       services: [],
       lookUrl: "http://localhost:3000/api/v1/media?key=generations%2Fa%2Fb%2Fresult.jpg&exp=1&sig=abc",
     });
-    expect(decodeURIComponent(withLook.url)).toContain("Look image: http://localhost:3000/api/v1/media");
+    expect(decodeURIComponent(withLook.url)).toContain("I'd like to book this look: Soft Bob.");
+    expect(decodeURIComponent(withLook.url)).toContain("http://localhost:3000/api/v1/media");
     expect(buildWhatsAppLink({ phone: "", salonName: "Demo Salon", lookName: "Soft Bob", services: [] }).url).toBe("");
   });
 });
