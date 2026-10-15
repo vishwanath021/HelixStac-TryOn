@@ -7,6 +7,7 @@ import { runHairSuggest } from "@/lib/ai/hair-suggest";
 import { resolveSuggestModel } from "@/lib/ai/suggest-models";
 import { tooMany } from "@/lib/http/guard";
 import { ImageError, sanitizeSelfie } from "@/lib/images";
+import { ensurePhotoConsent } from "@/lib/photo-consent";
 import { loadTenantBySlug, toSalonConfig } from "@/lib/salon";
 import { prisma } from "@/lib/prisma";
 import { isSuperSession } from "@/lib/session";
@@ -51,12 +52,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "OFF", message: "AI hair suggestions are turned off for this salon." }, { status: 403 });
   }
 
-  const consent = await prisma.consentLog.findFirst({
-    where: { id: consentId, tenantId: tenant.id, sessionId, accepted: true, ageGate: true },
+  await ensurePhotoConsent({
+    tenantId: tenant.id,
+    sessionId,
+    consentId,
+    userAgent: req.headers.get("user-agent") || "",
   });
-  if (!consent || Date.now() - consent.createdAt.getTime() > 24 * 60 * 60 * 1000) {
-    return NextResponse.json({ error: "CONSENT", message: "Agree to the preview notice before a hair suggestion." }, { status: 403 });
-  }
 
   const model = resolveSuggestModel();
   if (!model) {

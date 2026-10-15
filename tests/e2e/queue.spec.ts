@@ -119,18 +119,27 @@ test("a paused queue tells the guest to ask at the desk", async ({ page }) => {
   await page.getByText("Queue settings").click();
   await page.getByLabel("How guests join").selectOption("LIVE");
   await page.getByRole("button", { name: "Save settings" }).click();
-  await page.getByRole("button", { name: "Pause queue" }).click();
+  await page.getByRole("button", { name: "Queue is OPEN, tap to change" }).click();
+  await expect(page.getByRole("button", { name: "Queue is PAUSED, tap to change" })).toBeVisible();
   await expect(page.locator("[data-queue-open='no']")).toBeVisible();
   await page.goto("/s/demo/queue");
   await expect(page.getByText(/queue is paused/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Join the queue" })).toBeDisabled();
+  await page.goto("/admin/queue");
+  await page.locator("[data-queue-mode][data-ready='yes']").waitFor();
+  await page.getByRole("button", { name: "Queue is PAUSED, tap to change" }).click();
+  await expect(page.locator("[data-queue-open='yes']")).toBeVisible();
+  await page.goto("/s/demo/queue");
+  await expect(page.getByText(/queue is paused/i)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Join the queue" })).toBeEnabled();
 });
 
 test("try-on links to the queue when both products are on", async ({ page }) => {
   await signIn(page);
   await page.goto("/admin/queue");
   await page.locator("[data-queue-mode][data-ready='yes']").waitFor();
-  await page.getByRole("button", { name: "Open queue" }).click();
+  const pausedToggle = page.getByRole("button", { name: "Queue is PAUSED, tap to change" });
+  if (await pausedToggle.isVisible()) await pausedToggle.click();
   await expect(page.locator("[data-queue-open='yes']")).toBeVisible();
   await page.goto("/s/demo");
   await expect(page.getByRole("link", { name: "Join queue" })).toBeVisible();

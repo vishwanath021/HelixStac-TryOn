@@ -300,6 +300,8 @@ const en: Record<string, string> = {
   queuePhoneOptional: "Mobile number (optional)",
   queuePause: "Pause queue",
   queueOpenBtn: "Open queue",
+  queueToggleOpen: "Queue is OPEN, tap to change",
+  queueTogglePaused: "Queue is PAUSED, tap to change",
   queueNow: "Now serving",
   queueWaiting: "Waiting",
   queueRequests: "Requests",

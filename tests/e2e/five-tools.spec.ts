@@ -37,7 +37,7 @@ test("style, colour, brows, beard, and nails preview on this screen", async ({ p
   await page.getByRole("tab", { name: "Hair style" }).click();
   await expect(page.getByRole("tab")).toHaveCount(5);
   await usePhoto(page, "public/samples/portrait.jpg");
-  await page.getByRole("checkbox", { name: /photo is used only/i }).check();
+  await expect(page.getByRole("checkbox", { name: /photo is used only/i })).toHaveCount(0);
 
   await look(page, "Hair style", "Styles", "Soft Bob", posts);
   await usePhoto(page, "public/samples/portrait.jpg");
