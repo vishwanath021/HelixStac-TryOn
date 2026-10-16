@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BRIDAL_HAIR, BRIDAL_LOOKS, BRIDAL_MAKEUP, MEHENDI_CARDS, bridalFinishById, bridalHairById, bridalLipById, bridalLookById, bridalMakeupById, bridalStylesFor, cardsForStyle, defaultBridalStyle, looksForEvent } from "@/data/bridal";
 import { readBridalGenerateFields } from "@/lib/bridal-request";
 import { coverPoint, liveMakeupAllowed } from "@/lib/face/cover-point";
+import { buildFalEditBody } from "@/lib/ai/fal-models";
 import { buildBridalPrompt } from "@/lib/prompts";
 
 describe("live makeup budget", () => {
@@ -33,6 +34,15 @@ describe("bridal prompt shades", () => {
     expect(prompt).toContain("Berry");
     expect(prompt).toContain("full look, not a camera filter");
     expect(prompt).not.toContain("Hairstyle to add");
+    expect(prompt).toContain("exact face shape");
+    expect(prompt).toContain("skin texture");
+    expect(prompt).toContain("Do not slim, lift, smooth, or beautify");
+    expect(prompt).toContain("sindoor");
+    expect(prompt).toContain("nose pin");
+    expect(prompt).toContain("Do not change the hair");
+    expect(prompt).toContain("Tied hair stays tied");
+    expect(prompt).toContain("Waves stay waves");
+    expect(prompt).not.toMatch(/sleek low bun|open waves|textured side bun/i);
   });
 
   it("adds a chosen hairstyle and makeup note without trusting a raw id", () => {
@@ -48,6 +58,9 @@ describe("bridal prompt shades", () => {
     });
     expect(prompt).toContain("sleek low bun");
     expect(prompt).toContain("matha patti");
+    expect(prompt).toContain("Change the hair only because a hairstyle was chosen");
+    expect(prompt).toContain("exact face shape");
+    expect(prompt).toContain("sindoor");
     expect(prompt).not.toMatch(/jasmine|marigold|poola|rose braid/i);
     expect(prompt).toContain("classic bridal red lip");
     expect(prompt).toContain("Lip colour: Red");
@@ -66,6 +79,22 @@ describe("bridal prompt shades", () => {
     expect(defaultBridalStyle(BRIDAL_MAKEUP)).toBe("temple");
     expect(cardsForStyle(BRIDAL_LOOKS, "trending").map((look) => look.id)).toEqual(BRIDAL_LOOKS.map((look) => look.id));
     expect(cardsForStyle(BRIDAL_HAIR, "temple")).toHaveLength(3);
+  });
+
+  it("does not send edit strength or guidance, because flux-3 has neither", () => {
+    const body = buildFalEditBody("blackforestlabs/flux-3/edit-image", {
+      prompt: "keep the exact face",
+      selfieUrl: "https://example.test/selfie.jpg",
+      referenceUrl: "https://example.test/look.jpg",
+      size: "1024x1536",
+      width: 768,
+      height: 1024,
+    });
+    expect(body).toBeTruthy();
+    expect(body && "strength" in body).toBe(false);
+    expect(body && "guidance" in body).toBe(false);
+    expect(body && "guidance_scale" in body).toBe(false);
+    expect(Object.keys(body ?? {}).sort()).toEqual(["aspect_ratio", "image_urls", "prompt"]);
   });
 
   it("drops an oversized hair id instead of copying it into the prompt", () => {

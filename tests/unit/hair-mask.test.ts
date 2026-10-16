@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FACE_OVAL } from "@/lib/face/landmarks";
-import { buildHairMask, pixelIsHair } from "@/lib/face/hair-mask";
+import { buildHairMask, liftHairLuma, pixelIsHair } from "@/lib/face/hair-mask";
 
 function blank(width: number, height: number) {
   return {
@@ -32,12 +32,12 @@ function paint(
 }
 
 describe("hair colour mask", () => {
-  it("keeps confident hair and rejects skin, the face oval, and scores under 0.6", () => {
+  it("keeps confident hair and rejects skin, the face oval, and scores under 0.42", () => {
     const width = 48;
     const height = 48;
     const field = blank(width, height);
     paint(field, width, 1, 1, 16, 16, 0.92, 1);
-    paint(field, width, 1, 30, 16, 46, 0.55, 1);
+    paint(field, width, 1, 30, 16, 46, 0.3, 1);
     paint(field, width, 20, 20, 30, 30, 0.98, 1);
     paint(field, width, 32, 2, 46, 16, 0.95, 3, 0.8);
     const points = Array.from({ length: 478 }, () => ({ x: 0.05, y: 0.05 }));
@@ -85,5 +85,50 @@ describe("hair colour mask", () => {
     });
     expect(packed[scalp * 4]).toBe(0);
     expect(packed[hair * 4]).toBeGreaterThan(180);
+  });
+
+  it("keeps dim dark hair under the old 0.6 cutoff and fills a small hole", () => {
+    const width = 40;
+    const height = 32;
+    const rgb = new Uint8ClampedArray(width * height * 4);
+    for (let i = 0; i < width * height; i += 1) {
+      const pale = i % width < 12;
+      rgb[i * 4] = pale ? 210 : 32;
+      rgb[i * 4 + 1] = pale ? 186 : 26;
+      rgb[i * 4 + 2] = pale ? 170 : 20;
+      rgb[i * 4 + 3] = 255;
+    }
+    const pale = 8 * width + 4;
+    const dark = 8 * width + 28;
+    expect(pixelIsHair(rgb, width, height, pale)).toBe(false);
+    expect(pixelIsHair(rgb, width, height, dark)).toBe(true);
+    const category = new Uint8Array(width * height);
+    const hairConf = new Float32Array(width * height);
+    for (let i = 0; i < width * height; i += 1) {
+      if (i % width < 12) continue;
+      category[i] = 1;
+      hairConf[i] = 0.45;
+    }
+    const hole = 10 * width + 28;
+    hairConf[hole] = 0;
+    category[hole] = 0;
+    const packed = buildHairMask({
+      width,
+      height,
+      category,
+      hairConf,
+      faceSkinConf: new Float32Array(width * height),
+      points: null,
+      rgb,
+    });
+    expect(packed[pale * 4]).toBe(0);
+    expect(packed[dark * 4]).toBeGreaterThan(80);
+    expect(packed[hole * 4]).toBeGreaterThan(80);
+  });
+
+  it("lifts only near-black hair so a night dye stays visible", () => {
+    expect(liftHairLuma(0.02)).toBeGreaterThan(0.2);
+    expect(liftHairLuma(0.5)).toBeCloseTo(0.5, 5);
+    expect(liftHairLuma(0.35)).toBeCloseTo(0.35, 5);
   });
 });

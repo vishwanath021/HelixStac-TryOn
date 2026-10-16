@@ -7,9 +7,7 @@ import { createLiveGl, type LiveGl, type LiveLookOptions } from "@/lib/face/live
 import { buildHairMask } from "@/lib/face/hair-mask";
 import { copySource, loadLiveVision, type LiveVision } from "@/lib/face/live-vision";
 import { liveMakeupAllowed } from "@/lib/face/cover-point";
-
-const FULL_EDGE = 480;
-const LOW_EDGE = 360;
+import { LIVE_FULL_EDGE, LIVE_SEG_INTERVAL, nextLiveBudget } from "@/lib/face/live-budget";
 
 export type LiveLookProps = {
   video?: HTMLVideoElement | null;
@@ -26,6 +24,8 @@ export type LiveLookProps = {
   makeup?: boolean;
   /** Men’s everyday live styling never receives makeup. Bridal omits this. */
   audience?: LookAudience;
+  /** Stronger kajal, lip, blush, and brows. Everyday leaves this off. */
+  bridal?: boolean;
   label?: string;
   ariaLabel?: string;
   onPhase?: (phase: "loading" | "watching" | "tracking" | "fallback") => void;
@@ -107,13 +107,14 @@ export function LiveLookStage({
   mirror = false,
   makeup = false,
   audience,
+  bridal = false,
   label = "live",
   ariaLabel,
   onPhase,
 }: LiveLookProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const optionsRef = useRef<LiveLookOptions>({ lip, kajal, lashes, blush, brow, hair, hairStrength, hasMask: false });
-  optionsRef.current = { lip, kajal, lashes, blush, brow, hair, hairStrength, hasMask: false };
+  const optionsRef = useRef<LiveLookOptions>({ lip, kajal, lashes, blush, brow, hair, hairStrength, hasMask: false, bridal });
+  optionsRef.current = { lip, kajal, lashes, blush, brow, hair, hairStrength, hasMask: false, bridal };
   const audienceRef = useRef(audience);
   audienceRef.current = audience;
   const onPhaseRef = useRef(onPhase);
@@ -145,7 +146,8 @@ export function LiveLookStage({
     let mask: Uint8Array | null = null;
     let maskW = 0;
     let maskH = 0;
-    let edge = FULL_EDGE;
+    let edge = LIVE_FULL_EDGE;
+    let segInterval = LIVE_SEG_INTERVAL;
     let segOn = true;
     let frame = 0;
     let saw = false;
@@ -186,14 +188,17 @@ export function LiveLookStage({
       if (deltas.length < 5) return;
       const average = deltas.reduce((sum, delta) => sum + delta, 0) / deltas.length;
       const fps = Math.max(1, Math.round(1000 / Math.max(1, average)));
-      if (fps < 24 && saw) {
-        if (edge > LOW_EDGE) edge = LOW_EDGE;
-        else segOn = false;
+      if (saw) {
+        const next = nextLiveBudget(fps, edge, segInterval);
+        edge = next.edge;
+        segInterval = next.interval;
+        segOn = next.seg;
       }
       canvas.dataset.fps = String(fps);
       canvas.dataset.seg = segOn && mask ? "on" : "off";
       canvas.dataset.edge = String(edge);
-      canvas.dataset.degraded = edge < FULL_EDGE || !segOn ? "yes" : "no";
+      canvas.dataset.interval = String(segInterval);
+      canvas.dataset.degraded = edge < LIVE_FULL_EDGE || segInterval > LIVE_SEG_INTERVAL ? "yes" : "no";
     };
 
     if (image && !video) {
@@ -272,7 +277,7 @@ export function LiveLookStage({
             handle.stop = true;
             return;
           }
-        } else if (slot === 3 && segOn && vision.segmenter) {
+        } else if (frame % segInterval === 3 && segOn && vision.segmenter) {
           try {
             const read = readMask(vision, shot, smoothed);
             if (read) {

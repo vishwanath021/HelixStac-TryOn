@@ -17,7 +17,8 @@ import {
   UPPER_LASH_R,
   type Pt,
 } from "@/lib/face/makeup-paint";
-import { liveEffectsFor, type LookAudience } from "@/lib/face/makeup-blend";
+import { HAIR_LUMA_LIFT, HAIR_LUMA_LIFT_END, HAIR_LUMA_LIFT_START } from "@/lib/face/hair-mask";
+import { liveEffectsFor, livePreset, type LookAudience } from "@/lib/face/makeup-blend";
 
 export type LiveLookOptions = {
   lip: string | null;
@@ -29,6 +30,8 @@ export type LiveLookOptions = {
   /** 0–1. How strongly a hair colour replaces the hair hue while keeping luminosity. */
   hairStrength: number;
   hasMask: boolean;
+  /** Bridal live makeup uses a stronger preset. Everyday stays on the subtle numbers. */
+  bridal?: boolean;
 };
 
 export type LiveGl = {
@@ -80,6 +83,14 @@ uniform float u_browOn;
 uniform float u_hairOn;
 uniform float u_hairStrength;
 uniform float u_hasMask;
+uniform float u_lipMix;
+uniform float u_blushPeak;
+uniform float u_browMix;
+uniform float u_kajalMix;
+uniform float u_kajalIod;
+uniform float u_kajalMax;
+uniform float u_wing;
+uniform float u_lashMix;
 
 bool insidePoly(vec2 p, vec2 poly[20], int n) {
   bool hit = false;
@@ -244,7 +255,9 @@ vec3 softLight(vec3 base, vec3 blend) {
 vec3 keepLuma(vec3 base, vec3 dyed) {
   float luma = dot(base, vec3(0.2126, 0.7152, 0.0722));
   float dyedLuma = max(dot(dyed, vec3(0.2126, 0.7152, 0.0722)), 0.02);
-  return clamp(dyed * (luma / dyedLuma), 0.0, 1.0);
+  float t = smoothstep(${HAIR_LUMA_LIFT_START.toFixed(2)}, ${HAIR_LUMA_LIFT_END.toFixed(2)}, luma);
+  float lifted = mix(${HAIR_LUMA_LIFT.toFixed(2)}, luma, t);
+  return clamp(dyed * (lifted / dyedLuma), 0.0, 1.0);
 }
 
 void main() {
@@ -269,7 +282,7 @@ void main() {
     float sigma = max(u_faceUv * 0.18 / 2.5, px * 6.0);
     float gR = exp(-0.5 * dot(p - u_cheekR, p - u_cheekR) / (sigma * sigma + 1e-8));
     float gL = exp(-0.5 * dot(p - u_cheekL, p - u_cheekL) / (sigma * sigma + 1e-8));
-    float blush = max(gR, gL) * 0.18;
+    float blush = max(gR, gL) * u_blushPeak;
     vec3 soft = softLight(color, u_blush);
     vec3 mul = color * u_blush;
     color = mix(color, mix(soft, mul, 0.5), blush);
@@ -278,26 +291,26 @@ void main() {
   if (u_browOn > 0.5 && eye < 0.5 && (insideBrow(p, u_browR) || insideBrow(p, u_browL))) {
     vec3 soft = softLight(color, u_brow);
     vec3 mul = color * u_brow;
-    color = mix(color, mix(soft, mul, 0.5), 0.25);
+    color = mix(color, mix(soft, mul, 0.5), u_browMix);
   }
 
-  float kajalW = clamp(u_iod * 0.02, px, px * 2.5);
+  float kajalW = clamp(u_iod * u_kajalIod, px, px * u_kajalMax);
   float blur = px * 1.5;
   vec3 ink = vec3(0.25, 0.14, 0.12);
   if (u_kajal > 0.5 && eye < 0.5) {
-    float wingR = length(u_upR[0] - u_upR[8]) * 0.12;
-    float wingL = length(u_upL[0] - u_upL[8]) * 0.12;
+    float wingR = length(u_upR[0] - u_upR[8]) * u_wing;
+    float wingL = length(u_upL[0] - u_upL[8]) * u_wing;
     float line = 0.0;
     line = max(line, linerStroke(p, u_upR, kajalW, blur, wingR));
     line = max(line, linerStroke(p, u_loR, kajalW, blur, 0.0));
     line = max(line, linerStroke(p, u_upL, kajalW, blur, wingL));
     line = max(line, linerStroke(p, u_loL, kajalW, blur, 0.0));
-    color = mix(color, color * ink, line * 0.6);
+    color = mix(color, color * ink, line * u_kajalMix);
   }
 
   if (u_lashes > 0.5 && eye < 0.5) {
     float band = max(lashBand(p, u_upR, u_centerR), lashBand(p, u_upL, u_centerL));
-    color = mix(color, color * ink, band * 0.35);
+    color = mix(color, color * ink, band * u_lashMix);
   }
 
   if (u_lipOn > 0.5 && outer && !inner && hairW < 0.25 && eye < 0.5) {
@@ -305,7 +318,7 @@ void main() {
     float feather = smoothstep(0.0, px * 1.5, dist);
     vec3 soft = softLight(base, u_lip);
     vec3 mul = base * u_lip;
-    color = mix(color, mix(soft, mul, 0.5), 0.55 * feather);
+    color = mix(color, mix(soft, mul, 0.5), u_lipMix * feather);
   }
 
   outColor = vec4(color, 1.0);
@@ -470,6 +483,15 @@ export function createLiveGl(canvas: HTMLCanvasElement): LiveGl | null {
       gl.uniform1f(loc("u_browOn"), hasFace && look.brow ? 1 : 0);
       gl.uniform1f(loc("u_hairOn"), look.hair ? 1 : 0);
       gl.uniform1f(loc("u_hairStrength"), Math.max(0, Math.min(0.5, look.hairStrength)));
+      const intensity = livePreset(options.bridal);
+      gl.uniform1f(loc("u_lipMix"), intensity.lipMix);
+      gl.uniform1f(loc("u_blushPeak"), intensity.blushPeak);
+      gl.uniform1f(loc("u_browMix"), intensity.browMix);
+      gl.uniform1f(loc("u_kajalMix"), intensity.kajalMix);
+      gl.uniform1f(loc("u_kajalIod"), intensity.kajalIod);
+      gl.uniform1f(loc("u_kajalMax"), intensity.kajalMax);
+      gl.uniform1f(loc("u_wing"), intensity.wing);
+      gl.uniform1f(loc("u_lashMix"), intensity.lashMix);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     },
     destroy() {

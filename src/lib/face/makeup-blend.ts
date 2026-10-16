@@ -5,6 +5,36 @@
 
 export const BLUSH_RADIUS_OF_FACE = 0.18;
 export const BLUSH_PEAK_ALPHA = 0.18;
+
+/** Everyday live look. The eye-whites check uses these numbers. */
+export const EVERYDAY_LIVE = {
+  lipMix: 0.55,
+  blushPeak: BLUSH_PEAK_ALPHA,
+  browMix: 0.25,
+  kajalMix: 0.6,
+  kajalIod: 0.02,
+  kajalMax: 2.5,
+  wing: 0.12,
+  lashMix: 0.35,
+};
+
+/** Bridal live look. Stronger colour, still outside the eye opening. */
+export const BRIDAL_LIVE = {
+  lipMix: 0.7,
+  blushPeak: 0.28,
+  browMix: 0.48,
+  kajalMix: 0.85,
+  kajalIod: 0.045,
+  kajalMax: 4,
+  wing: 0.28,
+  lashMix: 0.55,
+};
+
+export type LiveIntensity = typeof EVERYDAY_LIVE;
+
+export function livePreset(bridal?: boolean): LiveIntensity {
+  return bridal ? BRIDAL_LIVE : EVERYDAY_LIVE;
+}
 export const BLUSH_SIGMA_DIV = 2.5;
 /** Floor so a small face cannot turn the wash into a hard disc. */
 export const BLUSH_MIN_SIGMA_PX = 6;
@@ -20,10 +50,11 @@ export function blushAlpha(distancePx: number, faceWidthPx: number) {
   return BLUSH_PEAK_ALPHA * Math.exp(-0.5 * x * x);
 }
 
-/** Kajal width in pixels, scaled by the inter-ocular distance and clamped to 1–2.5px. */
-export function kajalWidthPx(iodPx: number) {
+/** Kajal width in pixels. Everyday stays 1–2.5px. Bridal is wider and still clamped. */
+export function kajalWidthPx(iodPx: number, bridal = false) {
+  const preset = livePreset(bridal);
   if (!Number.isFinite(iodPx) || iodPx <= 0) return 1;
-  return Math.min(2.5, Math.max(1, iodPx * 0.02));
+  return Math.min(preset.kajalMax, Math.max(1, iodPx * preset.kajalIod));
 }
 
 export const LINER_BLUR_PX = 1.5;

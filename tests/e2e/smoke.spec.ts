@@ -146,7 +146,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(gallery.getByRole("button", { name: "Kids Soft Bob" })).toHaveCount(0);
   await gallery.getByRole("button", { name: "Kids", exact: true }).click();
-  await expect(gallery.locator("img")).toHaveCount(4);
+  await expect(gallery.locator("img")).toHaveCount(8);
 
   await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
   await waitForCapture(page);

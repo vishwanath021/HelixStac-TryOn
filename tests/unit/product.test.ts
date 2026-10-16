@@ -43,6 +43,12 @@ describe("catalogue", () => {
     expect(stylesForGender("women")).toHaveLength(30);
     expect(stylesForGender("men")).toHaveLength(29);
     expect(stylesForGender("kids").length).toBeGreaterThanOrEqual(3);
+    const kids = stylesForGender("kids");
+    expect(kids.map((style) => style.name)).toEqual(expect.arrayContaining(["Short Crew", "Side Part Kids", "Textured Crop", "Spiky Short"]));
+    for (const id of ["kids-short-crew", "kids-side-part", "kids-textured-crop", "kids-spiky-short", "kids-bowl"]) {
+      expect(kids.find((style) => style.id === id)?.lengthCategory).toBe("short");
+    }
+    expect(kids.find((style) => style.id === "kids-bowl")?.prompt).toContain("not a helmet");
     expect(SHADES).toHaveLength(16);
     expect(SHADES.map((shade) => shade.name)).toEqual(expect.arrayContaining(["Burgundy", "Honey Blonde", "Cherry Red", "Jet Black"]));
     expect(STYLES.every((style) => style.prompt.length > 20)).toBe(true);
@@ -198,6 +204,11 @@ describe("beard and nail catalogues", () => {
       expect(prompt).toContain("'Clean Shave' removes the facial hair.");
       expect(prompt).toContain("If the person is a woman or has no facial hair, still follow image 2 and keep the face the same.");
       expect(prompt.toLowerCase()).not.toContain("mask");
+      if (beard.id === "short-boxed") {
+        expect(prompt).toContain("clearly sharp boxed beard");
+        expect(prompt).toContain("Hard squared cheek corners");
+        expect(prompt).toContain("not a soft shadow");
+      }
     }
     for (const nail of NAILS) {
       const prompt = buildNailPrompt(nail);

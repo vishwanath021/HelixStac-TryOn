@@ -23,7 +23,7 @@ export const BEARDS: BeardDef[] = [
     id: "short-boxed",
     name: "Short Boxed",
     description: "A short beard with a squared cheek and neck line.",
-    prompt: "A short boxed beard. The cheek line is defined, the neck line sits above the Adam's apple, and the length is even and close.",
+    prompt: "A clearly sharp boxed beard. Hard squared cheek corners, a straight horizontal cheek line, even short length like a geometric box, and a sharp neck line above the Adam's apple. The outline is crisp and graphic, not a soft shadow or a natural fade.",
   }),
   beard({
     id: "full-beard",

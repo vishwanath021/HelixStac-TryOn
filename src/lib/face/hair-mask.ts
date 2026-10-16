@@ -1,16 +1,24 @@
 /**
  * Hair colour may land only on hair.
- * Confidence ≥ 0.6, then the face oval and face-skin are punched out,
+ * Confidence ≥ 0.42 so a dim or unevenly lit strand still counts,
+ * small holes are closed, then the face oval and face-skin are punched out,
  * the mask is eroded, and a short blur feathers the edge.
  */
 
 import { FACE_OVAL } from "@/lib/face/landmarks";
 import type { Pt } from "@/lib/face/makeup-paint";
-import { erodeMask, fillPolygon } from "@/lib/face/raster";
+import { dilateMask, erodeMask, fillPolygon } from "@/lib/face/raster";
 
 /** Mix strength for a luminosity-preserving dye. Not a flat fill. */
 export const HAIR_BLEND = 0.5;
-const HAIR_CONFIDENCE = 0.6;
+/** Below this the segmenter is guessing. 0.42 keeps a night-time half that scores under 0.6. */
+export const HAIR_CONFIDENCE = 0.42;
+/** Pixels this close to hair are filled, then the outline is restored. */
+const HOLE_RADIUS = 2;
+/** Near-black hair is lifted only up to this luma so the dye stays visible. */
+export const HAIR_LUMA_LIFT = 0.28;
+export const HAIR_LUMA_LIFT_START = 0.05;
+export const HAIR_LUMA_LIFT_END = 0.35;
 const FACE_SKIN_CONFIDENCE = 0.35;
 const HAIR_CLASS = 1;
 const BODY_SKIN_CLASS = 2;
@@ -34,7 +42,22 @@ function unit(value: number) {
   return value > 1 ? value / 255 : value;
 }
 
-/** Dark or textured hair. A smooth, lighter scalp is skin even when the segmenter calls it hair. */
+/** Hermite smoothstep, matching the live shader. */
+function smoothstep(edge0: number, edge1: number, value: number) {
+  const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0 || 1)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Luma used when recolouring hair. Very dark hair is lifted toward 0.28
+ * so a night photo still shows the dye. Hair that is already mid-tone keeps its luma.
+ */
+export function liftHairLuma(luma: number) {
+  const t = smoothstep(HAIR_LUMA_LIFT_START, HAIR_LUMA_LIFT_END, luma);
+  return HAIR_LUMA_LIFT * (1 - t) + luma * t;
+}
+
+/** Dark or textured hair, including a lit patch on otherwise dark hair. A smooth light scalp stays skin. */
 export function pixelIsHair(rgb: Uint8ClampedArray | Uint8Array, width: number, height: number, index: number) {
   const x = index % width;
   const y = Math.floor(index / width);
@@ -134,9 +157,14 @@ export function buildHairMask(input: HairMaskInput) {
     if (input.rgb && input.rgb.length >= count * 4 && !pixelIsHair(input.rgb, width, height, i)) continue;
     hard[i] = 255;
   }
+  const closed = erodeMask(dilateMask(hard, width, height, HOLE_RADIUS), width, height, HOLE_RADIUS);
+  for (let i = 0; i < count; i += 1) {
+    const faceSkinScore = input.faceSkinConf ? unit(input.faceSkinConf[i] ?? 0) : input.category?.[i] === FACE_SKIN_CLASS ? 1 : 0;
+    if (oval[i] || faceSkinScore >= FACE_SKIN_CONFIDENCE) closed[i] = 0;
+  }
   const erodeR = Math.max(2, Math.round(width / 96));
   const featherR = Math.max(1, Math.round(erodeR * 0.66));
-  const eroded = erodeMask(hard, width, height, erodeR);
+  const eroded = erodeMask(closed, width, height, erodeR);
   const feathered = boxBlur(eroded, width, height, featherR);
   const packed = new Uint8Array(count * 4);
   for (let i = 0; i < count; i += 1) {
