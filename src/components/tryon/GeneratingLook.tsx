@@ -16,16 +16,18 @@ export function GeneratingLook({ tool, expectedMs = GENERATION_EXPECTED_MS }: { 
       <div className="gen-blur" />
       <div className="gen-shimmer" aria-hidden="true" />
       <div className="gen-glow" aria-hidden="true" />
-      <div
-        className="gen-ring"
-        style={{ ["--p" as string]: frame.pct }}
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={frame.pct}
-        aria-valuetext={frame.label}
-        aria-label={frame.label}
-      />
+      <div className="gen-corner">
+        <div
+          className="gen-ring"
+          style={{ ["--p" as string]: frame.pct }}
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={frame.pct}
+          aria-valuetext={frame.label}
+          aria-label={frame.label}
+        />
+      </div>
       <p className="gen-stage">{frame.label}</p>
     </div>
   );

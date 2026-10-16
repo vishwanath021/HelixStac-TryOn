@@ -404,8 +404,6 @@ textarea { min-height: 48px; }
   position: absolute;
   inset: 0;
   z-index: 30;
-  display: grid;
-  place-items: center;
   overflow: hidden;
   pointer-events: none;
 }
@@ -437,28 +435,41 @@ textarea { min-height: 48px; }
   border-radius: 40%;
   background: radial-gradient(circle, rgba(125, 90, 158, 0.28), transparent 68%);
 }
-.gen-ring {
-  position: relative;
-  z-index: 1;
-  width: 64px;
-  height: 64px;
+.gen-corner {
+  position: absolute;
+  z-index: 2;
+  right: 12px;
+  bottom: 12px;
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
   border-radius: 50%;
-  background: conic-gradient(#7d5a9e calc(var(--p) * 1%), rgba(255, 255, 255, 0.35) 0);
-  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 1.5px));
+  background: rgba(41, 35, 48, 0.78);
+}
+.gen-ring {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: conic-gradient(#f4ecf8 calc(var(--p) * 1%), rgba(255, 255, 255, 0.32) 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
 }
 .gen-stage {
   position: absolute;
-  z-index: 1;
-  right: 10%;
-  bottom: 14%;
-  left: 10%;
+  z-index: 2;
+  right: 76px;
+  bottom: 16px;
+  left: 12px;
   margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(41, 35, 48, 0.82);
   color: #fff;
   font-family: var(--font-display), Georgia, "Times New Roman", serif;
-  font-size: 1.35rem;
+  font-size: 1.05rem;
+  font-weight: 600;
   line-height: 1.25;
-  text-align: center;
-  text-shadow: 0 1px 10px rgba(41, 35, 48, 0.72);
+  text-align: left;
 }
 .gen-reveal {
   animation: gen-fade 700ms ease;
