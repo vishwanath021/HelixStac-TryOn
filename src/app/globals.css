@@ -383,6 +383,86 @@ textarea { min-height: 48px; }
   100% { box-shadow: 0 0 18px rgba(139, 92, 246, 0.45), 0 0 32px rgba(59, 130, 246, 0.28); }
 }
 
+.gen-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+.gen-blur {
+  position: absolute;
+  inset: 0;
+  background: rgba(62, 48, 75, 0.06);
+  backdrop-filter: blur(1.5px);
+}
+.gen-shimmer {
+  position: absolute;
+  inset: -20% -40%;
+  background: linear-gradient(
+    102deg,
+    transparent 36%,
+    rgba(125, 90, 158, 0.18) 44%,
+    rgba(255, 255, 255, 0.72) 49%,
+    rgba(184, 156, 214, 0.9) 51%,
+    rgba(255, 255, 255, 0.55) 54%,
+    rgba(74, 53, 100, 0.28) 60%,
+    transparent 68%
+  );
+  mix-blend-mode: overlay;
+  transform: translateX(-78%);
+}
+.gen-glow {
+  position: absolute;
+  inset: 8%;
+  border-radius: 40%;
+  background: radial-gradient(circle, rgba(125, 90, 158, 0.28), transparent 68%);
+}
+.gen-ring {
+  position: relative;
+  z-index: 1;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: conic-gradient(#7d5a9e calc(var(--p) * 1%), rgba(255, 255, 255, 0.35) 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 1.5px));
+}
+.gen-stage {
+  position: absolute;
+  z-index: 1;
+  right: 10%;
+  bottom: 14%;
+  left: 10%;
+  margin: 0;
+  color: #fff;
+  font-family: var(--font-display), Georgia, "Times New Roman", serif;
+  font-size: 1.35rem;
+  line-height: 1.25;
+  text-align: center;
+  text-shadow: 0 1px 10px rgba(41, 35, 48, 0.72);
+}
+.gen-reveal {
+  animation: gen-fade 700ms ease;
+}
+@keyframes gen-sweep {
+  from { transform: translateX(-72%); }
+  to { transform: translateX(72%); }
+}
+@keyframes gen-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gen-shimmer { animation: gen-sweep 3.8s ease-in-out infinite; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gen-shimmer { transform: translateX(0); opacity: 0.45; }
+  .gen-reveal { animation: none; }
+  .gen-blur { backdrop-filter: none; background: rgba(62, 48, 75, 0.28); }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .btn.sheen::after { animation: metal-sheen 3.8s ease-in-out infinite; }
   .btn, .seg-btn, .chip {

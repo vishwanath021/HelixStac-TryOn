@@ -214,8 +214,8 @@ export function SuperAiForm({
       >
         <fieldset className="card grid gap-3 p-5" aria-label="Salon hairstyle model">
           <legend className="px-1 text-base font-semibold">Salon hairstyle model</legend>
-          <p className="text-sm text-muted">Style, colour, beard, and nails use this model.</p>
-          <p className="text-sm">Brows always use OpenAI gpt-image-2.5-sunburst at quality medium. That does not follow the default above. With no OpenAI key, a brow preview is not sent to FLUX.3.</p>
+          <p className="text-sm text-muted">Style, colour, brows, beard, and nails use this model.</p>
+          <p className="text-sm">Brows follow this choice. FLUX.3 keeps the selfie aspect ratio, so a 3:4 photo is not padded into a 2:3 frame with grey bars. Sunburst is still here when you want that model for every tool.</p>
           <label className="flex min-h-11 items-center gap-2 text-sm">
             <input type="radio" name="guest-engine" checked={guestEngine === "fal"} onChange={() => setGuestEngine("fal")} />
             fal FLUX.3 (default)

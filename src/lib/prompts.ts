@@ -71,7 +71,10 @@ export function buildBrowPrompt(brow: BrowDef, variation?: BrowVariation) {
   return [
     "Image 1 is the customer selfie. Image 2 is a brow-shape diagram, not a face to copy.",
     "Change only the eyebrows.",
+    "Make the new brow shape clearly visible in a salon mirror. Redraw the brow hairs to the selected arch, thickness, and tail. Do not leave the original brows unchanged.",
+    "The hairs should still look like real brows, with a soft edge, not a solid stamp or a block of pigment.",
     "Keep the face, identity, hair, skin, background and framing identical.",
+    "Keep the same aspect ratio as image 1. Do not add grey bars, borders, or letterboxing.",
     `The selected brow is ${brow.name}. ${brow.prompt}`,
     browThicknessLine(thickness),
     browColourLine(colour),
@@ -94,8 +97,9 @@ export function buildBeardPrompt(beard: BeardDef) {
 export function buildColourPrompt(shade: ShadeDef) {
   return [
     IMAGE_ROLES,
-    `Recolour the existing hair to the selected shade. The selected shade is ${shade.name}.`,
-    "Keep the haircut, length, style and everything else the same.",
+    `Recolour every visible hair strand to ${shade.name} (${shade.hex}). The new colour has to be obvious in the hair, including on dark hair. Do not return the original colour.`,
+    "Keep the haircut, length, style, and strand texture. Recolour hair only.",
+    "Do not recolour skin, eyebrows, eyes, clothes, or the background.",
   ].join(" ");
 }
 

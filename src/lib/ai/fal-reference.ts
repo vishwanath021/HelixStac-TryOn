@@ -84,6 +84,42 @@ async function imageLooksBlocked(bytes: Buffer, nsfw?: boolean[]) {
 
 type FetchImpl = typeof fetch;
 
+/** Longest edge sent to fal. A 1024px PNG upload was most of the wait before the queue even started. */
+export const FAL_UPLOAD_LONG_SIDE = 768;
+
+/**
+ * Status used to be read every 2000ms, so a finished job could sit unnoticed for that long.
+ * In progress we look again after 800ms. In the queue, 1200ms.
+ */
+export function falPollDelayMs(status?: string) {
+  if (status === "IN_PROGRESS") return 800;
+  if (status === "IN_QUEUE") return 1200;
+  return 1000;
+}
+
+export async function prepareFalUpload(bytes: Buffer) {
+  const meta = await sharp(bytes, { failOn: "none" }).rotate().metadata();
+  const long = Math.max(meta.width || 0, meta.height || 0);
+  let pipeline = sharp(bytes, { failOn: "none" }).rotate();
+  if (long > FAL_UPLOAD_LONG_SIDE) {
+    pipeline = pipeline.resize({
+      width: FAL_UPLOAD_LONG_SIDE,
+      height: FAL_UPLOAD_LONG_SIDE,
+      fit: "inside",
+      withoutEnlargement: true,
+    });
+  }
+  const jpeg = await pipeline.jpeg({ quality: 86, mozjpeg: true }).toBuffer();
+  const after = await sharp(jpeg, { failOn: "none" }).metadata();
+  return {
+    bytes: jpeg,
+    width: after.width || meta.width || 0,
+    height: after.height || meta.height || 0,
+    beforeBytes: bytes.length,
+    afterBytes: jpeg.length,
+  };
+}
+
 /** One queue request is polled for this long. Default is one hour. FAL_TIMEOUT_MS overrides the older FAL_QUEUE_DEADLINE_MS. */
 export function falTimeoutMs() {
   const named = process.env.FAL_TIMEOUT_MS;
@@ -163,16 +199,17 @@ export async function postFalReferenceEdit(args: {
   const now = args.now ?? Date.now;
   const deadlineMs = args.deadlineMs ?? falTimeoutMs();
   const sleep = args.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const selfieUrl = await uploadOne({ fetchImpl, apiKey: args.apiKey, bytes: args.selfiePng, fileName: "selfie.png", contentType: "image/png" });
-  const referenceUrl = await uploadOne({ fetchImpl, apiKey: args.apiKey, bytes: args.referenceJpeg, fileName: "style-reference.jpg", contentType: "image/jpeg" });
-  const selfieMeta = await sharp(args.selfiePng, { failOn: "none" }).metadata();
+  const selfieUpload = await prepareFalUpload(args.selfiePng);
+  const referenceUpload = await prepareFalUpload(args.referenceJpeg);
+  const selfieUrl = await uploadOne({ fetchImpl, apiKey: args.apiKey, bytes: selfieUpload.bytes, fileName: "selfie.jpg", contentType: "image/jpeg" });
+  const referenceUrl = await uploadOne({ fetchImpl, apiKey: args.apiKey, bytes: referenceUpload.bytes, fileName: "style-reference.jpg", contentType: "image/jpeg" });
   const body = buildFalEditBody(row.id, {
     prompt: args.prompt,
     selfieUrl,
     referenceUrl,
     size: args.size,
-    width: selfieMeta.width,
-    height: selfieMeta.height,
+    width: selfieUpload.width,
+    height: selfieUpload.height,
   });
   if (!body) throw new UnknownModelError(`${row.id} is not a configured fal edit. No other model was called.`);
   const started = now();
@@ -227,19 +264,19 @@ export async function postFalReferenceEdit(args: {
         signal: AbortSignal.timeout(15_000),
       });
     } catch {
-      await sleep(2_000);
+      await sleep(falPollDelayMs());
       continue;
     }
     if (!statusResponse.ok) {
       lastStatusError = scrub(await statusResponse.text().catch(() => ""));
-      await sleep(2_000);
+      await sleep(falPollDelayMs());
       continue;
     }
     const status = (await statusResponse.json()) as StatusBody;
     const returned = acceptedQueueUrl(status.response_url, requestId);
     if (returned) resultUrl = returned;
     if (status.status === "IN_QUEUE" || status.status === "IN_PROGRESS") {
-      await sleep(2_000);
+      await sleep(falPollDelayMs(status.status));
       continue;
     }
     if (status.status === "COMPLETED") {
@@ -251,7 +288,7 @@ export async function postFalReferenceEdit(args: {
       break;
     }
     lastStatusError = statusDetail(status) || scrub(JSON.stringify(status).slice(0, 400));
-    await sleep(2_000);
+    await sleep(falPollDelayMs(status.status));
   }
   if (!completed) {
     throw new UncertainBillingError(`The fal edit did not finish before the deadline. The queue request was not submitted again.${lastStatusError ? ` ${lastStatusError}` : ""}`);

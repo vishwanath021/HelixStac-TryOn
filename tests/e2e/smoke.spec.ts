@@ -407,7 +407,7 @@ test("style gallery uses portraits and the demo result is not a flat placeholder
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
   await gallery.getByRole("button", { name: "Soft Bob" }).click();
-  await expect(page.getByText("Reading your photo...")).toBeVisible();
+  await expect(page.getByText("Reading your face shape")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 45_000 });
   const slider = page.getByRole("slider", { name: /BEFORE \/ AFTER/i });
   await expect(slider).toBeVisible();

@@ -44,7 +44,7 @@ async function previewLook(page: Page, styleName: string) {
   const gallery = page.getByRole("region", { name: "Styles" });
   await gallery.getByRole("button", { name: "Women", exact: true }).click();
   await gallery.getByRole("button", { name: styleName }).click();
-  await expect(page.getByText("Reading your photo...")).toBeVisible();
+  await expect(page.getByText("Reading your face shape")).toBeVisible();
   await expect(page.getByRole("heading", { name: styleName })).toBeVisible({ timeout: 30_000 });
 }
 

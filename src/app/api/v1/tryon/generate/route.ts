@@ -5,7 +5,7 @@ import { bridalFinishById, bridalHairById, bridalLipById, bridalLookById, bridal
 import { readBridalGenerateFields } from "@/lib/bridal-request";
 import { parseBrowColour, parseBrowThickness } from "@/data/brows";
 import { claimGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
-import { BROWS_NEED_OPENAI, browsRoute, demoGuestPreview, engineForGuestTool, guestEngineReady, loadGuestReference, readGuestEngine, runGuestHairstyleIfReady, runGuestLookIfReady } from "@/lib/ai/guest-hairstyle";
+import { demoGuestPreview, engineForGuestTool, guestEngineReady, loadGuestReference, readGuestEngine, runGuestHairstyleIfReady, runGuestLookIfReady } from "@/lib/ai/guest-hairstyle";
 import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { auth } from "@/auth";
 import { resolveFalKey } from "@/lib/ai/credentials";
@@ -263,14 +263,6 @@ export async function POST(req: Request) {
   }
 
   const { engine } = await readGuestEngine(tenant.id);
-  if (tool === "brows") {
-    const openaiReady = await guestEngineReady("openai");
-    const selectedReady = engine === "openai" ? openaiReady : await guestEngineReady(engine);
-    if (browsRoute({ openaiReady, selected: engine, selectedReady }) === "message") {
-      await failGenerationJob(jobId, { outcome: "key", message: BROWS_NEED_OPENAI });
-      return NextResponse.json({ error: "NO_OPENAI_KEY", message: BROWS_NEED_OPENAI }, { status: 400 });
-    }
-  }
 
   const limited = await takePreviewSlot();
   if (limited) return limited;

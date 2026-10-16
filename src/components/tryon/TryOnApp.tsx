@@ -6,6 +6,7 @@ import { isPlatformLogo, LookuviMark } from "@/components/brand/LookuviMark";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { guestSessionId } from "@/lib/guest-session";
 import { ConsentSheet } from "@/components/tryon/ConsentSheet";
+import { GeneratingLook } from "@/components/tryon/GeneratingLook";
 import { LiveStudio, StudioRail } from "@/components/tryon/LiveStudio";
 import { usePhotoConsent } from "@/components/tryon/usePhotoConsent";
 import { BrowCard } from "@/components/tryon/BrowCard";
@@ -161,7 +162,6 @@ export function TryOnApp({
   const [browColour, setBrowColour] = useState<BrowColour>("natural");
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
   const [busy, setBusy] = useState(false);
-  const [stageMs, setStageMs] = useState(0);
   const [pickedDensity, setPickedDensity] = useState("");
   const [pickedTexture, setPickedTexture] = useState("");
   const [showAllStyles, setShowAllStyles] = useState(false);
@@ -173,7 +173,6 @@ export function TryOnApp({
   const faceRef = useRef<Shot | null>(null);
   const handRef = useRef<Shot | null>(null);
   const pendingLook = useRef<Chosen | null>(null);
-  const [pendingName, setPendingName] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [poseNote, setPoseNote] = useState<PlacementDebug | null>(null);
@@ -224,16 +223,6 @@ export function TryOnApp({
     };
   }, []);
 
-  useEffect(() => {
-    if (!busy) {
-      setStageMs(0);
-      return;
-    }
-    const started = Date.now();
-    const timer = window.setInterval(() => setStageMs(Date.now() - started), 400);
-    return () => window.clearInterval(timer);
-  }, [busy]);
-
   const shade = config.shades.find((item) => item.id === shadeId) ?? null;
   const activeShot = tool === "nails" ? handShot : faceShot;
   const styles = config.styles.filter((style) => style.gender === gender);
@@ -242,8 +231,6 @@ export function TryOnApp({
     ? orderStylesForPicker(styles, { density: pickedDensity, texture: pickedTexture }, showAllStyles)
     : styles;
   const shownStyles = visibleStyles.filter((style) => styleHasPhoto(style.id));
-  const stageCopy = stageMs < 8000 ? t(lang, "stageReading") : stageMs < 22000 ? t(lang, "stageStyling") : t(lang, "stageAlmost");
-  const stagePct = Math.min(92, Math.round((stageMs / 40000) * 100));
   const hairSuggestions = hairReading
     ? suggestStyles(styles, hairReading).flatMap((row) => styleHasPhoto(row.style.id) ? [{
         id: row.style.id,
@@ -584,7 +571,6 @@ export function TryOnApp({
     setSuggestNote("");
     setSuggestCost("");
     setNotice("");
-    setPendingName("");
     frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     void startCamera(tool === "nails" ? "environment" : "user");
   }
@@ -669,7 +655,6 @@ export function TryOnApp({
     pendingLook.current = null;
     setError("");
     setPoseNote(null);
-    setPendingName(chosen.name);
     setStylePhase("pick");
     setBusy(true);
     try {
@@ -918,7 +903,7 @@ export function TryOnApp({
         <div className={busy || showResult ? "ai-photo-inner" : "contents"}>
         {showResult && active ? (
           <div className="relative overflow-hidden">
-            <div style={{ transform: `scale(${zoom})` }}>
+            <div className={freshGlow ? "gen-reveal" : undefined} style={{ transform: `scale(${zoom})` }}>
               {compareOn ? (
                 <BeforeAfter
                   before={active.before}
@@ -979,7 +964,7 @@ export function TryOnApp({
                 <img src={activeShot.url} alt="" className="h-full w-full object-contain" />
               </div>
             )}
-            {tool === "colour" && !cameraOn && faceShot && modelStatus !== "error" && (
+            {tool === "colour" && !cameraOn && !busy && faceShot && modelStatus !== "error" && (
               <div className="absolute inset-0">
                 <ColourStage
                   video={null}
@@ -1003,7 +988,7 @@ export function TryOnApp({
                 {cameraError && <p className="text-center text-sm text-[var(--bad)]" role="alert">{cameraError}</p>}
               </div>
             )}
-            {activeShot && !cameraOn && (
+            {activeShot && !cameraOn && !busy && (
               <StudioRail
                 onRetake={() => openCamera(tool === "nails" ? "environment" : "user")}
                 onZoomIn={() => setZoom((value) => Math.min(2, Math.round((value + 0.25) * 100) / 100))}
@@ -1014,24 +999,7 @@ export function TryOnApp({
                 canDownload={Boolean(active)}
               />
             )}
-            {busy && (
-              <div className="absolute inset-0 z-20 grid place-items-center bg-[#3E304B]/80 px-6 text-center text-white" role="status">
-                <div className="w-full max-w-xs">
-                  <p className="font-serif text-3xl">{stageCopy}</p>
-                  <p className="mt-1 text-sm">{pendingName}</p>
-                  <div
-                    className="mt-4 h-2 overflow-hidden rounded-full bg-white/25"
-                    role="progressbar"
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={stagePct}
-                    aria-label={stageCopy}
-                  >
-                    <div className="h-full bg-white transition-[width] duration-300" style={{ width: `${stagePct}%` }} />
-                  </div>
-                </div>
-              </div>
-            )}
+            {busy && <GeneratingLook tool={tool} />}
           </div>
         )}
         </div>
