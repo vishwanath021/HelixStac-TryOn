@@ -152,36 +152,74 @@ float eyeMask(vec2 p) {
   return cover;
 }
 
-float offsetStroke(vec2 p, vec2 poly[9], int n, vec2 center, float width, float blur) {
+float linerStroke(vec2 p, vec2 poly[9], float maxW, float blur, float wingLen) {
   float best = 1.0;
+  float bestS = 1.0;
+  float total = 0.0;
+  float walked = 0.0;
+  for (int i = 0; i < 8; i++) total += length(poly[i + 1] - poly[i]);
   for (int i = 0; i < 8; i++) {
-    if (i + 1 >= n) break;
     vec2 a = poly[i];
     vec2 b = poly[i + 1];
     vec2 ab = b - a;
-    float denom = dot(ab, ab) + 1e-6;
-    float t = clamp(dot(p - a, ab) / denom, 0.0, 1.0);
-    vec2 c = a + ab * t;
-    vec2 nrm = vec2(-ab.y, ab.x);
-    nrm /= length(nrm) + 1e-6;
-    if (dot(nrm, c - center) < 0.0) nrm = -nrm;
-    vec2 q = c + nrm * (width * 0.55 + blur);
-    best = min(best, length(p - q));
+    float seg = length(ab);
+    float t = clamp(dot(p - a, ab) / (dot(ab, ab) + 1e-6), 0.0, 1.0);
+    float d = length(p - (a + ab * t));
+    if (d < best) {
+      best = d;
+      bestS = (walked + t * seg) / (total + 1e-6);
+    }
+    walked += seg;
   }
+  if (wingLen > 0.0001) {
+    vec2 wingDir = poly[0] - poly[1];
+    wingDir /= length(wingDir) + 1e-6;
+    vec2 tip = poly[0] + wingDir * wingLen;
+    vec2 wab = poly[0] - tip;
+    float wt = clamp(dot(p - tip, wab) / (dot(wab, wab) + 1e-6), 0.0, 1.0);
+    float wd = length(p - (tip + wab * wt));
+    if (wd < best) {
+      best = wd;
+      bestS = wt - 1.0;
+    }
+  }
+  float width = 0.0;
+  if (bestS > -1.0 && bestS < 1.0) {
+    if (bestS < 0.0) width = maxW * (1.0 + bestS);
+    else if (bestS <= 0.33) width = maxW;
+    else width = maxW * (1.0 - bestS) / 0.67;
+  }
+  if (width <= 0.0001) return 0.0;
   return 1.0 - smoothstep(width * 0.5, width * 0.5 + blur, best);
 }
 
-float wingStroke(vec2 p, vec2 outer, vec2 along, vec2 center, float width, float blur, float eyeW) {
-  vec2 dir = outer - along;
-  dir /= length(dir) + 1e-6;
-  vec2 nrm = vec2(-dir.y, dir.x);
-  if (dot(nrm, outer - center) < 0.0) nrm = -nrm;
-  vec2 start = outer + nrm * (width * 0.55 + blur);
-  vec2 tip = start + dir * eyeW * 0.16 + nrm * eyeW * 0.035;
-  vec2 ab = tip - start;
-  float t = clamp(dot(p - start, ab) / (dot(ab, ab) + 1e-6), 0.0, 1.0);
-  float dist = length(p - (start + ab * t));
-  return 1.0 - smoothstep(width * 0.5, width * 0.5 + blur, dist);
+float lashBand(vec2 p, vec2 poly[9], vec2 center) {
+  float best = 1.0;
+  float bestS = 1.0;
+  vec2 closest = poly[0];
+  float total = 0.0;
+  float walked = 0.0;
+  float px = max(u_px.x, u_px.y);
+  for (int i = 0; i < 8; i++) total += length(poly[i + 1] - poly[i]);
+  for (int i = 0; i < 8; i++) {
+    vec2 a = poly[i];
+    vec2 b = poly[i + 1];
+    vec2 ab = b - a;
+    float seg = length(ab);
+    float t = clamp(dot(p - a, ab) / (dot(ab, ab) + 1e-6), 0.0, 1.0);
+    vec2 c = a + ab * t;
+    float d = length(p - c);
+    if (d < best) {
+      best = d;
+      bestS = (walked + t * seg) / (total + 1e-6);
+      closest = c;
+    }
+    walked += seg;
+  }
+  if (bestS < 0.05 || bestS > 0.9) return 0.0;
+  if (dot(p - closest, closest - center) < 0.0) return 0.0;
+  float sigma = px * 2.4;
+  return exp(-0.5 * (best * best) / (sigma * sigma + 1e-8));
 }
 
 float polyEdge(vec2 p, vec2 poly[20], int n) {
@@ -197,36 +235,6 @@ float polyEdge(vec2 p, vec2 poly[20], int n) {
     best = min(best, length(p - (a + ab * t)));
   }
   return best;
-}
-
-float lashField(vec2 p, vec2 poly[9], vec2 center, float eyeW) {
-  float len = eyeW * 0.06;
-  float px = max(u_px.x, u_px.y);
-  float cover = 0.0;
-  for (int i = 0; i < 12; i++) {
-    float f = mix(1.0, 7.0, (float(i) + 0.5) / 12.0);
-    int i0 = int(floor(f));
-    float ft = f - float(i0);
-    vec2 a = poly[i0];
-    vec2 b = poly[i0 + 1];
-    vec2 origin = mix(a, b, ft);
-    vec2 ab = b - a;
-    vec2 nrm = vec2(-ab.y, ab.x);
-    nrm /= length(nrm) + 1e-6;
-    if (dot(nrm, origin - center) < 0.0) nrm = -nrm;
-    vec2 along = ab / (length(ab) + 1e-6);
-    vec2 root = origin + nrm * (px * 2.0);
-    vec2 tip = root + nrm * len + along * len * 0.2;
-    for (int s = 0; s <= 4; s++) {
-      float u = float(s) / 4.0;
-      vec2 pos = mix(root, tip, u);
-      float w = mix(px * 0.9, px * 0.2, u);
-      float hit = 1.0 - smoothstep(w * 0.2, w, length(p - pos));
-      hit *= smoothstep(0.0, 0.2, u);
-      cover = max(cover, hit);
-    }
-  }
-  return cover;
 }
 
 vec3 softLight(vec3 base, vec3 blend) {
@@ -274,31 +282,22 @@ void main() {
   }
 
   float kajalW = clamp(u_iod * 0.02, px, px * 2.5);
-  float linerW = clamp(u_iod * 0.016, px, px * 2.0);
-  vec3 ink = vec3(0.08, 0.045, 0.04);
+  float blur = px * 1.5;
+  vec3 ink = vec3(0.25, 0.14, 0.12);
   if (u_kajal > 0.5 && eye < 0.5) {
-    float eyeWR = length(u_upR[0] - u_upR[8]);
-    float eyeWL = length(u_upL[0] - u_upL[8]);
-    float kajalA = max(
-      offsetStroke(p, u_loR, 9, u_centerR, kajalW, px),
-      offsetStroke(p, u_loL, 9, u_centerL, kajalW, px)
-    );
-    float linerA = max(
-      offsetStroke(p, u_upR, 9, u_centerR, linerW, px),
-      offsetStroke(p, u_upL, 9, u_centerL, linerW, px)
-    );
-    linerA = max(linerA, wingStroke(p, u_upR[0], u_upR[2], u_centerR, linerW, px, eyeWR));
-    linerA = max(linerA, wingStroke(p, u_upL[0], u_upL[2], u_centerL, linerW, px, eyeWL));
-    color = mix(color, ink, kajalA * 0.7);
-    color = mix(color, ink, linerA * 0.7);
+    float wingR = length(u_upR[0] - u_upR[8]) * 0.12;
+    float wingL = length(u_upL[0] - u_upL[8]) * 0.12;
+    float line = 0.0;
+    line = max(line, linerStroke(p, u_upR, kajalW, blur, wingR));
+    line = max(line, linerStroke(p, u_loR, kajalW, blur, 0.0));
+    line = max(line, linerStroke(p, u_upL, kajalW, blur, wingL));
+    line = max(line, linerStroke(p, u_loL, kajalW, blur, 0.0));
+    color = mix(color, color * ink, line * 0.6);
   }
 
   if (u_lashes > 0.5 && eye < 0.5) {
-    float lash = max(
-      lashField(p, u_upR, u_centerR, length(u_upR[0] - u_upR[8])),
-      lashField(p, u_upL, u_centerL, length(u_upL[0] - u_upL[8]))
-    );
-    color = mix(color, ink, lash * 0.6);
+    float band = max(lashBand(p, u_upR, u_centerR), lashBand(p, u_upL, u_centerL));
+    color = mix(color, color * ink, band * 0.35);
   }
 
   if (u_lipOn > 0.5 && outer && !inner && hairW < 0.25 && eye < 0.5) {
