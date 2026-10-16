@@ -21,7 +21,7 @@ test.beforeAll(async () => {
   const prisma = await salonDb();
   const tenant = await prisma.tenant.update({
     where: { slug: "demo" },
-    data: { productQueue: true, productTryOn: true },
+    data: { productQueue: true, productTryOn: true, productBridal: true },
   });
   await prisma.queueState.upsert({
     where: { tenantId: tenant.id },
@@ -145,7 +145,48 @@ test("try-on links to the queue when both products are on", async ({ page }) => 
   if (await pausedToggle.isVisible()) await pausedToggle.click();
   await expect(page.locator("[data-queue-open='yes']")).toBeVisible();
   await page.goto("/s/demo");
-  await expect(page.getByRole("link", { name: "Join queue" })).toBeVisible();
+  const actions = page.locator("[data-salon-actions='yes']");
+  await expect(actions.getByRole("link", { name: "Join queue" })).toBeVisible();
+  const metrics = await actions.evaluate((el) => [...el.querySelectorAll("a")].map((link) => {
+    const style = getComputedStyle(link);
+    const box = link.getBoundingClientRect();
+    return {
+      name: (link.textContent || "").replace(/\s+/g, " ").trim(),
+      x: box.x,
+      width: box.width,
+      height: box.height,
+      radius: style.borderRadius,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      background: style.backgroundImage,
+    };
+  }));
+  expect(metrics.map((item) => item.name)).toEqual(["Book Now", "Join queue", "WhatsApp"]);
+  const [book, queue, chat] = metrics;
+  expect(queue!.x).toBeGreaterThan(book!.x);
+  expect(chat!.x).toBeGreaterThan(queue!.x);
+  expect(Math.abs(book!.width - queue!.width)).toBeLessThan(2);
+  expect(Math.abs(queue!.width - chat!.width)).toBeLessThan(2);
+  expect(book!.radius).toBe(queue!.radius);
+  expect(book!.radius).toBe(chat!.radius);
+  expect(book!.fontSize).toBe(queue!.fontSize);
+  expect(queue!.fontSize).toBe("15px");
+  expect(queue!.fontWeight).toBe("600");
+  expect(queue!.height).toBeGreaterThanOrEqual(48);
+  expect(book!.background).toContain("gradient");
+  expect(queue!.background).toContain("gradient");
+  expect(chat!.background).toContain("gradient");
+  await page.getByRole("button", { name: "Bridal", exact: true }).click();
+  await expect(page.locator("[data-bridal='flow']")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Join queue" })).toHaveCount(0);
+  await expect(actions.getByRole("link", { name: "Book Now" })).toBeVisible();
+  await expect(actions.getByRole("link", { name: "WhatsApp" })).toBeVisible();
+  await page.getByRole("tab", { name: "Mehendi" }).click();
+  await expect(page.getByRole("link", { name: "Join queue" })).toHaveCount(0);
+  await page.getByRole("tab", { name: "My looks" }).click();
+  await expect(page.getByRole("link", { name: "Join queue" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Book bridal trial" })).toBeVisible();
+  await page.getByRole("button", { name: "Everyday", exact: true }).click();
   await page.getByRole("link", { name: "Join queue" }).click();
   await expect(page).toHaveURL(/\/s\/demo\/queue/);
   await expect(page.getByRole("button", { name: "Join the queue" })).toBeVisible();

@@ -27,7 +27,6 @@ import {
   type BridalEventId,
   type BridalStyleId,
 } from "@/data/bridal";
-import { t } from "@/data/i18n";
 import { guestSessionId } from "@/lib/guest-session";
 import type { SalonConfig } from "@/lib/salon";
 
@@ -113,7 +112,7 @@ async function blobUrlToData(url: string) {
   });
 }
 
-export function BridalFlow({ config, showQueue = false }: { config: SalonConfig; showQueue?: boolean }) {
+export function BridalFlow({ config }: { config: SalonConfig }) {
   const [eventId, setEventId] = useState<BridalEventId>("wedding");
   const [panel, setPanel] = useState<"looks" | "mehendi" | "saved">("looks");
   const [lookStyle, setLookStyle] = useState<BridalStyleId>(defaultBridalStyle(BRIDAL_LOOKS));
@@ -460,7 +459,6 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
   return (
     <div data-bridal="flow" data-busy={busy ? "yes" : "no"}>
       <ConsentSheet open={consent.open} onAgree={() => void consent.agree()} onClose={consent.close} />
-      {showQueue ? <p className="mb-3"><a className="btn secondary" href={`/s/${config.slug}/queue`}>{t(config.defaultLang || "en", "queueJoinLook")}</a></p> : null}
       <h2 className="page-title">Bridal</h2>
       <p className="mt-1 text-sm text-muted">Hair, makeup, and jewellery in one look. Then mehendi, and a trial with the salon.</p>
       <div className="seg mt-4" role="tablist" aria-label="Bridal">

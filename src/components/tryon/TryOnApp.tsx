@@ -92,7 +92,7 @@ function firstTool(config: SalonConfig, requested?: string): TryTool {
   return allowed[0] ?? "style";
 }
 
-type BridalPaneProps = { config: SalonConfig; showQueue?: boolean };
+type BridalPaneProps = { config: SalonConfig };
 
 function useBridalPane(active: boolean) {
   const [Pane, setPane] = useState<ComponentType<BridalPaneProps> | null>(null);
@@ -816,6 +816,13 @@ export function TryOnApp({
     { id: "beard", label: "Beard", name: t(lang, "beardChip"), on: config.toolBeard, icon: "beard" },
   ];
   const visibleTools = tools.filter((item) => item.on);
+  const queueInActions = showQueue && !bridalOn;
+  const actionItems = [
+    phone ? "book" as const : null,
+    queueInActions ? "queue" as const : null,
+    phone ? "chat" as const : null,
+  ].filter((item): item is "book" | "queue" | "chat" => item !== null);
+  const showActionStrip = showQueue && actionItems.length > 0;
 
   const platformLogo = isPlatformLogo(config.logoUrl);
 
@@ -833,21 +840,31 @@ export function TryOnApp({
             </span>
             <h1 className="min-w-0 flex-1 break-words text-lg leading-tight sm:text-xl">{config.name}</h1>
           </div>
-          <div className="flex gap-2">
-            {phone ? (
-              <>
-                <a className="btn bar-book flex-1 whitespace-nowrap sm:flex-none" href={bookHref} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
-                <a className="btn bar-chat flex-1 whitespace-nowrap sm:flex-none" href={chatHref} target="_blank" rel="noreferrer">
-                  <WhatsAppGlyph />
-                  {t(lang, "whatsappBtn")}
-                </a>
-              </>
-            ) : (
-              <p className="max-w-xs text-sm leading-snug">{t(lang, "whatsappMissing")}</p>
-            )}
-          </div>
+          {phone && !showActionStrip ? (
+            <div className="flex gap-2">
+              <a className="btn bar-book flex-1 whitespace-nowrap sm:flex-none" href={bookHref} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
+              <a className="btn bar-chat flex-1 whitespace-nowrap sm:flex-none" href={chatHref} target="_blank" rel="noreferrer">
+                <WhatsAppGlyph />
+                {t(lang, "whatsappBtn")}
+              </a>
+            </div>
+          ) : !phone ? (
+            <p className="max-w-xs text-sm leading-snug">{t(lang, "whatsappMissing")}</p>
+          ) : null}
         </div>
       </header>
+      {showActionStrip ? (
+        <SalonActions
+          embed={embed}
+          items={actionItems}
+          bookHref={bookHref}
+          chatHref={chatHref}
+          queueHref={`/s/${config.slug}/queue`}
+          bookLabel={t(lang, "bookNow")}
+          chatLabel={t(lang, "whatsappBtn")}
+          queueLabel={t(lang, "queueJoinLook")}
+        />
+      ) : null}
       <ConsentSheet open={consent.open} onAgree={() => { track("consent_accepted", { lang }); void consent.agree(); }} onClose={consent.close} />
       <div data-scroll="salon" className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-16 pt-6">
       {showBridal && showEveryday && (
@@ -866,10 +883,9 @@ export function TryOnApp({
         </div>
       )}
       {bridalOn && !showEveryday && !BridalPane ? <p className="mt-2 text-sm text-muted">Opening bridal looks…</p> : null}
-      {bridalOn && BridalPane ? <BridalPane config={config} showQueue={showQueue} /> : null}
+      {bridalOn && BridalPane ? <BridalPane config={config} /> : null}
       {bridalOn ? null : <>
       <h2 className="page-title">{t(lang, "pageTitle")}</h2>
-      {showQueue ? <p className="mt-3"><a className="btn secondary" href={`/s/${config.slug}/queue`}>{t(lang, "queueJoinLook")}</a></p> : null}
 
       {visibleTools.length > 1 && (
       <div className="seg-fade mt-4">
@@ -1199,6 +1215,47 @@ export function TryOnApp({
       )}
       <p className="mt-6 text-center text-xs text-muted"><a href="/login">Salon login</a></p>
       </div>
+    </div>
+  );
+}
+
+function SalonActions({
+  embed,
+  items,
+  bookHref,
+  chatHref,
+  queueHref,
+  bookLabel,
+  chatLabel,
+  queueLabel,
+}: {
+  embed: boolean;
+  items: Array<"book" | "queue" | "chat">;
+  bookHref: string;
+  chatHref: string;
+  queueHref: string;
+  bookLabel: string;
+  chatLabel: string;
+  queueLabel: string;
+}) {
+  const cols = items.length >= 3 ? "grid-cols-3" : items.length === 2 ? "grid-cols-2" : "grid-cols-1";
+  const width = items.length === 1 ? "sm:max-w-xs" : "sm:max-w-xl";
+  return (
+    <div data-salon-actions="yes" className={`salon-actions grid w-full ${cols} ${width} gap-2 py-3 ${embed ? "px-4" : ""}`}>
+      {items.map((item) => {
+        if (item === "book") {
+          return <a key={item} className="btn h-full w-full" href={bookHref} target="_blank" rel="noreferrer">{bookLabel}</a>;
+        }
+        if (item === "queue") {
+          return <a key={item} className="btn h-full w-full" href={queueHref}>{queueLabel}</a>;
+        }
+        return (
+          <a key={item} className="btn h-full w-full" href={chatHref} target="_blank" rel="noreferrer">
+            <WhatsAppGlyph />
+            {chatLabel}
+          </a>
+        );
+      })}
     </div>
   );
 }
