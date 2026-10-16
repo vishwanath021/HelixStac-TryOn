@@ -32,6 +32,8 @@ model Tenant {
   productTryOn        Boolean   @default(true)
   /** Sell the live queue and visit alerts. */
   productQueue        Boolean   @default(false)
+  /** Full bridal looks and mehendi. On for a new salon, including the demo. */
+  productBridal       Boolean   @default(true)
   trialEndsAt         DateTime?
   removeBranding      Boolean   @default(false)
   allowedOrigins      String    @default("[]")
@@ -245,6 +247,10 @@ model Lead {
   lang      String   @default("en")
   src       String?
   status    String   @default("NEW")
+  /** LOOK for an everyday booking. BRIDAL for a bridal trial. */
+  type      String   @default("LOOK")
+  eventName String   @default("")
+  eventDate String   @default("")
   createdAt DateTime @default(now())
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 

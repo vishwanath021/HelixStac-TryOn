@@ -1,3 +1,4 @@
+import { BRIDAL_PACKAGE_KEYS } from "@/data/bridal";
 import { BEARDS, toPublicBeard, type PublicBeard } from "@/data/beards";
 import { BROWS, toPublicBrow, type PublicBrow } from "@/data/brows";
 import { NAILS, toPublicNail, type PublicNail } from "@/data/nails";
@@ -7,6 +8,7 @@ import { STYLES, toPublicStyle, type PublicStyle } from "@/data/styles";
 import { applySuitability } from "@/lib/hair-suitability";
 import { parseJson } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
+import { styleOnMenu } from "@/lib/style-menu";
 import { maskToolFlags } from "@/lib/tools";
 
 export type SalonService = {
@@ -49,6 +51,8 @@ export type SalonConfig = {
   anonDailyCap: number;
   memberDailyCap: number;
   requireLoginToBook: boolean;
+  productBridal: boolean;
+  bridalPackages: { key: string; name: string; priceInr: number }[];
   services: SalonService[];
   styles: PublicStyle[];
   brows: PublicBrow[];
@@ -88,10 +92,7 @@ export function toSalonConfig(tenant: TenantWithRelations): SalonConfig {
   const styleRows = new Map(tenant.styles.map((row) => [row.styleId, row]));
   const customNames = new Map(tenant.styles.map((row) => [row.styleId, row.customName]));
   const suitability = new Map(tenant.styles.map((row) => [row.styleId, row.suitabilityJson]));
-  let styles = STYLES.filter((style) => {
-    const row = styleRows.get(style.id);
-    return row ? row.enabled : true;
-  }).map((style) => {
+  let styles = STYLES.filter((style) => styleOnMenu(styleRows.get(style.id))).map((style) => {
     const pub = toPublicStyle(style);
     const custom = customNames.get(style.id);
     const named = custom ? { ...pub, name: custom } : pub;
@@ -143,7 +144,11 @@ export function toSalonConfig(tenant: TenantWithRelations): SalonConfig {
     anonDailyCap: tenant.anonDailyCap,
     memberDailyCap: tenant.memberDailyCap,
     requireLoginToBook: tenant.requireLoginToBook,
-    services: tenant.services.map((service) => ({
+    productBridal: tenant.productBridal,
+    bridalPackages: tenant.services
+      .filter((service) => BRIDAL_PACKAGE_KEYS.has(service.key) && service.active && service.priceInr > 0)
+      .map((service) => ({ key: service.key, name: service.name, priceInr: service.priceInr })),
+    services: tenant.services.filter((service) => !BRIDAL_PACKAGE_KEYS.has(service.key)).map((service) => ({
       id: service.id,
       key: service.key,
       name: service.name,

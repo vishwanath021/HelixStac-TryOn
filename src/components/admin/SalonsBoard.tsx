@@ -17,6 +17,7 @@ function applySalonPatch(row: SalonRecord, body: Record<string, unknown>): Salon
     ...(typeof body.name === "string" ? { name: body.name } : {}),
     ...(typeof body.productTryOn === "boolean" ? { productTryOn: body.productTryOn } : {}),
     ...(typeof body.productQueue === "boolean" ? { productQueue: body.productQueue } : {}),
+    ...(typeof body.productBridal === "boolean" ? { productBridal: body.productBridal } : {}),
   };
 }
 
@@ -262,6 +263,15 @@ export function SalonsBoard({ rows: initial }: { rows: SalonRecord[] }) {
                   />
                   Queue
                   <span className="block text-xs text-muted">Guests can join a line and get a token.</span>
+                </label>
+                <label className="flex min-h-11 items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selected.productBridal}
+                    onChange={(event) => void update(selected.id, { productBridal: event.target.checked })}
+                  />
+                  Bridal
+                  <span className="block text-xs text-muted">Guests can try a full bridal look and mehendi.</span>
                 </label>
               </fieldset>
               <div className="mt-4 flex flex-wrap gap-2">

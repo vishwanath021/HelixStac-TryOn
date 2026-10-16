@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openLive, waitForCapture } from "./live-entry";
 
 type CameraSpy = {
   calls: number;
@@ -68,12 +69,12 @@ test("take selfie plays the fake camera, captures, and retakes", async ({ page }
   test.skip(testInfo.project.name !== "desktop", "Chromium fake camera on desktop");
   await spyOnCamera(page);
   await page.goto("/s/demo");
-  await expect(page.getByRole("button", { name: "Take selfie" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Live styling" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Use the phone camera" })).toHaveCount(0);
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await expect(page.getByText(/permission was denied/i)).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Take selfie" }).click();
+  await openLive(page);
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   const playing = await liveVideo(page);
@@ -91,16 +92,16 @@ test("take selfie plays the fake camera, captures, and retakes", async ({ page }
   expect(opened.permissions).toBe(false);
 
   await page.getByRole("button", { name: "Back" }).click();
-  await expect(page.getByRole("button", { name: "Take selfie" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Live styling" })).toBeVisible();
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await page.waitForFunction(() => !document.querySelector("video")?.srcObject);
   const closed = await cameraSpy(page);
   expect(closed.stops).toBeGreaterThanOrEqual(1);
 
-  await page.getByRole("button", { name: "Take selfie" }).click();
+  await openLive(page);
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
   await page.getByRole("button", { name: "Take photo" }).click();
-  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await waitForCapture(page);
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Retake" }).click();
@@ -118,7 +119,7 @@ test("take selfie plays the fake camera, captures, and retakes", async ({ page }
 
   const stopsWhileLive = retaken.stops;
   await page.getByRole("button", { name: "Take photo" }).click();
-  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await waitForCapture(page);
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Use the phone camera" })).toHaveCount(0);
   await page.waitForFunction(() => !document.querySelector("video")?.srcObject);
@@ -142,10 +143,10 @@ test("denied camera tells the user how to allow it", async ({ page }, testInfo) 
   });
   await page.goto("/s/demo");
   await expect(page.getByText(/permission was denied/i)).toHaveCount(0);
-  await page.getByRole("button", { name: "Take selfie" }).click();
-  await expect(page.getByText("Camera permission was denied. Allow the camera for this site from the address bar, then press Take selfie again.")).toBeVisible();
+  await openLive(page);
+  await expect(page.getByText("Camera permission was denied. Allow the camera for this site from the address bar, then press Live styling again.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Use the phone camera" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Upload" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use photo" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Take photo" })).toHaveCount(0);
   await expect.poll(() => logs.some((line) => line.includes("[camera]") && line.includes("NotAllowedError"))).toBe(true);
 });

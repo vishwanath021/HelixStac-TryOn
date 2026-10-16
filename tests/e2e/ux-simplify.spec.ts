@@ -28,15 +28,19 @@ test("the web app manifest is served", async ({ page }) => {
   expect(body.icons?.length).toBeGreaterThan(0);
 });
 
-test("women see a bridal tab and the named styles", async ({ page }) => {
+test("bridal is its own section and the hair styles stay in the gallery", async ({ page }) => {
   await page.goto("/s/demo");
+  await expect(page.getByRole("button", { name: "Bridal", exact: true })).toBeVisible();
   const gallery = page.getByRole("region", { name: "Styles" });
-  await gallery.getByRole("button", { name: "Bridal", exact: true }).click();
+  await expect(gallery.getByRole("button", { name: "Bridal", exact: true })).toHaveCount(0);
+  await gallery.getByRole("button", { name: "See full bridal looks" }).click();
+  await expect(page.getByRole("heading", { name: "Bridal", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Telugu Muhurtham Classic" })).toBeVisible();
+  await page.getByRole("button", { name: "Everyday", exact: true }).click();
+  await gallery.getByRole("button", { name: "Women", exact: true }).click();
   await expect(gallery.getByRole("button", { name: "Bridal Bun" })).toBeVisible();
   await expect(gallery.getByRole("button", { name: "South-Indian Bridal Braid" })).toBeVisible();
   await expect(gallery.getByRole("button", { name: "Curtain Wolf" })).toHaveCount(0);
-  await expect(gallery.getByRole("button", { name: "Wolf Cut" })).toHaveCount(0);
-  await gallery.getByRole("button", { name: "All styles" }).click();
   await expect(gallery.getByRole("button", { name: "Wolf Cut" })).toBeVisible();
   await expect(gallery.getByRole("button", { name: "Voluminous Blowout" }).locator("img")).toHaveAttribute("src", /voluminous-blowout\.jpg/);
 });
@@ -114,8 +118,8 @@ test("owner nav lands on the queue, keeps three items, and hides internal wordin
 test("the nails tab asks for a hand photo", async ({ page }) => {
   await page.goto("/s/demo");
   await page.getByRole("tab", { name: "Nails" }).click();
-  await expect(page.getByRole("button", { name: "Take a photo of your hand" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Upload a hand photo" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Live nails" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use photo" })).toBeVisible();
 });
 
 test("super-admin audit shows a salon name and an email", async ({ page }) => {

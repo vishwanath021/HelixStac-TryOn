@@ -8,10 +8,10 @@ export async function GET() {
   if ("error" in access && access.error) return access.error;
   if (!("tenant" in access)) return NextResponse.json({ error: "NO_TENANT" }, { status: 403 });
   const leads = await prisma.lead.findMany({ where: { tenantId: access.tenant.id }, orderBy: { createdAt: "desc" } });
-  const lines = ["created,name,phone,look,shade,services,status,lang,src"];
+  const lines = ["created,name,phone,look,shade,services,status,lang,src,type,event,event_date"];
   for (const lead of leads) {
     lines.push(
-      [lead.createdAt.toISOString(), lead.name || "", lead.phone || "", lead.lookName, lead.shadeName || "", lead.services, lead.status, lead.lang, lead.src || ""]
+      [lead.createdAt.toISOString(), lead.name || "", lead.phone || "", lead.lookName, lead.shadeName || "", lead.services, lead.status, lead.lang, lead.src || "", lead.type, lead.eventName, lead.eventDate]
         .map((cell) => csvCell(String(cell)))
         .join(","),
     );

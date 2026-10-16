@@ -1,12 +1,16 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
+import { bridalFinishById, bridalLipById, bridalLookById, mehendiChoice, MEHENDI_COVERAGE, MEHENDI_DENSITY, MEHENDI_SHADES, MEHENDI_STYLES } from "@/data/bridal";
 import { parseBrowColour, parseBrowThickness } from "@/data/brows";
 import { claimGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
 import { BROWS_NEED_OPENAI, browsRoute, demoGuestPreview, engineForGuestTool, guestEngineReady, loadGuestReference, readGuestEngine, runGuestHairstyleIfReady, runGuestLookIfReady } from "@/lib/ai/guest-hairstyle";
 import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { auth } from "@/auth";
 import { resolveFalKey } from "@/lib/ai/credentials";
+import { bridalReferenceJpeg } from "@/lib/bridal-reference";
+import { buildBridalPrompt, buildMehendiPrompt } from "@/lib/prompts";
+import { styleEnabledForTenant } from "@/lib/style-menu";
 import { consumePreviewRateShared, guestLimitMessage, toolEnabled, type PreviewTool, type ToolId } from "@/lib/tools";
 import { resolveLook } from "@/lib/guidance";
 import { classifySkinPhoto } from "@/lib/hand-photo";
@@ -60,7 +64,8 @@ export async function POST(req: Request) {
   const sessionId = String(form.get("sessionId") || "");
   const consentId = String(form.get("consentId") || "");
   const rawTool = String(form.get("tool") || "style");
-  const tool = rawTool === "brows" || rawTool === "beard" || rawTool === "nails" || rawTool === "colour" ? rawTool : "style";
+  const tool = rawTool === "brows" || rawTool === "beard" || rawTool === "nails" || rawTool === "colour" || rawTool === "bridal" || rawTool === "mehendi" ? rawTool : "style";
+  const bridalTool = tool === "bridal" || tool === "mehendi";
   const shadeId = form.get("shadeId") ? String(form.get("shadeId")) : null;
   const browThickness = parseBrowThickness(form.get("browThickness"));
   const browColour = parseBrowColour(form.get("browColour"));
@@ -77,7 +82,10 @@ export async function POST(req: Request) {
   if (tenant.status === "SUSPENDED") {
     return NextResponse.json({ error: "SUSPENDED", message: "This salon's try-on is paused." }, { status: 403 });
   }
-  if (!tenant.productTryOn) {
+  if (bridalTool && !tenant.productBridal) {
+    return NextResponse.json({ error: "PRODUCT", message: "Bridal is turned off for this salon." }, { status: 404 });
+  }
+  if (!bridalTool && !tenant.productTryOn) {
     return NextResponse.json({ error: "PRODUCT", message: "Try-on is not available for this salon." }, { status: 404 });
   }
 
@@ -99,16 +107,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "DAILY_CAP", message: guestLimitMessage("daily") }, { status: 429 });
   }
 
-  const look = resolveLook(tool, styleId);
-  const platformTool: ToolId = tool === "style" ? "hairstyle" : tool;
-  const toolOn =
-    toolEnabled(platformTool) &&
-    (tool === "brows" ? tenant.toolBrows : tool === "beard" ? tenant.toolBeard : tool === "nails" ? tenant.toolNails : tool === "colour" ? tenant.toolColour : tenant.toolStyle);
+  const finish = bridalFinishById(String(form.get("finish") || "hd"));
+  const lip = bridalLipById(String(form.get("lip") || "red"));
+  const mehendiStyle = mehendiChoice(MEHENDI_STYLES, String(form.get("mehendiStyle") || styleId));
+  const mehendiCoverage = mehendiChoice(MEHENDI_COVERAGE, String(form.get("coverage") || ""));
+  const mehendiShade = mehendiChoice(MEHENDI_SHADES, String(form.get("mehendiShade") || ""));
+  const mehendiDensity = mehendiChoice(MEHENDI_DENSITY, String(form.get("density") || ""));
+  const bridalLook = tool === "bridal" ? bridalLookById(styleId) : null;
+  const look = bridalTool
+    ? bridalLook
+      ? { id: bridalLook.id, name: bridalLook.name, serviceKeys: [] as string[] }
+      : tool === "mehendi" && mehendiStyle && mehendiCoverage && mehendiShade && mehendiDensity
+        ? { id: mehendiStyle.id, name: `Mehendi · ${mehendiStyle.label}`, serviceKeys: [] as string[] }
+        : null
+    : resolveLook(tool, styleId);
+  const platformTool: ToolId = tool === "style" ? "hairstyle" : tool === "bridal" || tool === "mehendi" ? "hairstyle" : tool;
+  const toolOn = bridalTool
+    ? true
+    : toolEnabled(platformTool) &&
+      (tool === "brows" ? tenant.toolBrows : tool === "beard" ? tenant.toolBeard : tool === "nails" ? tenant.toolNails : tool === "colour" ? tenant.toolColour : tenant.toolStyle);
   if (!toolOn) return NextResponse.json({ error: "TOOL", message: "That try-on is turned off for this salon." }, { status: 403 });
-  if (!look) return NextResponse.json({ error: "STYLE", message: "That look is not on this salon's menu." }, { status: 400 });
-  if (tool === "style") {
-    const enabled = await prisma.tenantStyle.findUnique({ where: { tenantId_styleId: { tenantId: tenant.id, styleId } } });
-    if (!enabled?.enabled) return NextResponse.json({ error: "STYLE", message: "That style is not on this salon's menu." }, { status: 400 });
+  if (!look) return NextResponse.json({ error: "STYLE", message: bridalTool ? "Choose a bridal look first." : "That look is not on this salon's menu." }, { status: 400 });
+  if (tool === "style" && !(await styleEnabledForTenant(tenant.id, styleId))) {
+    return NextResponse.json({ error: "STYLE", message: "That style is not on this salon's menu." }, { status: 400 });
   }
 
   const salonToken = String(form.get("salonToken") || "");
@@ -139,10 +160,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: code, message: "Use a JPEG, PNG, or WebP selfie under 2 MB." }, { status: 400 });
   }
 
-  if (tool === "nails") {
+  if (tool === "nails" || tool === "mehendi") {
     const small = await sharp(jpeg).resize(48, 48, { fit: "fill" }).removeAlpha().raw().toBuffer();
     if (classifySkinPhoto(small, 48, 48, 3) === "face") {
-      return NextResponse.json({ error: "HAND", message: "That looks like a face. Upload a photo of your hand." }, { status: 400 });
+      return NextResponse.json({ error: "HAND", message: tool === "mehendi" ? "That looks like a face. Upload a photo of your hand for the mehendi." : "That looks like a face. Upload a photo of your hand." }, { status: 400 });
     }
   }
 
@@ -200,7 +221,18 @@ export async function POST(req: Request) {
     }
   }
 
-  const guestLook = tool === "style" ? null : await loadGuestReference(tool, styleId, tool === "brows" ? { thickness: browThickness, colour: browColour } : undefined);
+  const guestLook = tool === "style"
+    ? null
+    : tool === "bridal" && bridalLook
+      ? { prompt: buildBridalPrompt(bridalLook, finish, lip, {
+          kajal: String(form.get("kajal") || "") === "1",
+          lashes: String(form.get("lashes") || "") === "1",
+          blush: String(form.get("blush") || "") === "1",
+          brow: String(form.get("browTint") || "") === "1",
+        }), reference: await bridalReferenceJpeg(bridalLook.id), referenceFile: `${bridalLook.id}.jpg` }
+      : tool === "mehendi" && mehendiStyle && mehendiCoverage && mehendiShade && mehendiDensity
+        ? { prompt: buildMehendiPrompt(mehendiStyle, mehendiCoverage, mehendiShade, mehendiDensity), reference: await bridalReferenceJpeg(`mehendi-${mehendiStyle.id}`), referenceFile: `mehendi-${mehendiStyle.id}.jpg` }
+        : await loadGuestReference(tool as "brows" | "beard" | "nails" | "colour", styleId, tool === "brows" ? { thickness: browThickness, colour: browColour } : undefined);
   if (tool !== "style" && !guestLook) {
     await failGenerationJob(jobId, { outcome: "style", message: "That look is not on this salon's menu." });
     return NextResponse.json({ error: "STYLE", message: "That look is not on this salon's menu." }, { status: 400 });
@@ -219,7 +251,7 @@ export async function POST(req: Request) {
   const limited = await takePreviewSlot();
   if (limited) return limited;
 
-  const kind = tool === "brows" ? "BROWS" : tool === "beard" ? "BEARD" : tool === "nails" ? "NAILS" : tool === "colour" ? "COLOUR" : "STYLE";
+  const kind = tool === "brows" ? "BROWS" : tool === "beard" ? "BEARD" : tool === "nails" ? "NAILS" : tool === "colour" ? "COLOUR" : tool === "bridal" ? "BRIDAL" : tool === "mehendi" ? "MEHENDI" : "STYLE";
   const effective = engineForGuestTool(tool, engine);
   const superUser = placementDebug ? await viewerIsSuper() : false;
   const withPose = (response: NextResponse) => {

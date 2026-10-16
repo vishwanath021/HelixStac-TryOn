@@ -3,6 +3,7 @@ import { SHADES } from "@/data/shades";
 import { STYLES, toPublicStyle } from "@/data/styles";
 import { applySuitability } from "@/lib/hair-suitability";
 import { prisma } from "@/lib/prisma";
+import { ensureCatalogueStyles } from "@/lib/style-menu";
 import { pageTenant } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ export default async function StylesPage() {
       </main>
     );
   }
+  await ensureCatalogueStyles(tenant.id);
   const [styleRows, shadeRows] = await Promise.all([
     prisma.tenantStyle.findMany({ where: { tenantId: tenant.id } }),
     prisma.tenantShade.findMany({ where: { tenantId: tenant.id } }),

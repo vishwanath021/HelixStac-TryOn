@@ -36,7 +36,7 @@ export default async function SalonPage({
   const tenant = slug === "by-host" ? await loadTenantByHost(host.split(":")[0] || "") : await loadTenantBySlug(slug);
   if (!tenant) notFound();
   if (tenant.status === "SUSPENDED") return <SalonPaused name={tenant.name} />;
-  if (!tenant.productTryOn) {
+  if (!tenant.productTryOn && !tenant.productBridal) {
     if (tenant.productQueue) redirect(`/s/${tenant.slug}/queue`);
     return <TryOnUnavailable name={tenant.name} />;
   }
@@ -65,6 +65,8 @@ export default async function SalonPage({
       demoHint={demoHint}
       poseDebug={Boolean(session?.user?.isSuperAdmin)}
       showQueue={tenant.productQueue}
+      showEveryday={tenant.productTryOn}
+      showBridal={tenant.productBridal}
     />
   );
 }

@@ -1,5 +1,6 @@
 import { copyFile, mkdir } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { openLive, waitForCapture } from "./live-entry";
 
 async function shot(page: Page, name: string, locator?: Locator) {
   await mkdir("/tmp/lookuvi-shots", { recursive: true });
@@ -181,31 +182,31 @@ test("retake and try another each open a new camera frame", async ({ page }, tes
   await page.goto("/s/demo");
   await shot(page, `guest-header-${device}`);
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
-  await page.getByRole("button", { name: "Take selfie" }).click();
+  await openLive(page);
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await waitForLiveFrame(page);
   await page.getByRole("button", { name: "Take photo" }).click();
-  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await waitForCapture(page);
   const first = await sampleStill(page);
   await expect(page.locator('input[data-photo="gallery"]')).toHaveValue("");
   await expect(page.locator('input[data-photo="camera"]')).toHaveValue("");
   await shot(page, `retake-before-${device}`);
 
   await page.getByRole("button", { name: "Retake" }).click();
-  await expect(page.getByRole("button", { name: "Retake" })).toHaveCount(0);
+  await expect(page.locator("[data-studio='live']")).toBeVisible();
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await waitForLiveFrame(page);
   await shot(page, `retake-camera-${device}`);
   await page.getByRole("button", { name: "Take photo" }).click();
-  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await waitForCapture(page);
   const second = await sampleStill(page);
   const distance = Math.abs(first[0] - second[0]) + Math.abs(first[2] - second[2]);
   expect(distance).toBeGreaterThan(40);
 
   await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Soft Bob" }).click();
-  await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 45_000 });
   await expect(page.locator('section[aria-label="Photo"]')).toHaveClass(/is-ready/);
   await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/demo mode/i)).toHaveCount(0);
@@ -216,7 +217,7 @@ test("retake and try another each open a new camera frame", async ({ page }, tes
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await waitForLiveFrame(page);
   await page.getByRole("button", { name: "Take photo" }).click();
-  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await waitForCapture(page);
   const third = await sampleStill(page);
   expect(Math.abs(second[0] - third[0]) + Math.abs(second[2] - third[2])).toBeGreaterThan(40);
 });

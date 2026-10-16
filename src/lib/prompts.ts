@@ -1,3 +1,4 @@
+import type { BridalFinish, BridalLip, BridalLook, MehendiOption } from "@/data/bridal";
 import type { BeardDef } from "@/data/beards";
 import { browColourLine, browThicknessLine, parseBrowColour, parseBrowThickness, type BrowDef, type BrowVariation } from "@/data/brows";
 import type { NailDef } from "@/data/nails";
@@ -95,6 +96,41 @@ export function buildColourPrompt(shade: ShadeDef) {
     IMAGE_ROLES,
     `Recolour the existing hair to the selected shade. The selected shade is ${shade.name}.`,
     "Keep the haircut, length, style and everything else the same.",
+  ].join(" ");
+}
+
+/** Full bridal look. Image 2 is a look reference when one exists. The face in image 1 stays the bride. */
+export function buildBridalPrompt(
+  look: BridalLook,
+  finish: BridalFinish,
+  lip: BridalLip,
+  live?: { kajal?: boolean; lashes?: boolean; blush?: boolean; brow?: boolean },
+) {
+  const marks = [
+    live?.kajal ? "kajal on" : "kajal off",
+    live?.lashes ? "lashes on" : "lashes off",
+    live?.blush ? "blush on" : "blush off",
+    live?.brow ? "brow tint on" : "brow tint off",
+  ];
+  return [
+    "Image 1 is the bride's selfie. Image 2 is a bridal look reference. Do not copy the reference person's face.",
+    `Apply one full look: hair, makeup, bindi, and jewellery together. The look is ${look.name}. ${look.prompt}`,
+    finish.prompt,
+    `Lip colour: ${lip.name}.`,
+    `The live mirror choices were ${marks.join(", ")}. Paint those on the real portrait. This is a full look, not a camera filter.`,
+    "Keep the same person: identity, skin tone, age, and expression.",
+    "A portrait, photorealistic, with natural light. No text, logos, watermarks, or extra people.",
+    "This is a salon trial preview, not a guarantee of the finished makeup.",
+  ].join(" ");
+}
+
+/** Mehendi on the hand in image 1. */
+export function buildMehendiPrompt(style: MehendiOption, coverage: MehendiOption, shade: MehendiOption, density: MehendiOption) {
+  return [
+    "Image 1 is a photo of the customer's hand.",
+    `Add ${style.label} mehendi. Coverage: ${coverage.label}. Shade: ${shade.label}. Density: ${density.label}.`,
+    "Keep the hand, skin tone, nails, and background. Only add the henna stain.",
+    "Photorealistic. No text, logos, or extra objects.",
   ].join(" ");
 }
 

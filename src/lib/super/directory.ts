@@ -21,6 +21,7 @@ export type SalonRecord = {
   trialEndsAt: string | null;
   productTryOn: boolean;
   productQueue: boolean;
+  productBridal: boolean;
   queueToday: number;
 };
 
@@ -83,6 +84,7 @@ export async function loadSalons(): Promise<SalonRecord[]> {
       trialEndsAt: tenant.trialEndsAt?.toISOString() || null,
       productTryOn: tenant.productTryOn,
       productQueue: tenant.productQueue,
+      productBridal: tenant.productBridal,
       queueToday: today.get(tenant.id) || 0,
     };
   });

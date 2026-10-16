@@ -3,8 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { isPlatformLogo, LookuviMark } from "@/components/brand/LookuviMark";
-import { headerBarColor } from "@/lib/contrast";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
+import { BridalFlow } from "@/components/tryon/BridalFlow";
+import { ConsentSheet } from "@/components/tryon/ConsentSheet";
+import { LiveStudio, StudioRail } from "@/components/tryon/LiveStudio";
+import { usePhotoConsent } from "@/components/tryon/usePhotoConsent";
 import { BrowCard } from "@/components/tryon/BrowCard";
 import { ColourStage } from "@/components/tryon/ColourStage";
 import { HairTypePicker } from "@/components/tryon/HairTypePicker";
@@ -107,6 +110,8 @@ export function TryOnApp({
   demoHint = false,
   poseDebug = false,
   showQueue = false,
+  showBridal = false,
+  showEveryday = true,
 }: {
   config: SalonConfig;
   embed?: boolean;
@@ -119,6 +124,8 @@ export function TryOnApp({
   /** Signed-in super-admin only. Guests never receive the numbers. */
   poseDebug?: boolean;
   showQueue?: boolean;
+  showBridal?: boolean;
+  showEveryday?: boolean;
 }) {
   const lang = config.defaultLang || "en";
   const [sid, setSid] = useState("");
@@ -138,7 +145,7 @@ export function TryOnApp({
   const [browColour, setBrowColour] = useState<BrowColour>("natural");
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
   const [busy, setBusy] = useState(false);
-  const [styleGroup, setStyleGroup] = useState<"all" | "bridal">("all");
+  const [section, setSection] = useState<"everyday" | "bridal">(showEveryday ? "everyday" : "bridal");
   const [stageMs, setStageMs] = useState(0);
   const [pickedDensity, setPickedDensity] = useState("");
   const [pickedTexture, setPickedTexture] = useState("");
@@ -165,8 +172,9 @@ export function TryOnApp({
   const captureRef = useRef<HTMLInputElement>(null);
   const frameRef = useRef<HTMLElement>(null);
   const gridRef = useRef<HTMLElement>(null);
-  const consentRef = useRef("");
-  const consenting = useRef<Promise<string | null> | null>(null);
+  const consent = usePhotoConsent(config.slug, lang);
+  const [zoom, setZoom] = useState(1);
+  const [compareOn, setCompareOn] = useState(true);
 
   useEffect(() => {
     setSid(sessionId());
@@ -218,13 +226,7 @@ export function TryOnApp({
   const visibleStyles = config.hairPickerOn
     ? orderStylesForPicker(styles, { density: pickedDensity, texture: pickedTexture }, showAllStyles)
     : styles;
-  const hairFilterOn = Boolean(pickedDensity || pickedTexture);
-  const orderedStyles = gender === "women" && !hairFilterOn
-    ? [...visibleStyles].sort((a, b) => Number(b.category === "bridal") - Number(a.category === "bridal"))
-    : visibleStyles;
-  const shownStyles = gender === "women" && styleGroup === "bridal"
-    ? orderedStyles.filter((style) => style.category === "bridal")
-    : orderedStyles;
+  const shownStyles = visibleStyles;
   const stageCopy = stageMs < 8000 ? t(lang, "stageReading") : stageMs < 22000 ? t(lang, "stageStyling") : t(lang, "stageAlmost");
   const stagePct = Math.min(92, Math.round((stageMs / 40000) * 100));
   const hairSuggestions = hairReading
@@ -268,31 +270,17 @@ export function TryOnApp({
   }
 
   async function recordPhotoConsent() {
-    if (consentRef.current) return consentRef.current;
-    if (consenting.current) return consenting.current;
     const session = sid || sessionId();
     if (!sid) setSid(session);
-    const job = (async () => {
-      const res = await fetch("/api/v1/consent", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ slug: config.slug, sessionId: session, lang, accepted: true, ageGate: true }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.id) return "";
-      return String(data.id);
-    })();
-    consenting.current = job;
-    try {
-      const id = await job;
-      if (id) {
-        consentRef.current = id;
-        track("consent_accepted", { lang });
-      }
-      return consentRef.current;
-    } finally {
-      if (consenting.current === job) consenting.current = null;
-    }
+    return consent.persist();
+  }
+
+  function openCamera(nextFacing: "user" | "environment" = facing) {
+    consent.gate(() => startCamera(nextFacing));
+  }
+
+  function openFile() {
+    consent.gate(() => pickFile(fileRef.current));
   }
 
   function clearPickers() {
@@ -590,8 +578,7 @@ export function TryOnApp({
       needPhoto();
       return;
     }
-    const consent = (await recordPhotoConsent()) || "";
-    consentRef.current = consent;
+    const consentId = (await recordPhotoConsent()) || "";
     if (suggestBusy || busy) return;
     setSuggestBusy(true);
     setError("");
@@ -600,7 +587,7 @@ export function TryOnApp({
       const body = new FormData();
       body.set("photo", faceShot.blob, "selfie.jpg");
       body.set("slug", config.slug);
-      body.set("consentId", consent);
+      body.set("consentId", consentId);
       body.set("sessionId", sid || sessionId());
       body.set("gender", gender);
       const res = await fetch("/api/v1/tryon/suggest", { method: "POST", body });
@@ -670,8 +657,7 @@ export function TryOnApp({
     setStylePhase("pick");
     setBusy(true);
     try {
-      const consent = (await recordPhotoConsent()) || "";
-      consentRef.current = consent;
+      const consentId = (await recordPhotoConsent()) || "";
       track("generate_requested", { styleId: chosen.id, tool: chosen.tool });
       const body = new FormData();
       body.set("photo", shot.blob, "selfie.jpg");
@@ -679,7 +665,7 @@ export function TryOnApp({
       body.set("styleId", chosen.id);
       body.set("tool", chosen.tool);
       body.set("quality", "standard");
-      body.set("consentId", consent);
+      body.set("consentId", consentId);
       body.set("sessionId", sid || sessionId());
       body.set("requestId", crypto.randomUUID());
       if (salonToken) body.set("salonToken", salonToken);
@@ -830,12 +816,11 @@ export function TryOnApp({
   ];
   const visibleTools = tools.filter((item) => item.on);
 
-  const bar = headerBarColor(config.primaryColor);
   const platformLogo = isPlatformLogo(config.logoUrl);
 
   return (
     <div data-salon-mode={salonMode ? "yes" : "no"} className={embed ? "" : "mx-auto max-w-6xl px-4 pb-16"}>
-      <header className={`salon-bar sticky top-0 z-20 mb-6 px-4 ${embed ? "" : "-mx-4"}`} style={{ background: bar }}>
+      <header className={`salon-bar header-metal sticky top-0 z-20 mb-6 px-4 ${embed ? "" : "-mx-4"}`}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-white">
@@ -862,7 +847,52 @@ export function TryOnApp({
           </div>
         </div>
       </header>
-
+      <ConsentSheet open={consent.open} onAgree={() => { track("consent_accepted", { lang }); void consent.agree(); }} onClose={consent.close} />
+      {cameraOn && (
+        <LiveStudio
+          videoRef={videoRef}
+          ready={cameraReady}
+          facing={facing}
+          guide={tool === "nails" ? "hand" : "face"}
+          zoom={zoom}
+          onZoom={setZoom}
+          onBack={() => { setZoom(1); stopCamera(); }}
+          onClose={() => { setZoom(1); stopCamera(); }}
+          onShutter={() => shutter()}
+          onRetake={() => { setZoom(1); startCamera(tool === "nails" ? "environment" : "user"); }}
+          onUpload={() => { stopCamera(); openFile(); }}
+          onDownload={active ? () => void downloadLook() : undefined}
+          canDownload={Boolean(active)}
+          makeup={tool === "colour" && modelStatus !== "error" ? (
+            <div className="absolute inset-0">
+              <ColourStage
+                video={videoEl}
+                image={null}
+                shade={shade}
+                intensity={intensity}
+                mirror={facing === "user"}
+                onStatus={setModelStatus}
+              />
+            </div>
+          ) : null}
+        />
+      )}
+      {showBridal && showEveryday && (
+        <div className="mb-4 grid grid-cols-2 gap-3">
+          <button type="button" className={`card min-h-24 p-3 text-left ${section === "everyday" ? "ring-2 ring-[var(--brand)]" : ""}`} aria-pressed={section === "everyday"} aria-label="Everyday" onClick={() => setSection("everyday")}>
+            <span className="block text-xs text-muted" aria-hidden="true">Hair, colour, brows</span>
+            <span className="block font-serif text-2xl leading-tight" aria-hidden="true">Everyday</span>
+          </button>
+          <button type="button" className={`card min-h-24 p-3 text-left ${section === "bridal" ? "ring-2 ring-[var(--brand)]" : ""}`} aria-pressed={section === "bridal"} aria-label="Bridal" onClick={() => setSection("bridal")}>
+            <span className="block text-xs text-muted" aria-hidden="true">Hair, makeup, jewellery</span>
+            <span className="block font-serif text-2xl leading-tight" aria-hidden="true">Bridal</span>
+          </button>
+        </div>
+      )}
+      {section === "bridal" && showBridal ? <>
+      {showQueue ? <p className="mb-3"><a className="btn secondary" href={`/s/${config.slug}/queue`}>{t(lang, "queueJoinLook")}</a></p> : null}
+      <BridalFlow config={config} />
+      </> : <>
       <h2 className="page-title">{t(lang, "pageTitle")}</h2>
       {showQueue ? <p className="mt-3"><a className="btn secondary" href={`/s/${config.slug}/queue`}>{t(lang, "queueJoinLook")}</a></p> : null}
 
@@ -897,46 +927,54 @@ export function TryOnApp({
         {(busy || showResult) && <div className="ai-photo-spin" aria-hidden="true" />}
         <div className={busy || showResult ? "ai-photo-inner" : "contents"}>
         {showResult && active ? (
-          <div>
-            <BeforeAfter
-              before={active.before}
-              after={active.after}
-              beforeLabel={t(lang, "before")}
-              afterLabel={t(lang, "after")}
-              alignMode={active.alignMode}
-              eyeDelta={active.eyeDelta}
+          <div className="relative overflow-hidden">
+            <div style={{ transform: `scale(${zoom})` }}>
+              {compareOn ? (
+                <BeforeAfter
+                  before={active.before}
+                  after={active.after}
+                  beforeLabel={t(lang, "before")}
+                  afterLabel={t(lang, "after")}
+                  alignMode={active.alignMode}
+                  eyeDelta={active.eyeDelta}
+                />
+              ) : (
+                <img src={active.after} alt="" className="w-full" />
+              )}
+            </div>
+            <StudioRail
+              onRetake={() => openCamera(tool === "nails" ? "environment" : "user")}
+              onZoomIn={() => setZoom((value) => Math.min(2, Math.round((value + 0.25) * 100) / 100))}
+              onZoomOut={() => setZoom((value) => Math.max(1, Math.round((value - 0.25) * 100) / 100))}
+              onCompare={() => setCompareOn((value) => !value)}
+              compareOn={compareOn}
+              onDownload={() => void downloadLook()}
+              canDownload
             />
           </div>
         ) : (
-          <div className="relative aspect-[3/4]">
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              autoPlay
-              onLoadedData={() => {
-                if ((videoRef.current?.videoWidth || 0) > 0) setCameraReady(true);
-              }}
-              className={cameraOn ? "absolute inset-0 h-full w-full object-cover" : "hidden"}
-              style={facing === "user" ? { transform: "scaleX(-1)" } : undefined}
-            />
-            {activeShot && !cameraOn && <img src={activeShot.url} alt="" className="absolute inset-0 h-full w-full object-contain" />}
-            {tool === "colour" && (cameraOn || faceShot) && modelStatus !== "error" && (
+          <div className="relative aspect-[3/4] overflow-hidden">
+            {activeShot && !cameraOn && (
+              <div className="absolute inset-0" style={{ transform: `scale(${zoom})` }}>
+                <img src={activeShot.url} alt="" className="h-full w-full object-contain" />
+              </div>
+            )}
+            {tool === "colour" && !cameraOn && faceShot && modelStatus !== "error" && (
               <div className="absolute inset-0">
                 <ColourStage
-                  video={cameraOn ? videoEl : null}
-                  image={!cameraOn ? faceShot?.el ?? null : null}
+                  video={null}
+                  image={faceShot.el}
                   shade={shade}
                   intensity={intensity}
-                  mirror={cameraOn && facing === "user"}
+                  mirror={false}
                   onStatus={setModelStatus}
                 />
               </div>
             )}
             {!cameraOn && !activeShot && (
               <div className="absolute inset-0 grid content-center justify-items-center gap-3 px-6">
-                <button className="btn min-w-44" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, tool === "nails" ? "takeHand" : "takeSelfie")}</button>
-                <button className="btn secondary min-w-44" type="button" onClick={() => pickFile(fileRef.current)}>{t(lang, tool === "nails" ? "uploadHandPhoto" : "uploadPhoto")}</button>
+                <button className="btn sheen min-w-44" type="button" onClick={() => openCamera(tool === "nails" ? "environment" : "user")}>{t(lang, tool === "nails" ? "takeHand" : "takeSelfie")}</button>
+                <button className="btn secondary min-w-44" type="button" onClick={() => openFile()}>{t(lang, tool === "nails" ? "uploadHandPhoto" : "uploadPhoto")}</button>
                 <p className="max-w-xs text-center text-sm text-muted">
                   {t(lang, "privacyLine")}.{" "}
                   <a className="underline" href="/privacy">Details</a>
@@ -944,28 +982,16 @@ export function TryOnApp({
                 {cameraError && <p className="text-center text-sm text-[var(--bad)]" role="alert">{cameraError}</p>}
               </div>
             )}
-            {cameraOn && (
-              <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-3 bg-[#3E304B]/85 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
-                <button className="h-[4.5rem] w-[4.5rem] rounded-full border-[5px] border-white/50 bg-white disabled:opacity-50" type="button" aria-label={t(lang, "takePhoto")} disabled={!cameraReady} onClick={() => void shutter()} />
-                <div className="flex flex-wrap justify-center gap-2">
-                  <button
-                    className="btn on-photo"
-                    type="button"
-                    onClick={() => {
-                      stopCamera();
-                      pickFile(fileRef.current);
-                    }}
-                  >
-                    {t(lang, "uploadInstead")}
-                  </button>
-                  <button className="btn on-photo" type="button" onClick={() => stopCamera()}>{t(lang, "back")}</button>
-                </div>
-              </div>
-            )}
             {activeShot && !cameraOn && (
-              <div className="absolute inset-x-0 bottom-4 z-10 flex justify-center gap-2">
-                <button className="btn on-photo" type="button" onClick={() => void startCamera(tool === "nails" ? "environment" : "user")}>{t(lang, "retake")}</button>
-              </div>
+              <StudioRail
+                onRetake={() => openCamera(tool === "nails" ? "environment" : "user")}
+                onZoomIn={() => setZoom((value) => Math.min(2, Math.round((value + 0.25) * 100) / 100))}
+                onZoomOut={() => setZoom((value) => Math.max(1, Math.round((value - 0.25) * 100) / 100))}
+                onCompare={() => setCompareOn((value) => !value)}
+                compareOn={compareOn}
+                onDownload={() => void downloadLook()}
+                canDownload={Boolean(active)}
+              />
             )}
             {busy && (
               <div className="absolute inset-0 z-20 grid place-items-center bg-[#3E304B]/80 px-6 text-center text-white" role="status">
@@ -1074,15 +1100,12 @@ export function TryOnApp({
         {tool === "style" && (
           <>
             <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Style audience">
-              {config.showWomen && <button className="chip" type="button" aria-pressed={gender === "women"} onClick={() => { setStyleGroup("all"); chooseGender("women"); }}>{t(lang, "women")}</button>}
+              {config.showWomen && <button className="chip" type="button" aria-pressed={gender === "women"} onClick={() => chooseGender("women")}>{t(lang, "women")}</button>}
               {config.showMen && <button className="chip" type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
               {config.showKids && <button className="chip" type="button" aria-pressed={gender === "kids"} onClick={() => chooseGender("kids")}>{t(lang, "kids")}</button>}
             </div>
-            {gender === "women" && (
-              <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Style category">
-                <button className="chip" type="button" aria-pressed={styleGroup === "bridal"} onClick={() => setStyleGroup("bridal")}>Bridal</button>
-                <button className="chip" type="button" aria-pressed={styleGroup === "all"} onClick={() => setStyleGroup("all")}>All styles</button>
-              </div>
+            {gender === "women" && showBridal && (
+              <p className="mb-4 text-sm"><button className="underline" type="button" onClick={() => setSection("bridal")}>See full bridal looks</button></p>
             )}
             <HairTypePicker
               pickerOn={config.hairPickerOn}
@@ -1180,6 +1203,7 @@ export function TryOnApp({
         )}
       </section>
       </div>
+      </>}
       {demoHint && <p className="mt-8 text-center text-xs text-muted">Demo preview</p>}
       {config.poweredBy && (
         <p className="mt-10 flex items-center justify-center gap-2 text-xs text-muted">

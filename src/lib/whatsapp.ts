@@ -29,6 +29,20 @@ export function buildWhatsAppText(input: WhatsAppInput) {
   return input.lookUrl ? `${intro} ${input.lookUrl}` : intro;
 }
 
+export function buildBridalTrialText(input: {
+  name: string;
+  eventLabel: string;
+  eventDate: string;
+  looks: string[];
+  urls: string[];
+}) {
+  const who = input.name.trim() ? `${input.name.trim()}: ` : "";
+  const looks = input.looks.filter(Boolean).join(", ") || "a bridal look";
+  const links = input.urls.filter(Boolean).join(" ");
+  const core = `Hi! ${who}I'd like a bridal trial for my ${input.eventLabel} on ${input.eventDate}. Looks: ${looks}.`;
+  return links ? `${core} ${links}` : core;
+}
+
 export function buildWhatsAppLink(input: WhatsAppInput) {
   const phone = normalizeWhatsAppPhone(input.phone);
   const text = buildWhatsAppText(input);
