@@ -7,8 +7,23 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prisma
+          POSTGRES_PASSWORD: prisma
+          POSTGRES_DB: lookuvi_shadow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U prisma -d lookuvi_shadow"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       DATABASE_URL: file:./test.db
+      SHADOW_DATABASE_URL: postgresql://prisma:prisma@localhost:5432/lookuvi_shadow
       AUTH_SECRET: ci-secret-not-for-production
       AI_PROVIDER: mock
       BILLING_PROVIDER: mock

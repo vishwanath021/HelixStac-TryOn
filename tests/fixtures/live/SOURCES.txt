@@ -1,0 +1,8 @@
+Upright live-look fixtures. Built by scripts/build-live-fixtures.mjs from the
+synthetic catalogue portraits in public/styles. Those files were generated for
+this repo. They are not customer photos and were not downloaded from the web.
+
+| File | Subject | Source |
+|---|---|---|
+| woman-long-dark.jpg | Young woman, long dark hair, no headscarf, upright | public/styles/sleek-straight.jpg |
+| man-beard-dark.jpg | Young man, dark hair and a beard, upright | public/styles/bro-flow.jpg |

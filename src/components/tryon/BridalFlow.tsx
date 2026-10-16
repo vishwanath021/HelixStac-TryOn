@@ -26,8 +26,44 @@ import {
   type BridalEventId,
   type BridalStyleId,
 } from "@/data/bridal";
+import { t } from "@/data/i18n";
 import { guestSessionId } from "@/lib/guest-session";
 import type { SalonConfig } from "@/lib/salon";
+
+function EyeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M1.5 8s2.4-3.5 6.5-3.5S14.5 8 14.5 8 12.1 11.5 8 11.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="8" cy="8" r="1.4" fill="currentColor" />
+    </svg>
+  );
+}
+
+function LashIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2 10.5c2-3 4-4.2 6-4.2s4 1.2 6 4.2" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M4 9.2 3.2 6.4M8 8.2V5.2M12 9.2l.8-2.8" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function BlushIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="5" cy="8.5" r="2.2" fill="currentColor" opacity="0.9" />
+      <circle cx="11" cy="8.5" r="2.2" fill="currentColor" opacity="0.9" />
+    </svg>
+  );
+}
+
+function BrowIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2 9.5c1.6-2.4 3.2-3.2 4.6-2.4 1.2.7 2.2.2 3.4-1.4C11.2 4.2 12.6 4 14 5.2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 type SavedLook = {
   id: string;
@@ -76,7 +112,7 @@ async function blobUrlToData(url: string) {
   });
 }
 
-export function BridalFlow({ config }: { config: SalonConfig }) {
+export function BridalFlow({ config, showQueue = false }: { config: SalonConfig; showQueue?: boolean }) {
   const [eventId, setEventId] = useState<BridalEventId>("wedding");
   const [panel, setPanel] = useState<"looks" | "mehendi" | "saved">("looks");
   const [lookStyle, setLookStyle] = useState<BridalStyleId>(defaultBridalStyle(BRIDAL_LOOKS));
@@ -108,6 +144,8 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
   const bridalFile = useRef<HTMLInputElement>(null);
   const mehendiFile = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const faceBox = useRef<HTMLDivElement>(null);
+  const handBox = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const consent = usePhotoConsent(config.slug, config.defaultLang || "en");
   const [kajal, setKajal] = useState(true);
@@ -317,6 +355,7 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
         setZoom(1);
         setLive(kind);
       });
+      (kind === "hand" ? handBox : faceBox).current?.scrollIntoView({ block: "center" });
       void pending.then(async (stream) => {
         const video = videoRef.current;
         if (!video) {
@@ -427,42 +466,7 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
   return (
     <div data-bridal="flow" data-busy={busy ? "yes" : "no"}>
       <ConsentSheet open={consent.open} onAgree={() => void consent.agree()} onClose={consent.close} />
-      {live && (
-        <LiveStudio
-          videoRef={videoRef}
-          ready={camReady}
-          facing={live === "hand" ? "environment" : "user"}
-          guide={live === "hand" ? "hand" : "face"}
-          zoom={zoom}
-          onZoom={setZoom}
-          onBack={stopLive}
-          onClose={stopLive}
-          onShutter={captureLive}
-          onRetake={() => beginLive(live)}
-          onUpload={() => {
-            const kind = live;
-            stopLive();
-            (kind === "hand" ? mehendiFile : bridalFile).current?.click();
-          }}
-          makeup={live === "face" ? (
-            <MakeupStage video={camReady ? videoRef.current : null} lip={lipHex} kajal={kajal} lashes={lashes} blush={blushOn} brow={browOn} />
-          ) : null}
-          footer={live === "face" ? (
-            <div className="flex max-w-full gap-2 overflow-x-auto pb-1 pr-16" role="group" aria-label="Live makeup">
-              {BRIDAL_LIPS.map((lip) => (
-                <button key={lip.id} type="button" aria-pressed={lipId === lip.id} className="chip shrink-0" onClick={() => setLipId(lip.id)}>
-                  <span className="h-4 w-4 rounded-full" style={{ background: lip.hex }} aria-hidden="true" />
-                  {lip.name}
-                </button>
-              ))}
-              <button className="chip shrink-0" type="button" aria-pressed={kajal} onClick={() => setKajal((value) => !value)}>Kajal</button>
-              <button className="chip shrink-0" type="button" aria-pressed={lashes} onClick={() => setLashes((value) => !value)}>Lashes</button>
-              <button className="chip shrink-0" type="button" aria-pressed={blushOn} onClick={() => setBlushOn((value) => !value)}>Blush</button>
-              <button className="chip shrink-0" type="button" aria-pressed={browOn} onClick={() => setBrowOn((value) => !value)}>Brows</button>
-            </div>
-          ) : null}
-        />
-      )}
+      {showQueue ? <p className="mb-3"><a className="btn secondary" href={`/s/${config.slug}/queue`}>{t(config.defaultLang || "en", "queueJoinLook")}</a></p> : null}
       <h2 className="page-title">Bridal</h2>
       <p className="mt-1 text-sm text-muted">Hair, makeup, and jewellery in one look. Then mehendi, and a trial with the salon.</p>
       <div className="seg mt-4" role="tablist" aria-label="Bridal">
@@ -489,14 +493,53 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
           <div data-step="selfie">
             <p className="mb-2 text-sm font-medium">5. Your selfie</p>
             <p className="mb-2 text-sm">Face the light. Keep your whole face inside the outline. No sunglasses.</p>
-            <div className="relative mx-auto aspect-[3/4] max-h-[420px] max-w-sm overflow-hidden rounded-2xl bg-[#F3E6D8]">
-              {face ? <img src={face.url} alt="Your selfie" className="h-full w-full object-cover" /> : <p className="grid h-full place-items-center px-6 text-center text-sm">Upload a selfie to see this look on you.</p>}
-              <div className="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
-                <div className="h-[68%] w-[56%] rounded-[50%] border-2 border-white/90 shadow-sm" />
-              </div>
+            <div ref={faceBox} className="relative mx-auto aspect-[3/4] max-h-[520px] w-full max-w-sm overflow-hidden rounded-2xl bg-[#F3E6D8]">
+              {live === "face" ? (
+                <LiveStudio
+                  videoRef={videoRef}
+                  ready={camReady}
+                  facing="user"
+                  guide="face"
+                  zoom={zoom}
+                  onZoom={setZoom}
+                  onBack={stopLive}
+                  onClose={stopLive}
+                  onShutter={captureLive}
+                  onRetake={() => beginLive("face")}
+                  makeup={<MakeupStage video={camReady ? videoRef.current : null} lip={lipHex} kajal={kajal} lashes={lashes} blush={blushOn} brow={browOn} />}
+                  footer={(
+                    <div className="live-row" role="group" aria-label="Live makeup">
+                      <button className="live-pill" type="button" aria-pressed={kajal} aria-label="Kajal" onClick={() => setKajal((value) => !value)}>
+                        <EyeIcon />
+                      </button>
+                      <button className="live-pill" type="button" aria-pressed={lashes} aria-label="Lashes" onClick={() => setLashes((value) => !value)}>
+                        <LashIcon />
+                      </button>
+                      <button className="live-pill" type="button" aria-pressed={blushOn} aria-label="Blush" onClick={() => setBlushOn((value) => !value)}>
+                        <BlushIcon />
+                      </button>
+                      <button className="live-pill" type="button" aria-pressed={browOn} aria-label="Brows" onClick={() => setBrowOn((value) => !value)}>
+                        <BrowIcon />
+                      </button>
+                      <span className="mx-0.5 h-5 w-px shrink-0 self-center bg-white/35" aria-hidden="true" />
+                      {BRIDAL_LIPS.map((lip) => (
+                        <button key={lip.id} type="button" aria-pressed={lipId === lip.id} aria-label={lip.name} className="live-dot" style={{ background: lip.hex }} onClick={() => setLipId(lip.id)} />
+                      ))}
+                    </div>
+                  )}
+                />
+              ) : (
+                <>
+                  {face ? <img src={face.url} alt="Your selfie" className="h-full w-full object-cover" /> : null}
+                  <div className="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
+                    <div className="h-[68%] w-[56%] rounded-[50%] border-2 border-white/90 shadow-sm" />
+                  </div>
+                </>
+              )}
             </div>
+            {face || live === "face" ? null : <p className="mx-auto mt-3 max-w-sm text-center text-sm">Upload a selfie to see this look on you.</p>}
             <div className="mt-3 grid gap-2">
-              <button className={result ? "btn btn-gold" : "btn btn-gold sheen"} type="button" onClick={() => beginLive("face")}>Live makeup</button>
+              {live === "face" ? null : <button className={result ? "btn" : "btn sheen"} type="button" onClick={() => beginLive("face")}>Live makeup</button>}
               <button className="btn secondary" type="button" onClick={() => consent.gate(() => bridalFile.current?.click())}>Use photo</button>
               <input ref={bridalFile} className="sr-only" type="file" accept="image/*" data-photo="bridal" onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -517,10 +560,23 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
         <div className="mt-4 grid gap-4">
           <PhotoGrid step="mehendi" label="Mehendi" group="Mehendi" styles={bridalStylesFor(MEHENDI_CARDS)} style={mehendiCategory} onStyle={chooseMehendiCategory} items={mehendiCards} value={mehendiCardId} onChange={pickMehendi} />
           <p className="text-sm">Hold your hand flat in good light. Fill the photo with your palm.</p>
-          <div className="relative mx-auto aspect-[3/4] max-h-[360px] max-w-sm overflow-hidden rounded-2xl bg-[#F3E6D8]">
-            {hand ? <img src={hand.url} alt="Your hand" className="h-full w-full object-cover" /> : <p className="grid h-full place-items-center px-6 text-center text-sm">Upload a photo of your hand.</p>}
+          <div ref={handBox} className="relative mx-auto aspect-[3/4] max-h-[520px] w-full max-w-sm overflow-hidden rounded-2xl bg-[#F3E6D8]">
+            {live === "hand" ? (
+              <LiveStudio
+                videoRef={videoRef}
+                ready={camReady}
+                facing="environment"
+                guide="hand"
+                zoom={zoom}
+                onZoom={setZoom}
+                onBack={stopLive}
+                onClose={stopLive}
+                onShutter={captureLive}
+                onRetake={() => beginLive("hand")}
+              />
+            ) : hand ? <img src={hand.url} alt="Your hand" className="h-full w-full object-cover" /> : <p className="grid h-full place-items-center px-6 text-center text-sm">Upload a photo of your hand.</p>}
           </div>
-          <button className={mehendiDone ? "btn" : "btn sheen"} type="button" onClick={() => beginLive("hand")}>Live mehendi</button>
+          {live === "hand" ? null : <button className={mehendiDone ? "btn" : "btn sheen"} type="button" onClick={() => beginLive("hand")}>Live mehendi</button>}
           <button className="btn secondary" type="button" onClick={() => consent.gate(() => mehendiFile.current?.click())}>Use photo</button>
           <input ref={mehendiFile} className="sr-only" type="file" accept="image/*" data-photo="mehendi" onChange={(event) => {
             const file = event.target.files?.[0];
@@ -635,7 +691,7 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
             <label className="text-sm">Event date
               <input className="field mt-1" type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} required />
             </label>
-            <button className="btn btn-gold sheen" type="submit">Book bridal trial</button>
+            <button className="btn sheen" type="submit">Book bridal trial</button>
             {bookNote && <p className="text-sm" role="status">{bookNote}</p>}
           </form>
         </div>
@@ -644,7 +700,7 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
   );
 }
 
-function PhotoGrid({ step, label, hint, group, styles, style, onStyle, items, value, onChange }: { step: string; label: string; hint?: string; group: string; styles: { id: BridalStyleId; label: string }[]; style: BridalStyleId; onStyle: (id: BridalStyleId) => void; items: { id: string; name: string }[]; value: string; onChange: (id: string) => void }) {
+function PhotoGrid({ step, label, hint, group, styles, style, onStyle, items, value, onChange }: { step: string; label: string; hint?: string; group: string; styles: { id: BridalStyleId; label: string }[]; style: BridalStyleId; onStyle: (id: BridalStyleId) => void; items: { id: string; name: string; image: boolean }[]; value: string; onChange: (id: string) => void }) {
   return (
     <div data-step={step}>
       <p className="mb-2 text-sm font-medium">{label}</p>
@@ -657,11 +713,11 @@ function PhotoGrid({ step, label, hint, group, styles, style, onStyle, items, va
         </div>
       )}
       <div className="grid grid-cols-2 gap-3" role="list" aria-label={group}>
-        {items.map((item) => (
+        {items.map((item, index) => (
           <div key={item.id} role="listitem">
-            <button type="button" aria-pressed={item.id === value} className={`w-full overflow-hidden rounded-[14px] border bg-white text-left shadow-sm ${item.id === value ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => onChange(item.id)}>
-              <BridalLookCard id={item.id} name={item.name} />
-              <span className="block px-2 py-2 text-sm font-medium leading-snug">{item.name}</span>
+            <button type="button" aria-pressed={item.id === value} className={`w-full overflow-hidden rounded-[14px] border bg-[#F3E6D8] text-left shadow-sm ${item.id === value ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => onChange(item.id)}>
+              <BridalLookCard id={item.id} name={item.name} image={item.image} priority={index < 2} />
+              <span className="block bg-white px-2 py-2 text-sm font-medium leading-snug">{item.name}</span>
             </button>
           </div>
         ))}

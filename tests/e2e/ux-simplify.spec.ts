@@ -33,13 +33,15 @@ test("bridal is its own section and the hair styles stay in the gallery", async 
   await expect(page.getByRole("button", { name: "Bridal", exact: true })).toBeVisible();
   const gallery = page.getByRole("region", { name: "Styles" });
   await expect(gallery.getByRole("button", { name: "Bridal", exact: true })).toHaveCount(0);
-  await gallery.getByRole("button", { name: "See full bridal looks" }).click();
+  await expect(page.getByRole("button", { name: "See full bridal looks" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Bridal", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Bridal", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Telugu Muhurtham Classic" })).toBeVisible();
   await page.getByRole("button", { name: "Everyday", exact: true }).click();
   await gallery.getByRole("button", { name: "Women", exact: true }).click();
-  await expect(gallery.getByRole("button", { name: "Bridal Bun" })).toBeVisible();
-  await expect(gallery.getByRole("button", { name: "South-Indian Bridal Braid" })).toBeVisible();
+  for (const look of ["Bridal Bun", "Braided Updo", "Side-Swept Curls", "Half-Up with Flowers", "South-Indian Bridal Braid"]) {
+    await expect(gallery.getByRole("button", { name: look })).toHaveCount(0);
+  }
   await expect(gallery.getByRole("button", { name: "Curtain Wolf" })).toHaveCount(0);
   await expect(gallery.getByRole("button", { name: "Wolf Cut" })).toBeVisible();
   await expect(gallery.getByRole("button", { name: "Voluminous Blowout" }).locator("img")).toHaveAttribute("src", /voluminous-blowout\.jpg/);

@@ -10,6 +10,9 @@ const chromiumCamera = {
       "--use-fake-device-for-media-stream",
       "--use-fake-ui-for-media-stream",
       `--use-file-for-fake-video-capture=${fakeCamera}`,
+      "--enable-unsafe-swiftshader",
+      "--use-gl=angle",
+      "--use-angle=swiftshader",
     ],
   },
 };

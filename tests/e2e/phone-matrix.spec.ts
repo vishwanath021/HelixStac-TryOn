@@ -98,8 +98,10 @@ test("guest: upload, every tab including bridal, generate, before/after, save, a
   await expect(page.getByRole("button", { name: "Bridal", exact: true })).toBeVisible();
   await gallery.getByRole("button", { name: "Women", exact: true }).click();
   for (const look of ["Bridal Bun", "Braided Updo", "Side-Swept Curls", "Half-Up with Flowers", "South-Indian Bridal Braid"]) {
-    await expect(gallery.getByRole("button", { name: look })).toBeVisible();
+    await expect(gallery.getByRole("button", { name: look })).toHaveCount(0);
   }
+  await expect(gallery.getByRole("button", { name: "Wolf Cut" })).toBeVisible();
+  await expect(gallery.getByRole("button", { name: "Soft Bob" })).toBeVisible();
 
   await previewLook(page, "Soft Bob");
   await expect(page.getByRole("slider", { name: /BEFORE \/ AFTER/i })).toBeVisible();

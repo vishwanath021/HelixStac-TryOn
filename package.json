@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "db:push": "node scripts/prepare-prisma.mjs && prisma db push",
+    "db:drift": "node scripts/check-schema-drift.mjs",
     "db:generate": "prisma generate",
     "seed": "tsx prisma/seed.ts",
     "admin:create": "node scripts/create-super-admin.mjs",

@@ -10,6 +10,8 @@ export type BridalLook = {
   name: string;
   region: string;
   style: BridalStyleId;
+  /** False skips the photo request. Hair has no file yet, so it must stay false. */
+  image: boolean;
   blurb: string;
   prompt: string;
   events: BridalEventId[];
@@ -19,6 +21,7 @@ export type BridalMakeup = {
   id: string;
   name: string;
   style: BridalStyleId;
+  image: boolean;
   lipId: string;
   finishId: string;
   prompt: string;
@@ -28,6 +31,7 @@ export type BridalHair = {
   id: string;
   name: string;
   style: BridalStyleId;
+  image: boolean;
   prompt: string;
 };
 
@@ -35,6 +39,7 @@ export type MehendiCard = {
   id: string;
   name: string;
   style: BridalStyleId;
+  image: boolean;
   styleId: string;
   coverageId: string;
   shadeId: string;
@@ -65,6 +70,7 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     name: "Telugu Muhurtham Classic",
     region: "Telugu",
     style: "temple",
+    image: true,
     blurb: "Red and green pattu, temple gold, sleek low bun",
     prompt: "Telugu muhurtham bride in a red and green silk pattu saree, temple gold necklace, nethichutti, jhumkas, round red bindi, and a sleek low bun with a centre parting and soft volume at the crown",
     events: ["wedding"],
@@ -74,6 +80,7 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     name: "Telangana Gadwal Bride",
     region: "Telugu",
     style: "temple",
+    image: true,
     blurb: "Green Gadwal saree, coin necklace, sleek bun",
     prompt: "Telangana bride in a green Gadwal silk saree with a red-gold border, long gold coin necklace, nose ring, jhumkas, and a sleek low bun with soft volume at the crown",
     events: ["wedding"],
@@ -83,6 +90,7 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     name: "Andhra Uppada Bride",
     region: "Telugu",
     style: "temple",
+    image: true,
     blurb: "Peach Uppada silk, coin braid, temple gold",
     prompt: "Andhra bride in a peach-gold Uppada silk saree, maang tikka, coin necklace, jhumkas, and a textured side bun",
     events: ["wedding"],
@@ -92,6 +100,7 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     name: "Pellikuthuru Haldi",
     region: "Telugu",
     style: "temple",
+    image: true,
     blurb: "Yellow saree, turmeric marks, sleek bun",
     prompt: "Telugu pellikuthuru at haldi, yellow saree, turmeric marks on the cheeks, a sleek low bun, and floral jewellery",
     events: ["haldi"],
@@ -101,6 +110,7 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     name: "Telugu Sangeet Glam",
     region: "Telugu",
     style: "temple",
+    image: true,
     blurb: "Magenta embroidery, open waves, chandelier earrings",
     prompt: "Telugu sangeet look, magenta blouse with gold floral embroidery, open waves, chandelier earrings, and a smoky eye",
     events: ["sangeet", "engagement", "mehendi"],
@@ -110,6 +120,7 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     name: "Telugu Reception Modern",
     region: "Telugu",
     style: "temple",
+    image: true,
     blurb: "Champagne saree, diamonds, open waves",
     prompt: "Telugu reception look, champagne embroidered saree, diamond necklace and earrings, open waves, and a polished evening finish",
     events: ["reception", "engagement"],
@@ -121,6 +132,7 @@ export const BRIDAL_MAKEUP: BridalMakeup[] = [
     id: "makeup-classic-red",
     name: "Classic Red",
     style: "temple",
+    image: true,
     lipId: "red",
     finishId: "hd",
     prompt: "Makeup: classic bridal red lip, even HD base, kohl, and a round red bindi.",
@@ -129,6 +141,7 @@ export const BRIDAL_MAKEUP: BridalMakeup[] = [
     id: "makeup-maroon",
     name: "Maroon Matte",
     style: "temple",
+    image: true,
     lipId: "maroon",
     finishId: "matte",
     prompt: "Makeup: maroon matte lip, matte skin, and a defined eye.",
@@ -137,6 +150,7 @@ export const BRIDAL_MAKEUP: BridalMakeup[] = [
     id: "makeup-nude-rose",
     name: "Nude-Rose Dewy",
     style: "temple",
+    image: true,
     lipId: "nude-rose",
     finishId: "dewy",
     prompt: "Makeup: nude-rose lip, dewy skin, and a soft glow.",
@@ -145,6 +159,7 @@ export const BRIDAL_MAKEUP: BridalMakeup[] = [
     id: "makeup-reception-glam",
     name: "Reception Glam",
     style: "temple",
+    image: true,
     lipId: "berry",
     finishId: "glam",
     prompt: "Makeup: reception glam with a gold smoky eye, lashes, and a deep berry lip.",
@@ -156,18 +171,21 @@ export const BRIDAL_HAIR: BridalHair[] = [
     id: "hair-sleek-low-bun",
     name: "Sleek low bun",
     style: "temple",
+    image: false,
     prompt: "Hairstyle to add: a sleek low bun with a clean centre parting, a matha patti along the hairline, and soft volume at the crown. Keep the hair free of flowers.",
   },
   {
     id: "hair-textured-side-bun",
     name: "Textured side bun",
     style: "temple",
+    image: false,
     prompt: "Hairstyle to add: a textured side bun with a soft side parting, a maang tikka, and a little height at the crown. Keep the hair free of flowers.",
   },
   {
     id: "hair-volume-updo",
     name: "Volume updo with matha patti",
     style: "temple",
+    image: false,
     prompt: "Hairstyle to add: a volume updo with a centre parting, a matha patti, and soft crown volume. Keep the hair free of flowers.",
   },
 ];
@@ -197,8 +215,8 @@ export const MEHENDI_STYLES: MehendiOption[] = [
 ];
 
 export const MEHENDI_CARDS: MehendiCard[] = [
-  { id: "mehendi-bridal", name: "Full traditional bridal", style: "temple", styleId: "bridal", coverageId: "full", shadeId: "maroon", densityId: "heavy" },
-  { id: "mehendi-simple", name: "Light modern", style: "temple", styleId: "simple", coverageId: "palm", shadeId: "brown", densityId: "light" },
+  { id: "mehendi-bridal", name: "Full traditional bridal", style: "temple", image: true, styleId: "bridal", coverageId: "full", shadeId: "maroon", densityId: "heavy" },
+  { id: "mehendi-simple", name: "Light modern", style: "temple", image: true, styleId: "simple", coverageId: "palm", shadeId: "brown", densityId: "light" },
 ];
 
 export const MEHENDI_COVERAGE: MehendiOption[] = [

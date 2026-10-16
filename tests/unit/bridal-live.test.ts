@@ -54,6 +54,8 @@ describe("bridal prompt shades", () => {
     expect(bridalHairById("not-a-style")).toBeNull();
     expect(bridalMakeupById("not-a-card")).toBeNull();
     expect(BRIDAL_HAIR.map((item) => item.name)).toEqual(["Sleek low bun", "Textured side bun", "Volume updo with matha patti"]);
+    expect(BRIDAL_HAIR.every((item) => item.image === false)).toBe(true);
+    expect([...BRIDAL_LOOKS, ...BRIDAL_MAKEUP, ...MEHENDI_CARDS].every((item) => item.image)).toBe(true);
   });
 
   it("keeps the supplied photos in Temple and hides an empty Trending chip", () => {
