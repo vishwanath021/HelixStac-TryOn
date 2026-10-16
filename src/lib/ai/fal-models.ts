@@ -335,7 +335,7 @@ const IMAGE_SIZE_ON_MINIMAL = new Set([
   "openai/gpt-image-2/edit",
 ]);
 
-/** JSON body for one edit. image_urls is selfie then the hairstyle reference. Seed, mask, and guidance are omitted. */
+/** JSON body for one edit. image_urls is selfie then the hairstyle reference. Seed, mask, strength, and guidance are omitted. flux-3/edit-image has no strength or guidance field. */
 export function buildFalEditBody(id: string, args: {
   prompt: string;
   selfieUrl: string;

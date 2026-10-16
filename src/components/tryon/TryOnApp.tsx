@@ -6,6 +6,7 @@ import { isPlatformLogo, LookuviMark } from "@/components/brand/LookuviMark";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { guestSessionId } from "@/lib/guest-session";
 import { ConsentSheet } from "@/components/tryon/ConsentSheet";
+import { GeneratingLook } from "@/components/tryon/GeneratingLook";
 import { LiveStudio, StudioRail } from "@/components/tryon/LiveStudio";
 import { usePhotoConsent } from "@/components/tryon/usePhotoConsent";
 import { BrowCard } from "@/components/tryon/BrowCard";
@@ -91,7 +92,7 @@ function firstTool(config: SalonConfig, requested?: string): TryTool {
   return allowed[0] ?? "style";
 }
 
-type BridalPaneProps = { config: SalonConfig; showQueue?: boolean };
+type BridalPaneProps = { config: SalonConfig };
 
 function useBridalPane(active: boolean) {
   const [Pane, setPane] = useState<ComponentType<BridalPaneProps> | null>(null);
@@ -161,7 +162,6 @@ export function TryOnApp({
   const [browColour, setBrowColour] = useState<BrowColour>("natural");
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
   const [busy, setBusy] = useState(false);
-  const [stageMs, setStageMs] = useState(0);
   const [pickedDensity, setPickedDensity] = useState("");
   const [pickedTexture, setPickedTexture] = useState("");
   const [showAllStyles, setShowAllStyles] = useState(false);
@@ -173,7 +173,6 @@ export function TryOnApp({
   const faceRef = useRef<Shot | null>(null);
   const handRef = useRef<Shot | null>(null);
   const pendingLook = useRef<Chosen | null>(null);
-  const [pendingName, setPendingName] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [poseNote, setPoseNote] = useState<PlacementDebug | null>(null);
@@ -224,16 +223,6 @@ export function TryOnApp({
     };
   }, []);
 
-  useEffect(() => {
-    if (!busy) {
-      setStageMs(0);
-      return;
-    }
-    const started = Date.now();
-    const timer = window.setInterval(() => setStageMs(Date.now() - started), 400);
-    return () => window.clearInterval(timer);
-  }, [busy]);
-
   const shade = config.shades.find((item) => item.id === shadeId) ?? null;
   const activeShot = tool === "nails" ? handShot : faceShot;
   const styles = config.styles.filter((style) => style.gender === gender);
@@ -242,8 +231,6 @@ export function TryOnApp({
     ? orderStylesForPicker(styles, { density: pickedDensity, texture: pickedTexture }, showAllStyles)
     : styles;
   const shownStyles = visibleStyles.filter((style) => styleHasPhoto(style.id));
-  const stageCopy = stageMs < 8000 ? t(lang, "stageReading") : stageMs < 22000 ? t(lang, "stageStyling") : t(lang, "stageAlmost");
-  const stagePct = Math.min(92, Math.round((stageMs / 40000) * 100));
   const hairSuggestions = hairReading
     ? suggestStyles(styles, hairReading).flatMap((row) => styleHasPhoto(row.style.id) ? [{
         id: row.style.id,
@@ -584,7 +571,6 @@ export function TryOnApp({
     setSuggestNote("");
     setSuggestCost("");
     setNotice("");
-    setPendingName("");
     frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     void startCamera(tool === "nails" ? "environment" : "user");
   }
@@ -669,7 +655,6 @@ export function TryOnApp({
     pendingLook.current = null;
     setError("");
     setPoseNote(null);
-    setPendingName(chosen.name);
     setStylePhase("pick");
     setBusy(true);
     try {
@@ -831,6 +816,13 @@ export function TryOnApp({
     { id: "beard", label: "Beard", name: t(lang, "beardChip"), on: config.toolBeard, icon: "beard" },
   ];
   const visibleTools = tools.filter((item) => item.on);
+  const queueInActions = showQueue && !bridalOn;
+  const actionItems = [
+    phone ? "book" as const : null,
+    queueInActions ? "queue" as const : null,
+    phone ? "chat" as const : null,
+  ].filter((item): item is "book" | "queue" | "chat" => item !== null);
+  const showActionStrip = showQueue && actionItems.length > 0;
 
   const platformLogo = isPlatformLogo(config.logoUrl);
 
@@ -848,21 +840,31 @@ export function TryOnApp({
             </span>
             <h1 className="min-w-0 flex-1 break-words text-lg leading-tight sm:text-xl">{config.name}</h1>
           </div>
-          <div className="flex gap-2">
-            {phone ? (
-              <>
-                <a className="btn bar-book flex-1 whitespace-nowrap sm:flex-none" href={bookHref} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
-                <a className="btn bar-chat flex-1 whitespace-nowrap sm:flex-none" href={chatHref} target="_blank" rel="noreferrer">
-                  <WhatsAppGlyph />
-                  {t(lang, "whatsappBtn")}
-                </a>
-              </>
-            ) : (
-              <p className="max-w-xs text-sm leading-snug">{t(lang, "whatsappMissing")}</p>
-            )}
-          </div>
+          {phone && !showActionStrip ? (
+            <div className="flex gap-2">
+              <a className="btn bar-book flex-1 whitespace-nowrap sm:flex-none" href={bookHref} target="_blank" rel="noreferrer">{t(lang, "bookNow")}</a>
+              <a className="btn bar-chat flex-1 whitespace-nowrap sm:flex-none" href={chatHref} target="_blank" rel="noreferrer">
+                <WhatsAppGlyph />
+                {t(lang, "whatsappBtn")}
+              </a>
+            </div>
+          ) : !phone ? (
+            <p className="max-w-xs text-sm leading-snug">{t(lang, "whatsappMissing")}</p>
+          ) : null}
         </div>
       </header>
+      {showActionStrip ? (
+        <SalonActions
+          embed={embed}
+          items={actionItems}
+          bookHref={bookHref}
+          chatHref={chatHref}
+          queueHref={`/s/${config.slug}/queue`}
+          bookLabel={t(lang, "bookNow")}
+          chatLabel={t(lang, "whatsappBtn")}
+          queueLabel={t(lang, "queueJoinLook")}
+        />
+      ) : null}
       <ConsentSheet open={consent.open} onAgree={() => { track("consent_accepted", { lang }); void consent.agree(); }} onClose={consent.close} />
       <div data-scroll="salon" className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-16 pt-6">
       {showBridal && showEveryday && (
@@ -881,10 +883,9 @@ export function TryOnApp({
         </div>
       )}
       {bridalOn && !showEveryday && !BridalPane ? <p className="mt-2 text-sm text-muted">Opening bridal looks…</p> : null}
-      {bridalOn && BridalPane ? <BridalPane config={config} showQueue={showQueue} /> : null}
+      {bridalOn && BridalPane ? <BridalPane config={config} /> : null}
       {bridalOn ? null : <>
       <h2 className="page-title">{t(lang, "pageTitle")}</h2>
-      {showQueue ? <p className="mt-3"><a className="btn secondary" href={`/s/${config.slug}/queue`}>{t(lang, "queueJoinLook")}</a></p> : null}
 
       {visibleTools.length > 1 && (
       <div className="seg-fade mt-4">
@@ -918,7 +919,7 @@ export function TryOnApp({
         <div className={busy || showResult ? "ai-photo-inner" : "contents"}>
         {showResult && active ? (
           <div className="relative overflow-hidden">
-            <div style={{ transform: `scale(${zoom})` }}>
+            <div className={freshGlow ? "gen-reveal" : undefined} style={{ transform: `scale(${zoom})` }}>
               {compareOn ? (
                 <BeforeAfter
                   before={active.before}
@@ -979,7 +980,7 @@ export function TryOnApp({
                 <img src={activeShot.url} alt="" className="h-full w-full object-contain" />
               </div>
             )}
-            {tool === "colour" && !cameraOn && faceShot && modelStatus !== "error" && (
+            {tool === "colour" && !cameraOn && !busy && faceShot && modelStatus !== "error" && (
               <div className="absolute inset-0">
                 <ColourStage
                   video={null}
@@ -1003,7 +1004,7 @@ export function TryOnApp({
                 {cameraError && <p className="text-center text-sm text-[var(--bad)]" role="alert">{cameraError}</p>}
               </div>
             )}
-            {activeShot && !cameraOn && (
+            {activeShot && !cameraOn && !busy && (
               <StudioRail
                 onRetake={() => openCamera(tool === "nails" ? "environment" : "user")}
                 onZoomIn={() => setZoom((value) => Math.min(2, Math.round((value + 0.25) * 100) / 100))}
@@ -1014,24 +1015,7 @@ export function TryOnApp({
                 canDownload={Boolean(active)}
               />
             )}
-            {busy && (
-              <div className="absolute inset-0 z-20 grid place-items-center bg-[#3E304B]/80 px-6 text-center text-white" role="status">
-                <div className="w-full max-w-xs">
-                  <p className="font-serif text-3xl">{stageCopy}</p>
-                  <p className="mt-1 text-sm">{pendingName}</p>
-                  <div
-                    className="mt-4 h-2 overflow-hidden rounded-full bg-white/25"
-                    role="progressbar"
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={stagePct}
-                    aria-label={stageCopy}
-                  >
-                    <div className="h-full bg-white transition-[width] duration-300" style={{ width: `${stagePct}%` }} />
-                  </div>
-                </div>
-              </div>
-            )}
+            {busy && <GeneratingLook tool={tool} />}
           </div>
         )}
         </div>
@@ -1231,6 +1215,47 @@ export function TryOnApp({
       )}
       <p className="mt-6 text-center text-xs text-muted"><a href="/login">Salon login</a></p>
       </div>
+    </div>
+  );
+}
+
+function SalonActions({
+  embed,
+  items,
+  bookHref,
+  chatHref,
+  queueHref,
+  bookLabel,
+  chatLabel,
+  queueLabel,
+}: {
+  embed: boolean;
+  items: Array<"book" | "queue" | "chat">;
+  bookHref: string;
+  chatHref: string;
+  queueHref: string;
+  bookLabel: string;
+  chatLabel: string;
+  queueLabel: string;
+}) {
+  const cols = items.length >= 3 ? "grid-cols-3" : items.length === 2 ? "grid-cols-2" : "grid-cols-1";
+  const width = items.length === 1 ? "sm:max-w-xs" : "sm:max-w-xl";
+  return (
+    <div data-salon-actions="yes" className={`salon-actions grid w-full ${cols} ${width} gap-2 py-3 ${embed ? "px-4" : ""}`}>
+      {items.map((item) => {
+        if (item === "book") {
+          return <a key={item} className="btn h-full w-full" href={bookHref} target="_blank" rel="noreferrer">{bookLabel}</a>;
+        }
+        if (item === "queue") {
+          return <a key={item} className="btn h-full w-full" href={queueHref}>{queueLabel}</a>;
+        }
+        return (
+          <a key={item} className="btn h-full w-full" href={chatHref} target="_blank" rel="noreferrer">
+            <WhatsAppGlyph />
+            {chatLabel}
+          </a>
+        );
+      })}
     </div>
   );
 }

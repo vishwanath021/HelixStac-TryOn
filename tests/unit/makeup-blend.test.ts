@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blushAlpha, eyelinerAt, kajalWidthPx, liveEffectsFor, pointOnLine, type Px } from "@/lib/face/makeup-blend";
+import { BRIDAL_LIVE, EVERYDAY_LIVE, blushAlpha, eyelinerAt, kajalWidthPx, liveEffectsFor, livePreset, pointOnLine, type Px } from "@/lib/face/makeup-blend";
 
 function almond() {
   const upper: Px[] = [];
@@ -92,10 +92,30 @@ describe("eyeliner mask", () => {
 });
 
 describe("kajal width", () => {
-  it("stays between 1px and 2.5px", () => {
+  it("stays between 1px and 2.5px for everyday and widens for bridal", () => {
     expect(kajalWidthPx(40)).toBe(1);
     expect(kajalWidthPx(100)).toBeCloseTo(2, 5);
     expect(kajalWidthPx(200)).toBe(2.5);
+    expect(kajalWidthPx(200, true)).toBe(BRIDAL_LIVE.kajalMax);
+  });
+});
+
+describe("bridal live intensity", () => {
+  it("raises lip, blush, brow, and kajal while everyday stays subtle", () => {
+    expect(livePreset(false)).toEqual(EVERYDAY_LIVE);
+    expect(livePreset(undefined)).toEqual(EVERYDAY_LIVE);
+    expect(BRIDAL_LIVE.lipMix).toBeCloseTo(0.7, 5);
+    expect(BRIDAL_LIVE.blushPeak).toBeCloseTo(0.28, 5);
+    expect(BRIDAL_LIVE.browMix).toBeGreaterThan(EVERYDAY_LIVE.browMix);
+    expect(BRIDAL_LIVE.kajalMix).toBeGreaterThan(EVERYDAY_LIVE.kajalMix);
+    expect(BRIDAL_LIVE.wing).toBeGreaterThan(EVERYDAY_LIVE.wing);
+    expect(EVERYDAY_LIVE.blushPeak).toBeCloseTo(0.18, 5);
+    expect(EVERYDAY_LIVE.lipMix).toBeCloseTo(0.55, 5);
+  });
+
+  it("leaves the eye opening empty even at the bridal stroke width", () => {
+    const { upper, lower, center } = almond();
+    expect(eyelinerAt(center, upper, lower, BRIDAL_LIVE.kajalMax, 28)).toBe(0);
   });
 });
 

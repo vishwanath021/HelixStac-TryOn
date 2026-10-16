@@ -6,3 +6,5 @@ this repo. They are not customer photos and were not downloaded from the web.
 |---|---|---|
 | woman-long-dark.jpg | Young woman, long dark hair, no headscarf, upright | public/styles/sleek-straight.jpg |
 | man-beard-dark.jpg | Young man, dark hair and a beard, upright | public/styles/bro-flow.jpg |
+| night-dim.jpg | Same man, lighting only: darker on the left, a soft vignette | man-beard-dark.jpg |
+| buzz-cut.jpg | Very short hair with scalp at the hairline. No bald portrait exists in the repo | public/styles/buzz-cut.jpg |

@@ -32,6 +32,7 @@ export function MakeupStage({
         blush={blush}
         brow={brow}
         makeup
+        bridal
         label="makeup"
         onPhase={(phase) => setNote(phase === "fallback" ? FALLBACK : "")}
       />

@@ -15,6 +15,8 @@ import { CreditError, reserveCredits, settleCredits } from "@/lib/credits";
 import { numberEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { appMediaUrl } from "@/lib/storage";
+import { cropLetterbox } from "@/lib/ai/letterbox";
+import { COLOUR_UNCHANGED_MESSAGE, hairChange } from "@/lib/ai/look-change";
 import { buildBeardPrompt, buildBrowPrompt, buildColourPrompt, buildNailPrompt } from "@/lib/prompts";
 import { guestLimitMessage } from "@/lib/tools";
 
@@ -33,23 +35,14 @@ export function guestEngineModel(engine: GuestEngine) {
   return engine === "openai" ? GUEST_OPENAI_MODEL : GUEST_FAL_MODEL;
 }
 
-/** Brows stay on sunburst. Style, beard, colour, and nails follow the admin default. */
-export function engineForGuestTool(tool: string, selected: GuestEngine): GuestEngine {
-  return tool === "brows" ? "openai" : selected;
-}
-
 /**
- * sunburst: an OpenAI key is saved, so brows call gpt-image-2.5-sunburst.
- * message: another engine is ready, so refusing avoids a charged FLUX.3 call.
- * demo: nothing is ready, so the unbilled sample card can still show.
+ * Brows use the same engine as style, colour, beard, and nails.
+ * The default is fal FLUX.3, which asks for the selfie aspect ratio.
+ * Sunburst pads a 3:4 photo into 1024×1536 and was returning grey bars.
  */
-export function browsRoute(args: { openaiReady: boolean; selected: GuestEngine; selectedReady: boolean }): "sunburst" | "message" | "demo" {
-  if (args.openaiReady) return "sunburst";
-  if (args.selected !== "openai" && args.selectedReady) return "message";
-  return "demo";
+export function engineForGuestTool(_tool: string, selected: GuestEngine): GuestEngine {
+  return selected;
 }
-
-export const BROWS_NEED_OPENAI = "Brows use OpenAI sunburst. Add an OpenAI key on AI settings. This preview was not sent.";
 
 async function setting(key: string) {
   const row = await prisma.platformSetting.findUnique({ where: { key } });
@@ -208,6 +201,30 @@ async function runGuestEdit(args: GuestEditArgs): Promise<NextResponse | null> {
     throw error;
   }
   const kind = args.kind;
+  const framed = executed.ok ? await cropLetterbox(executed.imagePng) : null;
+  if (executed.ok && args.tool === "colour" && framed) {
+    const change = await hairChange(args.jpeg, framed).catch(() => null);
+    if (change?.unchanged) {
+      await settleCredits(args.tenantId, creditRef, "REFUND");
+      await failGenerationJob(args.jobId, { outcome: "unchanged", message: COLOUR_UNCHANGED_MESSAGE, callId: executed.callId });
+      await prisma.tryOn.create({
+        data: {
+          tenantId: args.tenantId,
+          sessionId: args.sessionId,
+          styleId: args.styleId,
+          shadeId: args.styleId,
+          kind,
+          tier: args.tier,
+          actorKey: args.actorKey,
+          quality: "standard",
+          status: "FAILED",
+          credits: 0,
+          latencyMs: executed.latencyMs,
+        },
+      });
+      return NextResponse.json({ error: "UNCHANGED", message: COLOUR_UNCHANGED_MESSAGE }, { status: 422 });
+    }
+  }
   if (!executed.ok) {
     await settleCredits(args.tenantId, creditRef, "REFUND");
     await failGenerationJob(args.jobId, { outcome: executed.outcome, message: guestMessage(executed.outcome), callId: executed.callId });
@@ -227,7 +244,7 @@ async function runGuestEdit(args: GuestEditArgs): Promise<NextResponse | null> {
     });
     return NextResponse.json({ error: "PREVIEW", message: guestMessage(executed.outcome) }, { status: executed.httpStatus });
   }
-  const jpegOut = await sharp(executed.imagePng).jpeg({ quality: 90 }).toBuffer();
+  const jpegOut = await sharp(framed || executed.imagePng).jpeg({ quality: 90 }).toBuffer();
   const tryOn = await prisma.tryOn.create({
     data: {
       tenantId: args.tenantId,

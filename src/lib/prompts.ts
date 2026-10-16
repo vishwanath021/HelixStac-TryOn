@@ -71,7 +71,10 @@ export function buildBrowPrompt(brow: BrowDef, variation?: BrowVariation) {
   return [
     "Image 1 is the customer selfie. Image 2 is a brow-shape diagram, not a face to copy.",
     "Change only the eyebrows.",
+    "Make the new brow shape clearly visible in a salon mirror. Redraw the brow hairs to the selected arch, thickness, and tail. Do not leave the original brows unchanged.",
+    "The hairs should still look like real brows, with a soft edge, not a solid stamp or a block of pigment.",
     "Keep the face, identity, hair, skin, background and framing identical.",
+    "Keep the same aspect ratio as image 1. Do not add grey bars, borders, or letterboxing.",
     `The selected brow is ${brow.name}. ${brow.prompt}`,
     browThicknessLine(thickness),
     browColourLine(colour),
@@ -94,12 +97,17 @@ export function buildBeardPrompt(beard: BeardDef) {
 export function buildColourPrompt(shade: ShadeDef) {
   return [
     IMAGE_ROLES,
-    `Recolour the existing hair to the selected shade. The selected shade is ${shade.name}.`,
-    "Keep the haircut, length, style and everything else the same.",
+    `Recolour every visible hair strand to ${shade.name} (${shade.hex}). The new colour has to be obvious in the hair, including on dark hair. Do not return the original colour.`,
+    "Keep the haircut, length, style, and strand texture. Recolour hair only.",
+    "Do not recolour skin, eyebrows, eyes, clothes, or the background.",
   ].join(" ");
 }
 
-/** Full bridal look. Image 2 is a look reference when one exists. The face in image 1 stays the bride. */
+/**
+ * Full bridal look. Image 2 is clothing and jewellery.
+ * Flux-3 edit has no strength or guidance field, so identity is locked here.
+ * Hair changes only when a hairstyle card was chosen.
+ */
 export function buildBridalPrompt(
   look: BridalLook,
   finish: BridalFinish,
@@ -112,15 +120,22 @@ export function buildBridalPrompt(
     live?.blush ? "blush on" : "blush off",
     live?.brow ? "brow tint on" : "brow tint off",
   ];
+  const roles = live?.hair
+    ? "Image 1 is the bride's selfie. Image 2 is clothing and jewellery to copy. Do not copy the reference person's face. The hairstyle comes from the written instruction, not from image 2."
+    : "Image 1 is the bride's selfie. Image 2 is clothing and jewellery to copy. Do not copy the reference person's face or hair.";
+  const hairLine = live?.hair
+    ? `${live.hair} Change the hair only because a hairstyle was chosen. Keep the face the same.`
+    : "Do not change the hair. Keep the existing haircut, length, texture, and how it is worn. Tied hair stays tied. Waves stay waves. Ignore any hairstyle named in the look description or shown on the reference person.";
   return [
-    "Image 1 is the bride's selfie. Image 2 is a bridal look reference. Do not copy the reference person's face.",
-    `Apply one full look: hair, makeup, bindi, and jewellery together. The look is ${look.name}. ${look.prompt}`,
+    roles,
+    `Apply one full look: makeup, bindi, and jewellery together. The look is ${look.name}. ${look.prompt}`,
     finish.prompt,
     `Lip colour: ${lip.name}.`,
     live?.makeup || "",
-    live?.hair || "",
+    hairLine,
     `The live mirror choices were ${marks.join(", ")}. Paint those on the real portrait. This is a full look, not a camera filter.`,
-    "Keep the same person: identity, skin tone, age, and expression.",
+    "Keep the exact same person. Keep the exact face shape, jaw, cheeks, nose, and eyes. Keep the skin texture, pores, and age. Do not slim, lift, smooth, or beautify the face. A finish may even the makeup, but the face underneath stays the same shape and texture.",
+    "Keep any bindi, sindoor, and nose pin already in the photo. Do not remove them and do not add a second one.",
     "A portrait, photorealistic, with natural light. No text, logos, watermarks, or extra people.",
     "This is a salon trial preview, not a guarantee of the finished makeup.",
   ].filter(Boolean).join(" ");

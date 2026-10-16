@@ -72,7 +72,7 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     style: "temple",
     image: true,
     blurb: "Red and green pattu, temple gold, sleek low bun",
-    prompt: "Telugu muhurtham bride in a red and green silk pattu saree, temple gold necklace, nethichutti, jhumkas, round red bindi, and a sleek low bun with a centre parting and soft volume at the crown",
+    prompt: "Telugu muhurtham bride in a red and green silk pattu saree, temple gold necklace, nethichutti, jhumkas, and a round red bindi",
     events: ["wedding"],
   },
   {
@@ -82,7 +82,7 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     style: "temple",
     image: true,
     blurb: "Green Gadwal saree, coin necklace, sleek bun",
-    prompt: "Telangana bride in a green Gadwal silk saree with a red-gold border, long gold coin necklace, nose ring, jhumkas, and a sleek low bun with soft volume at the crown",
+    prompt: "Telangana bride in a green Gadwal silk saree with a red-gold border, long gold coin necklace, nose ring, and jhumkas",
     events: ["wedding"],
   },
   {
@@ -92,7 +92,7 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     style: "temple",
     image: true,
     blurb: "Peach Uppada silk, coin braid, temple gold",
-    prompt: "Andhra bride in a peach-gold Uppada silk saree, maang tikka, coin necklace, jhumkas, and a textured side bun",
+    prompt: "Andhra bride in a peach-gold Uppada silk saree, maang tikka, coin necklace, and jhumkas",
     events: ["wedding"],
   },
   {
@@ -102,7 +102,7 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     style: "temple",
     image: true,
     blurb: "Yellow saree, turmeric marks, sleek bun",
-    prompt: "Telugu pellikuthuru at haldi, yellow saree, turmeric marks on the cheeks, a sleek low bun, and floral jewellery",
+    prompt: "Telugu pellikuthuru at haldi, yellow saree, turmeric marks on the cheeks, and floral jewellery",
     events: ["haldi"],
   },
   {
@@ -112,7 +112,7 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     style: "temple",
     image: true,
     blurb: "Magenta embroidery, open waves, chandelier earrings",
-    prompt: "Telugu sangeet look, magenta blouse with gold floral embroidery, open waves, chandelier earrings, and a smoky eye",
+    prompt: "Telugu sangeet look, magenta blouse with gold floral embroidery, chandelier earrings, and a smoky eye",
     events: ["sangeet", "engagement", "mehendi"],
   },
   {
@@ -122,7 +122,7 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     style: "temple",
     image: true,
     blurb: "Champagne saree, diamonds, open waves",
-    prompt: "Telugu reception look, champagne embroidered saree, diamond necklace and earrings, open waves, and a polished evening finish",
+    prompt: "Telugu reception look, champagne embroidered saree, diamond necklace and earrings, and a polished evening finish",
     events: ["reception", "engagement"],
   },
 ];

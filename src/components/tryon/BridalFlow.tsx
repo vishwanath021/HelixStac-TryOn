@@ -5,6 +5,7 @@ import { flushSync } from "react-dom";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { BridalLookCard } from "@/components/tryon/BridalLookCard";
 import { ConsentSheet } from "@/components/tryon/ConsentSheet";
+import { GeneratingLook } from "@/components/tryon/GeneratingLook";
 import { LiveStudio, StudioRail } from "@/components/tryon/LiveStudio";
 import { MakeupStage } from "@/components/tryon/MakeupStage";
 import { usePhotoConsent } from "@/components/tryon/usePhotoConsent";
@@ -26,7 +27,6 @@ import {
   type BridalEventId,
   type BridalStyleId,
 } from "@/data/bridal";
-import { t } from "@/data/i18n";
 import { guestSessionId } from "@/lib/guest-session";
 import type { SalonConfig } from "@/lib/salon";
 
@@ -112,7 +112,7 @@ async function blobUrlToData(url: string) {
   });
 }
 
-export function BridalFlow({ config, showQueue = false }: { config: SalonConfig; showQueue?: boolean }) {
+export function BridalFlow({ config }: { config: SalonConfig }) {
   const [eventId, setEventId] = useState<BridalEventId>("wedding");
   const [panel, setPanel] = useState<"looks" | "mehendi" | "saved">("looks");
   const [lookStyle, setLookStyle] = useState<BridalStyleId>(defaultBridalStyle(BRIDAL_LOOKS));
@@ -132,7 +132,8 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
   const [mehendiShade, setMehendiShade] = useState("maroon");
   const [density, setDensity] = useState("heavy");
   const [busy, setBusy] = useState(false);
-  const [stage, setStage] = useState("Reading your photo...");
+  const [busyKind, setBusyKind] = useState<null | "look" | "mehendi">(null);
+  const [reveal, setReveal] = useState("");
   const [error, setError] = useState("");
   const [result, setResult] = useState<{ name: string; before: string; after: string; share: string; lookId: string; kind: "look" | "mehendi" } | null>(null);
   const [saved, setSaved] = useState<SavedLook[]>([]);
@@ -174,16 +175,6 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
     resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [result, busy]);
 
-  useEffect(() => {
-    if (!busy) return;
-    const started = Date.now();
-    const timer = window.setInterval(() => {
-      const ms = Date.now() - started;
-      setStage(ms < 8000 ? "Reading your photo..." : ms < 22000 ? "Styling your look..." : "Almost ready...");
-    }, 400);
-    return () => window.clearInterval(timer);
-  }, [busy]);
-
   async function fileToShot(file: File) {
     const blob = file.slice(0, file.size, file.type || "image/jpeg");
     return { blob, url: URL.createObjectURL(blob) };
@@ -196,8 +187,8 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
   async function generate(kind: "look" | "mehendi", shot: Shot, overrides?: { finishId?: string; lipId?: string; makeupId?: string; hairId?: string }) {
     if (busy) return;
     setBusy(true);
+    setBusyKind(kind);
     setError("");
-    setStage("Reading your photo...");
     const finish = overrides?.finishId || finishId;
     const lip = overrides?.lipId || lipId;
     const makeup = overrides?.makeupId ?? makeupId;
@@ -246,6 +237,7 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
         ? `Mehendi · ${MEHENDI_STYLES.find((item) => item.id === mehendiStyle)?.label || "Bridal"}`
         : chosen?.name || "Bridal look";
       if (kind === "mehendi") setMehendiDone(mehendiStamp(shot.url));
+      setReveal(out);
       setResult({
         name: styleName,
         before: shot.url,
@@ -256,6 +248,7 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
       });
     } finally {
       setBusy(false);
+      setBusyKind(null);
     }
   }
 
@@ -466,7 +459,6 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
   return (
     <div data-bridal="flow" data-busy={busy ? "yes" : "no"}>
       <ConsentSheet open={consent.open} onAgree={() => void consent.agree()} onClose={consent.close} />
-      {showQueue ? <p className="mb-3"><a className="btn secondary" href={`/s/${config.slug}/queue`}>{t(config.defaultLang || "en", "queueJoinLook")}</a></p> : null}
       <h2 className="page-title">Bridal</h2>
       <p className="mt-1 text-sm text-muted">Hair, makeup, and jewellery in one look. Then mehendi, and a trial with the salon.</p>
       <div className="seg mt-4" role="tablist" aria-label="Bridal">
@@ -493,7 +485,7 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
           <div data-step="selfie">
             <p className="mb-2 text-sm font-medium">5. Your selfie</p>
             <p className="mb-2 text-sm">Face the light. Keep your whole face inside the outline. No sunglasses.</p>
-            <div ref={faceBox} className="relative mx-auto aspect-[3/4] max-h-[520px] w-full max-w-sm overflow-hidden rounded-2xl bg-[#F3E6D8]">
+            <div ref={faceBox} data-photo-box="face" className="relative mx-auto aspect-[3/4] max-h-[520px] w-full max-w-sm overflow-hidden rounded-2xl bg-[#F3E6D8]">
               {live === "face" ? (
                 <LiveStudio
                   videoRef={videoRef}
@@ -531,13 +523,18 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
               ) : (
                 <>
                   {face ? <img src={face.url} alt="Your selfie" className="h-full w-full object-cover" /> : null}
+                  {reveal && result?.kind === "look" ? <img src={reveal} alt="" className="gen-reveal absolute inset-0 h-full w-full object-cover" /> : null}
+                  {busyKind === "look" ? <GeneratingLook tool="bridal" /> : null}
+                  {!busyKind && !reveal ? (
                   <div className="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
                     <div className="h-[68%] w-[56%] rounded-[50%] border-2 border-white/90 shadow-sm" />
                   </div>
+                  ) : null}
                 </>
               )}
             </div>
             {face || live === "face" ? null : <p className="mx-auto mt-3 max-w-sm text-center text-sm">Upload a selfie to see this look on you.</p>}
+            {busyKind === "look" ? null : (
             <div className="mt-3 grid gap-2">
               {live === "face" ? null : <button className={result ? "btn" : "btn sheen"} type="button" onClick={() => beginLive("face")}>Live makeup</button>}
               <button className="btn secondary" type="button" onClick={() => consent.gate(() => bridalFile.current?.click())}>Use photo</button>
@@ -545,13 +542,14 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
                 const file = event.target.files?.[0];
                 event.target.value = "";
                 if (!file) return;
-                void fileToShot(file).then((shot) => { setFace(shot); setResult(null); });
+                void fileToShot(file).then((shot) => { setFace(shot); setResult(null); setReveal(""); });
               }} />
             </div>
+            )}
             {camError && panel === "looks" ? <p className="text-sm" role="alert">{camError}</p> : null}
           </div>
-          {face && chosen && (!result || result.kind !== "look" || result.lookId !== chosen.id) && (
-            <button className="btn" type="button" disabled={busy} onClick={() => void generate("look", face)}>{busy ? stage : `See ${chosen.name}`}</button>
+          {face && chosen && !busy && (!result || result.kind !== "look" || result.lookId !== chosen.id) && (
+            <button className="btn" type="button" onClick={() => void generate("look", face)}>{`See ${chosen.name}`}</button>
           )}
         </div>
       )}
@@ -574,23 +572,30 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
                 onShutter={captureLive}
                 onRetake={() => beginLive("hand")}
               />
-            ) : hand ? <img src={hand.url} alt="Your hand" className="h-full w-full object-cover" /> : <p className="grid h-full place-items-center px-6 text-center text-sm">Upload a photo of your hand.</p>}
+            ) : (
+              <>
+                {hand ? <img src={hand.url} alt="Your hand" className="h-full w-full object-cover" /> : <p className="grid h-full place-items-center px-6 text-center text-sm">Upload a photo of your hand.</p>}
+                {reveal && result?.kind === "mehendi" ? <img src={reveal} alt="" className="gen-reveal absolute inset-0 h-full w-full object-cover" /> : null}
+                {busyKind === "mehendi" ? <GeneratingLook tool="mehendi" /> : null}
+              </>
+            )}
           </div>
+          {busyKind === "mehendi" ? null : (
+            <>
           {live === "hand" ? null : <button className={mehendiDone ? "btn" : "btn sheen"} type="button" onClick={() => beginLive("hand")}>Live mehendi</button>}
           <button className="btn secondary" type="button" onClick={() => consent.gate(() => mehendiFile.current?.click())}>Use photo</button>
           <input ref={mehendiFile} className="sr-only" type="file" accept="image/*" data-photo="mehendi" onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
             if (!file) return;
-            void fileToShot(file).then((shot) => { setHand(shot); setResult(null); });
+                void fileToShot(file).then((shot) => { setHand(shot); setResult(null); setReveal(""); });
           }} />
-          {hand && mehendiDone !== mehendiStamp(hand.url) && <button className="btn" type="button" disabled={busy} onClick={() => void generate("mehendi", hand)}>{busy ? stage : "See the mehendi"}</button>}
+            </>
+          )}
+          {hand && !busy && mehendiDone !== mehendiStamp(hand.url) && <button className="btn" type="button" onClick={() => void generate("mehendi", hand)}>See the mehendi</button>}
         </div>
       )}
 
-      {busy && (
-        <p className="mt-4 text-center text-sm" role="progressbar" aria-valuetext={stage}>{stage}</p>
-      )}
       {error && <p className="mt-3 text-sm" role="status">{error}</p>}
 
       {result && !busy && panel !== "saved" && (
@@ -598,7 +603,7 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
           <p className="text-center text-xs font-semibold uppercase tracking-wide">Real AI look, not a filter</p>
           <h3 className="text-center font-serif text-2xl">{result.name}</h3>
           <div className="relative overflow-hidden rounded-2xl">
-            <div style={{ transform: `scale(${zoom})` }}>
+            <div className="gen-reveal" style={{ transform: `scale(${zoom})` }}>
               {sliderOn ? (
                 <BeforeAfter before={result.before} after={result.after} beforeLabel="Before" afterLabel="After" />
               ) : (

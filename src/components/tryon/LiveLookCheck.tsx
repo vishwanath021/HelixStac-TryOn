@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { LiveLookStage } from "@/components/tryon/LiveLookStage";
 
-const ALLOW = new Set(["woman-long-dark.jpg", "man-beard-dark.jpg", "glasses-beard.jpg", "malayali-beard.jpg", "bindi-smile.jpg"]);
+const ALLOW = new Set(["woman-long-dark.jpg", "man-beard-dark.jpg", "glasses-beard.jpg", "malayali-beard.jpg", "bindi-smile.jpg", "night-dim.jpg", "buzz-cut.jpg"]);
 
 export function LiveLookCheck() {
   const params = useSearchParams();
   const requested = params.get("src") || "woman-long-dark.jpg";
   const name = ALLOW.has(requested) ? requested : "woman-long-dark.jpg";
+  const bridal = params.get("bridal") === "1";
   const [image, setImage] = useState<HTMLImageElement | null>(null);
 
   useEffect(() => {
@@ -25,7 +26,7 @@ export function LiveLookCheck() {
         <figcaption className="absolute left-2 top-2 text-xs text-white">Before</figcaption>
       </figure>
       <figure className="relative mx-auto aspect-[3/4] w-full max-w-md overflow-hidden bg-black">
-        <LiveLookStage image={image} label="after" lip="#9B2335" kajal lashes blush brow />
+        <LiveLookStage image={image} label="after" lip="#9B2335" kajal lashes blush brow bridal={bridal} />
         <figcaption className="absolute left-2 top-2 text-xs text-white">After</figcaption>
       </figure>
       <figure className="relative mx-auto aspect-[3/4] w-full max-w-md overflow-hidden bg-black">
