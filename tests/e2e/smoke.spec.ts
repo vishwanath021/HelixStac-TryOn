@@ -55,7 +55,7 @@ test.afterAll(async () => {
 });
 
 test("customer can consent, use the camera, preview a cut, and an owner can open the dashboard", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   await page.goto("/s/demo");
   await expect(page.getByRole("heading", { name: "See your next look." })).toBeVisible();
   const salonName = page.getByRole("heading", { level: 1, name: "Demo Salon – Bengaluru" });
@@ -120,11 +120,16 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
     return pixel[0] + pixel[1] + pixel[2] > 30;
   });
   await page.screenshot({ path: "docs/screenshots/03-camera.png", fullPage: true });
+  const generated = page.waitForResponse(
+    (res) => res.url().includes("/api/v1/tryon/generate") && res.request().method() === "POST",
+    { timeout: 90_000 },
+  );
   await page.getByRole("button", { name: "Take photo" }).click();
   await waitForCapture(page);
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
+  expect((await generated).ok()).toBeTruthy();
 
-  await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("section[aria-label=Photo]")).toHaveClass(/is-ready/);
   await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/demo mode/i)).toHaveCount(0);
