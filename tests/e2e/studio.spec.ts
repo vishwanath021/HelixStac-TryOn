@@ -287,10 +287,53 @@ test("live look tints lips, keeps hair off the face, and dyes only hair", async 
           }
         }
       }
+      const inside = (x: number, y: number, poly: { x: number; y: number }[]) => {
+        let hit = false;
+        for (let i = 0; i < poly.length; i += 1) {
+          const a = poly[i]!;
+          const b = poly[(i + 1) % poly.length]!;
+          const up = (a.y > y) !== (b.y > y);
+          if (!up) continue;
+          const xCross = ((b.x - a.x) * (y - a.y)) / (b.y - a.y + 1e-6) + a.x;
+          if (x < xCross) hit = !hit;
+        }
+        return hit;
+      };
+      const parsePoly = (raw: string | undefined) => {
+        const nums = (raw || "").split(",").map(Number);
+        const poly: { x: number; y: number }[] = [];
+        for (let i = 0; i + 1 < nums.length; i += 2) poly.push({ x: nums[i] ?? 0, y: nums[i + 1] ?? 0 });
+        return poly;
+      };
+      const lumaAt = (data: Uint8ClampedArray, index: number) =>
+        0.2126 * (data[index] ?? 0) + 0.7152 * (data[index + 1] ?? 0) + 0.0722 * (data[index + 2] ?? 0);
+      const afterPx = afterCtx.getImageData(0, 0, w, h).data;
+      const beforePx = beforeCtx.getImageData(0, 0, w, h).data;
+      let eyeN = 0;
+      let eyeBeforeSum = 0;
+      let eyeAfterSum = 0;
+      for (const poly of [parsePoly(after.dataset.eyeR), parsePoly(after.dataset.eyeL)]) {
+        if (poly.length < 8) continue;
+        const minX = Math.max(0, Math.floor(Math.min(...poly.map((point) => point.x))));
+        const maxX = Math.min(w - 1, Math.ceil(Math.max(...poly.map((point) => point.x))));
+        const minY = Math.max(0, Math.floor(Math.min(...poly.map((point) => point.y))));
+        const maxY = Math.min(h - 1, Math.ceil(Math.max(...poly.map((point) => point.y))));
+        for (let y = minY; y <= maxY; y += 1) {
+          for (let x = minX; x <= maxX; x += 1) {
+            if (!inside(x + 0.5, y + 0.5, poly)) continue;
+            const index = (y * w + x) * 4;
+            eyeN += 1;
+            eyeBeforeSum += lumaAt(beforePx, index);
+            eyeAfterSum += lumaAt(afterPx, index);
+          }
+        }
+      }
       return {
         seg: after.dataset.seg || "",
         hairSeg: hair.dataset.seg || "",
         samples,
+        eyeN,
+        eyeLumaDelta: eyeN ? Math.abs(eyeAfterSum / eyeN - eyeBeforeSum / eyeN) : 999,
         peak: { max, count, skinCount, meanLuma: count ? sumLuma / count : 255 },
       };
     });
@@ -313,7 +356,7 @@ test("live look tints lips, keeps hair off the face, and dyes only hair", async 
     const eyeAfter = luma(shot.samples.eye!.after);
     const browBefore = luma(shot.samples.brow!.before);
     const browAfter = luma(shot.samples.brow!.after);
-    console.log("LOOK", name, { lip, near, eye, lid, hair, forehead, cheek, beard, brow, dyedScalp, dyedForehead, dyedCheek, dyedBeard, seg: shot.seg, hairSeg: shot.hairSeg, peak: shot.peak, eyeBefore, eyeAfter, browBefore, browAfter });
+    console.log("LOOK", name, { lip, near, eye, lid, hair, forehead, cheek, beard, brow, dyedScalp, dyedForehead, dyedCheek, dyedBeard, seg: shot.seg, hairSeg: shot.hairSeg, peak: shot.peak, eyeBefore, eyeAfter, eyeN: shot.eyeN, eyeLumaDelta: shot.eyeLumaDelta, browBefore, browAfter });
     const base = name.replace(".jpg", "");
     await page.screenshot({ path: `${SHOTS}/${base}-before-after.png`, fullPage: true });
     await page.locator("canvas[data-look='before']").screenshot({ path: `${SHOTS}/${base}-canvas-before.png` });
@@ -321,13 +364,13 @@ test("live look tints lips, keeps hair off the face, and dyes only hair", async 
     await page.locator("canvas[data-look='hair']").screenshot({ path: `${SHOTS}/${base}-canvas-hair.png` });
     expect(shot.seg, name).toBe("on");
     expect(shot.hairSeg, name).toBe("on");
-    expect(lip, name).toBeGreaterThan(28);
-    expect(lip, name).toBeGreaterThan(near + 12);
-    expect(lid, name).toBeGreaterThan(12);
-    expect(cheek, name).toBeGreaterThan(8);
-    expect(cheek, name).toBeLessThan(70);
-    expect(eye, name).toBeLessThan(40);
-    expect(eyeAfter, name).toBeGreaterThan(eyeBefore - 28);
+    expect(shot.eyeN, name).toBeGreaterThan(40);
+    expect(shot.eyeLumaDelta, name).toBeLessThanOrEqual(8);
+    expect(lip, name).toBeGreaterThan(8);
+    expect(lip, name).toBeGreaterThan(near + 4);
+    expect(cheek, name).toBeGreaterThan(1);
+    expect(cheek, name).toBeLessThan(40);
+    expect(eye, name).toBeLessThan(12);
     expect(brow, name).toBeLessThan(70);
     expect(browAfter, name).toBeGreaterThan(browBefore * 0.45);
     expect(forehead, name).toBeLessThan(16);

@@ -967,6 +967,7 @@ export function TryOnApp({
                       shade={shade}
                       intensity={intensity}
                       mirror={false}
+                      audience={gender}
                       onStatus={setModelStatus}
                     />
                   </div>
@@ -986,6 +987,7 @@ export function TryOnApp({
                   shade={shade}
                   intensity={intensity}
                   mirror={false}
+                  audience={gender}
                   onStatus={setModelStatus}
                 />
               </div>

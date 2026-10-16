@@ -7,6 +7,8 @@
 import {
   BROW_L,
   BROW_R,
+  EYE_L,
+  EYE_R,
   INNER_LIP,
   LOWER_LASH_L,
   LOWER_LASH_R,
@@ -15,6 +17,7 @@ import {
   UPPER_LASH_R,
   type Pt,
 } from "@/lib/face/makeup-paint";
+import { liveEffectsFor, type LookAudience } from "@/lib/face/makeup-blend";
 
 export type LiveLookOptions = {
   lip: string | null;
@@ -29,7 +32,7 @@ export type LiveLookOptions = {
 };
 
 export type LiveGl = {
-  draw: (source: TexImageSource, mask: Uint8Array | null, maskWidth: number, maskHeight: number, points: Pt[] | null, options: LiveLookOptions) => void;
+  draw: (source: TexImageSource, mask: Uint8Array | null, maskWidth: number, maskHeight: number, points: Pt[] | null, options: LiveLookOptions, audience?: LookAudience) => void;
   resize: (width: number, height: number) => void;
   destroy: () => void;
 };
@@ -56,6 +59,11 @@ uniform vec2 u_upR[9];
 uniform vec2 u_loR[9];
 uniform vec2 u_upL[9];
 uniform vec2 u_loL[9];
+uniform vec2 u_eyeR[16];
+uniform vec2 u_eyeL[16];
+uniform vec2 u_centerR;
+uniform vec2 u_centerL;
+uniform float u_iod;
 uniform vec3 u_lip;
 uniform vec3 u_hair;
 uniform vec3 u_blush;
@@ -106,18 +114,74 @@ bool insideBrow(vec2 p, vec2 poly[10]) {
   return hit;
 }
 
-float lineField(vec2 p, vec2 poly[9], int n, float width) {
-  float best = width;
+bool inside16(vec2 p, vec2 poly[16]) {
+  bool hit = false;
+  for (int i = 0; i < 16; i++) {
+    vec2 a = poly[i];
+    int j = i + 1;
+    if (j == 16) j = 0;
+    vec2 b = poly[j];
+    bool up = (a.y > p.y) != (b.y > p.y);
+    if (up) {
+      float x = (b.x - a.x) * (p.y - a.y) / (b.y - a.y + 1e-5) + a.x;
+      if (p.x < x) hit = !hit;
+    }
+  }
+  return hit;
+}
+
+float edge16(vec2 p, vec2 poly[16]) {
+  float best = 1.0;
+  for (int i = 0; i < 16; i++) {
+    vec2 a = poly[i];
+    int j = i + 1;
+    if (j == 16) j = 0;
+    vec2 b = poly[j];
+    vec2 ab = b - a;
+    float t = clamp(dot(p - a, ab) / (dot(ab, ab) + 1e-5), 0.0, 1.0);
+    best = min(best, length(p - (a + ab * t)));
+  }
+  return best;
+}
+
+float eyeMask(vec2 p) {
+  float px = max(u_px.x, u_px.y);
+  float cover = 0.0;
+  if (inside16(p, u_eyeR) || edge16(p, u_eyeR) < px) cover = 1.0;
+  if (inside16(p, u_eyeL) || edge16(p, u_eyeL) < px) cover = 1.0;
+  return cover;
+}
+
+float offsetStroke(vec2 p, vec2 poly[9], int n, vec2 center, float width, float blur) {
+  float best = 1.0;
   for (int i = 0; i < 8; i++) {
     if (i + 1 >= n) break;
     vec2 a = poly[i];
     vec2 b = poly[i + 1];
     vec2 ab = b - a;
-    float denom = dot(ab, ab) + 1e-5;
+    float denom = dot(ab, ab) + 1e-6;
     float t = clamp(dot(p - a, ab) / denom, 0.0, 1.0);
-    best = min(best, length(p - (a + ab * t)));
+    vec2 c = a + ab * t;
+    vec2 nrm = vec2(-ab.y, ab.x);
+    nrm /= length(nrm) + 1e-6;
+    if (dot(nrm, c - center) < 0.0) nrm = -nrm;
+    vec2 q = c + nrm * (width * 0.55 + blur);
+    best = min(best, length(p - q));
   }
-  return 1.0 - smoothstep(width * 0.45, width, best);
+  return 1.0 - smoothstep(width * 0.5, width * 0.5 + blur, best);
+}
+
+float wingStroke(vec2 p, vec2 outer, vec2 along, vec2 center, float width, float blur, float eyeW) {
+  vec2 dir = outer - along;
+  dir /= length(dir) + 1e-6;
+  vec2 nrm = vec2(-dir.y, dir.x);
+  if (dot(nrm, outer - center) < 0.0) nrm = -nrm;
+  vec2 start = outer + nrm * (width * 0.55 + blur);
+  vec2 tip = start + dir * eyeW * 0.16 + nrm * eyeW * 0.035;
+  vec2 ab = tip - start;
+  float t = clamp(dot(p - start, ab) / (dot(ab, ab) + 1e-6), 0.0, 1.0);
+  float dist = length(p - (start + ab * t));
+  return 1.0 - smoothstep(width * 0.5, width * 0.5 + blur, dist);
 }
 
 float polyEdge(vec2 p, vec2 poly[20], int n) {
@@ -135,27 +199,30 @@ float polyEdge(vec2 p, vec2 poly[20], int n) {
   return best;
 }
 
-float lashStroke(vec2 p, vec2 poly[9], int n, float len, float width) {
+float lashField(vec2 p, vec2 poly[9], vec2 center, float eyeW) {
+  float len = eyeW * 0.06;
+  float px = max(u_px.x, u_px.y);
   float cover = 0.0;
-  for (int i = 0; i < 6; i++) {
-    if (i + 2 >= n) break;
-    vec2 a = poly[i];
-    vec2 b = poly[i + 2];
+  for (int i = 0; i < 12; i++) {
+    float f = mix(1.0, 7.0, (float(i) + 0.5) / 12.0);
+    int i0 = int(floor(f));
+    float ft = f - float(i0);
+    vec2 a = poly[i0];
+    vec2 b = poly[i0 + 1];
+    vec2 origin = mix(a, b, ft);
     vec2 ab = b - a;
-    vec2 dir = ab / (length(ab) + 1e-5);
-    vec2 nrm = vec2(-dir.y, dir.x);
-    vec2 mid = (a + b) * 0.5;
-    if (dot(nrm, mid - poly[4]) < 0.0) nrm = -nrm;
-    float curl = len * (0.18 + 0.08 * float(i));
-    vec2 ctrl = mid + nrm * len * 0.62 + dir * curl;
-    vec2 tip = mid + nrm * len * 0.92 + dir * curl * 1.7;
-    for (int s = 0; s <= 5; s++) {
-      float t = float(s) / 5.0;
-      float u = 1.0 - t;
-      vec2 pos = mid * u * u + ctrl * 2.0 * u * t + tip * t * t;
-      float taper = width * (1.0 - t * 0.82);
-      float hit = 1.0 - smoothstep(taper * 0.2, taper, length(p - pos));
-      hit *= smoothstep(0.0, 0.22, t);
+    vec2 nrm = vec2(-ab.y, ab.x);
+    nrm /= length(nrm) + 1e-6;
+    if (dot(nrm, origin - center) < 0.0) nrm = -nrm;
+    vec2 along = ab / (length(ab) + 1e-6);
+    vec2 root = origin + nrm * (px * 2.0);
+    vec2 tip = root + nrm * len + along * len * 0.2;
+    for (int s = 0; s <= 4; s++) {
+      float u = float(s) / 4.0;
+      vec2 pos = mix(root, tip, u);
+      float w = mix(px * 0.9, px * 0.2, u);
+      float hit = 1.0 - smoothstep(w * 0.2, w, length(p - pos));
+      hit *= smoothstep(0.0, 0.2, u);
       cover = max(cover, hit);
     }
   }
@@ -181,6 +248,8 @@ void main() {
   bool skin = skinW > 0.34;
   bool outer = insidePoly(p, u_outer, 20);
   bool inner = insidePoly(p, u_inner, 20);
+  float eye = eyeMask(p);
+  float px = max(u_px.x, u_px.y);
   vec3 color = base;
 
   if (u_hairOn > 0.5 && hairW > 0.03) {
@@ -188,52 +257,56 @@ void main() {
     color = mix(color, dyed, hairW * clamp(u_hairStrength, 0.0, 0.5));
   }
 
-  if (u_blushOn > 0.5 && skin && hairW < 0.2) {
-    float r = u_faceUv * 0.2;
-    float blush = max(
-      1.0 - smoothstep(r * 0.2, r, length(p - u_cheekR)),
-      1.0 - smoothstep(r * 0.2, r, length(p - u_cheekL))
+  if (u_blushOn > 0.5 && skin && hairW < 0.2 && eye < 0.5) {
+    float sigma = max(u_faceUv * 0.18 / 2.5, px * 6.0);
+    float gR = exp(-0.5 * dot(p - u_cheekR, p - u_cheekR) / (sigma * sigma + 1e-8));
+    float gL = exp(-0.5 * dot(p - u_cheekL, p - u_cheekL) / (sigma * sigma + 1e-8));
+    float blush = max(gR, gL) * 0.18;
+    vec3 soft = softLight(color, u_blush);
+    vec3 mul = color * u_blush;
+    color = mix(color, mix(soft, mul, 0.5), blush);
+  }
+
+  if (u_browOn > 0.5 && eye < 0.5 && (insideBrow(p, u_browR) || insideBrow(p, u_browL))) {
+    vec3 soft = softLight(color, u_brow);
+    vec3 mul = color * u_brow;
+    color = mix(color, mix(soft, mul, 0.5), 0.25);
+  }
+
+  float kajalW = clamp(u_iod * 0.02, px, px * 2.5);
+  float linerW = clamp(u_iod * 0.016, px, px * 2.0);
+  vec3 ink = vec3(0.08, 0.045, 0.04);
+  if (u_kajal > 0.5 && eye < 0.5) {
+    float eyeWR = length(u_upR[0] - u_upR[8]);
+    float eyeWL = length(u_upL[0] - u_upL[8]);
+    float kajalA = max(
+      offsetStroke(p, u_loR, 9, u_centerR, kajalW, px),
+      offsetStroke(p, u_loL, 9, u_centerL, kajalW, px)
     );
-    vec3 warm = mix(softLight(color, u_blush), u_blush, 0.42);
-    color = mix(color, warm, blush * 0.5);
+    float linerA = max(
+      offsetStroke(p, u_upR, 9, u_centerR, linerW, px),
+      offsetStroke(p, u_upL, 9, u_centerL, linerW, px)
+    );
+    linerA = max(linerA, wingStroke(p, u_upR[0], u_upR[2], u_centerR, linerW, px, eyeWR));
+    linerA = max(linerA, wingStroke(p, u_upL[0], u_upL[2], u_centerL, linerW, px, eyeWL));
+    color = mix(color, ink, kajalA * 0.7);
+    color = mix(color, ink, linerA * 0.7);
   }
 
-  if (u_browOn > 0.5 && (insideBrow(p, u_browR) || insideBrow(p, u_browL))) {
-    color = mix(color, color * u_brow, 0.32);
-  }
-
-  float width = max(u_px.x, u_px.y) * 3.4;
-  float kajalA = 0.0;
-  if (u_kajal > 0.5) {
-    kajalA = max(kajalA, lineField(p, u_upR, 9, width));
-    kajalA = max(kajalA, lineField(p, u_loR, 9, width * 0.85));
-    kajalA = max(kajalA, lineField(p, u_upL, 9, width));
-    kajalA = max(kajalA, lineField(p, u_loL, 9, width * 0.85));
-    vec2 wingDir = normalize(u_upR[0] - u_upR[2] + vec2(1e-4));
-    float wing = 1.0 - smoothstep(width * 0.4, width, length(p - (u_upR[0] + wingDir * u_faceUv * 0.045)));
-    kajalA = max(kajalA, wing * 0.85);
-    wingDir = normalize(u_upL[0] - u_upL[2] + vec2(1e-4));
-    wing = 1.0 - smoothstep(width * 0.4, width, length(p - (u_upL[0] + wingDir * u_faceUv * 0.045)));
-    kajalA = max(kajalA, wing * 0.85);
-    color = mix(color, vec3(0.02, 0.012, 0.018), kajalA * 0.9);
-  }
-
-  if (u_lashes > 0.5) {
+  if (u_lashes > 0.5 && eye < 0.5) {
     float lash = max(
-      lashStroke(p, u_upR, 9, u_faceUv * 0.026, width * 0.3),
-      lashStroke(p, u_upL, 9, u_faceUv * 0.026, width * 0.3)
+      lashField(p, u_upR, u_centerR, length(u_upR[0] - u_upR[8])),
+      lashField(p, u_upL, u_centerL, length(u_upL[0] - u_upL[8]))
     );
-    color = mix(color, vec3(0.03, 0.02, 0.025), lash * 0.58);
+    color = mix(color, ink, lash * 0.6);
   }
 
-  if (u_lipOn > 0.5 && outer && !inner && skin && hairW < 0.25) {
-    float edge = max(u_faceUv * 0.012, max(u_px.x, u_px.y) * 1.5);
+  if (u_lipOn > 0.5 && outer && !inner && hairW < 0.25 && eye < 0.5) {
     float dist = min(polyEdge(p, u_outer, 20), polyEdge(p, u_inner, 20));
-    float feather = smoothstep(0.0, edge, dist);
-    float clip = u_hasMask > 0.5 ? skinW : 1.0;
-    vec3 stained = mix(base, u_lip, 0.8);
+    float feather = smoothstep(0.0, px * 1.5, dist);
     vec3 soft = softLight(base, u_lip);
-    color = mix(color, mix(soft, stained, 0.75), 0.9 * feather * clip);
+    vec3 mul = base * u_lip;
+    color = mix(color, mix(soft, mul, 0.5), 0.55 * feather);
   }
 
   outColor = vec4(color, 1.0);
@@ -258,7 +331,21 @@ function hexToRgb(hex: string): [number, number, number] {
   return [parseInt(full.slice(0, 2), 16) / 255, parseInt(full.slice(2, 4), 16) / 255, parseInt(full.slice(4, 6), 16) / 255];
 }
 
-function pack(points: Pt[], indexes: number[], count: number) {
+function centroid(points: Pt[], indexes: readonly number[]): Pt {
+  let x = 0;
+  let y = 0;
+  let n = 0;
+  for (const index of indexes) {
+    const point = points[index];
+    if (!point) continue;
+    x += point.x;
+    y += point.y;
+    n += 1;
+  }
+  return n ? { x: x / n, y: y / n } : { x: 0.5, y: 0.5 };
+}
+
+function pack(points: Pt[], indexes: readonly number[], count: number) {
   const out = new Float32Array(count * 2);
   const last = indexes.length - 1;
   for (let i = 0; i < count; i += 1) {
@@ -330,11 +417,12 @@ export function createLiveGl(canvas: HTMLCanvasElement): LiveGl | null {
       if (canvas.height !== height) canvas.height = height;
       gl.viewport(0, 0, width, height);
     },
-    draw(source, mask, maskWidth, maskHeight, points, options) {
+    draw(source, mask, maskWidth, maskHeight, points, options, audience) {
+      const look = liveEffectsFor(audience, options);
       gl.useProgram(program);
       uploadImage(cameraTex, source);
       gl.uniform1i(loc("u_camera"), 0);
-      if (mask && options.hasMask) {
+      if (mask && look.hasMask) {
         uploadMask(mask, maskWidth, maskHeight);
         gl.uniform1i(loc("u_mask"), 1);
         gl.uniform1f(loc("u_hasMask"), 1);
@@ -355,8 +443,17 @@ export function createLiveGl(canvas: HTMLCanvasElement): LiveGl | null {
       gl.uniform2fv(loc("u_loR"), pack(pts, LOWER_LASH_R, 9));
       gl.uniform2fv(loc("u_upL"), pack(pts, UPPER_LASH_L, 9));
       gl.uniform2fv(loc("u_loL"), pack(pts, LOWER_LASH_L, 9));
-      const lip = hexToRgb(options.lip || "#9B2335");
-      const hair = hexToRgb(options.hair || "#5C3317");
+      gl.uniform2fv(loc("u_eyeR"), pack(pts, EYE_R, 16));
+      gl.uniform2fv(loc("u_eyeL"), pack(pts, EYE_L, 16));
+      const centerR = centroid(pts, EYE_R);
+      const centerL = centroid(pts, EYE_L);
+      gl.uniform2f(loc("u_centerR"), centerR.x, centerR.y);
+      gl.uniform2f(loc("u_centerL"), centerL.x, centerL.y);
+      const irisR = pts[468] ?? centerR;
+      const irisL = pts[473] ?? centerL;
+      gl.uniform1f(loc("u_iod"), Math.hypot(irisR.x - irisL.x, irisR.y - irisL.y) || faceUv * 0.45);
+      const lip = hexToRgb(look.lip || "#9B2335");
+      const hair = hexToRgb(look.hair || "#5C3317");
       gl.uniform3f(loc("u_lip"), lip[0], lip[1], lip[2]);
       gl.uniform3f(loc("u_hair"), hair[0], hair[1], hair[2]);
       gl.uniform3f(loc("u_blush"), 0.77, 0.36, 0.42);
@@ -367,13 +464,13 @@ export function createLiveGl(canvas: HTMLCanvasElement): LiveGl | null {
       gl.uniform2f(loc("u_cheekL"), cheekL.x, cheekL.y);
       gl.uniform2f(loc("u_px"), 1 / Math.max(1, canvas.width), 1 / Math.max(1, canvas.height));
       gl.uniform1f(loc("u_faceUv"), faceUv);
-      gl.uniform1f(loc("u_lipOn"), hasFace && options.lip ? 1 : 0);
-      gl.uniform1f(loc("u_kajal"), hasFace && options.kajal ? 1 : 0);
-      gl.uniform1f(loc("u_lashes"), hasFace && options.lashes ? 1 : 0);
-      gl.uniform1f(loc("u_blushOn"), hasFace && options.blush ? 1 : 0);
-      gl.uniform1f(loc("u_browOn"), hasFace && options.brow ? 1 : 0);
-      gl.uniform1f(loc("u_hairOn"), options.hair ? 1 : 0);
-      gl.uniform1f(loc("u_hairStrength"), Math.max(0, Math.min(0.5, options.hairStrength)));
+      gl.uniform1f(loc("u_lipOn"), hasFace && look.lip ? 1 : 0);
+      gl.uniform1f(loc("u_kajal"), hasFace && look.kajal ? 1 : 0);
+      gl.uniform1f(loc("u_lashes"), hasFace && look.lashes ? 1 : 0);
+      gl.uniform1f(loc("u_blushOn"), hasFace && look.blush ? 1 : 0);
+      gl.uniform1f(loc("u_browOn"), hasFace && look.brow ? 1 : 0);
+      gl.uniform1f(loc("u_hairOn"), look.hair ? 1 : 0);
+      gl.uniform1f(loc("u_hairStrength"), Math.max(0, Math.min(0.5, look.hairStrength)));
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     },
     destroy() {

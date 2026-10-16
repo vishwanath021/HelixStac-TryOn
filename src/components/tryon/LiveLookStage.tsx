@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { lookSamples, smoothLandmarks, type Pt } from "@/lib/face/makeup-paint";
+import { EYE_L, EYE_R, lookSamples, smoothLandmarks, type Pt } from "@/lib/face/makeup-paint";
+import type { LookAudience } from "@/lib/face/makeup-blend";
 import { createLiveGl, type LiveGl, type LiveLookOptions } from "@/lib/face/live-gl";
 import { buildHairMask } from "@/lib/face/hair-mask";
 import { copySource, loadLiveVision, type LiveVision } from "@/lib/face/live-vision";
@@ -23,6 +24,8 @@ export type LiveLookProps = {
   mirror?: boolean;
   /** Bridal live makeup exposes the attributes the studio test waits on. */
   makeup?: boolean;
+  /** Men’s everyday live styling never receives makeup. Bridal omits this. */
+  audience?: LookAudience;
   label?: string;
   ariaLabel?: string;
   onPhase?: (phase: "loading" | "watching" | "tracking" | "fallback") => void;
@@ -38,6 +41,20 @@ function writeSamples(canvas: HTMLCanvasElement, points: Pt[]) {
     canvas.dataset[`${key}X`] = String(Math.round(Math.min(width - 1, Math.max(0, point.x * width))));
     canvas.dataset[`${key}Y`] = String(Math.round(Math.min(height - 1, Math.max(0, point.y * height))));
   });
+  const ring = (indexes: readonly number[], key: string) => {
+    const parts: string[] = [];
+    for (const index of indexes) {
+      const point = points[index];
+      if (!point) return;
+      parts.push(
+        String(Math.round(Math.min(width - 1, Math.max(0, point.x * width)))),
+        String(Math.round(Math.min(height - 1, Math.max(0, point.y * height)))),
+      );
+    }
+    canvas.dataset[key] = parts.join(",");
+  };
+  ring(EYE_R, "eyeR");
+  ring(EYE_L, "eyeL");
 }
 
 function copyFloat(mask: { getAsFloat32Array: () => Float32Array } | undefined) {
@@ -89,6 +106,7 @@ export function LiveLookStage({
   hairStrength = 0.5,
   mirror = false,
   makeup = false,
+  audience,
   label = "live",
   ariaLabel,
   onPhase,
@@ -96,6 +114,8 @@ export function LiveLookStage({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const optionsRef = useRef<LiveLookOptions>({ lip, kajal, lashes, blush, brow, hair, hairStrength, hasMask: false });
   optionsRef.current = { lip, kajal, lashes, blush, brow, hair, hairStrength, hasMask: false };
+  const audienceRef = useRef(audience);
+  audienceRef.current = audience;
   const onPhaseRef = useRef(onPhase);
   onPhaseRef.current = onPhase;
   const [phase, setPhase] = useState<"loading" | "watching" | "tracking" | "fallback">("loading");
@@ -140,10 +160,10 @@ export function LiveLookStage({
         renderer.draw(shot, masked ? mask : null, maskW, maskH, points, {
           ...options,
           hasMask: masked,
-        });
+        }, audienceRef.current);
       } catch {
         mask = null;
-        renderer.draw(shot, null, 0, 0, points, { ...options, hasMask: false });
+        renderer.draw(shot, null, 0, 0, points, { ...options, hasMask: false }, audienceRef.current);
       }
       if (points) writeSamples(canvas, points);
       if (!shownRef.current) {

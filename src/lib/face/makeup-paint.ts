@@ -9,6 +9,9 @@ export const UPPER_LASH_R = [33, 246, 161, 160, 159, 158, 157, 173, 133];
 export const LOWER_LASH_R = [33, 7, 163, 144, 145, 153, 154, 155, 133];
 export const UPPER_LASH_L = [263, 466, 388, 387, 386, 385, 384, 398, 362];
 export const LOWER_LASH_L = [263, 249, 390, 373, 374, 380, 381, 382, 362];
+/** Eye opening, outer corner along the lower lid, back along the upper lid. */
+export const EYE_R = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246];
+export const EYE_L = [263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 387, 388, 466];
 /** Closed brow rings: top edge then back along the bottom edge. */
 export const BROW_R = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46];
 export const BROW_L = [300, 293, 334, 296, 336, 285, 295, 282, 283, 276];
