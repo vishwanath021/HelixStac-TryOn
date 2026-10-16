@@ -1,11 +1,11 @@
 /**
- * Hair colour may land only on hair.
- * Confidence ≥ 0.42 so a dim or unevenly lit strand still counts,
- * small holes are closed, then the face oval and face-skin are punched out,
- * the mask is eroded, and a short blur feathers the edge.
+ * Hair colour lands only on segmenter hair, and only inside the dilated
+ * region above the brow line. Skin, eyes, and the background stay untouched.
+ * Confidence ≥ 0.42 so a dim strand still counts. Small holes are closed,
+ * then the edge is feathered.
  */
 
-import { FACE_OVAL } from "@/lib/face/landmarks";
+import { EAR_LEFT, EAR_RIGHT, FACE_OVAL, LEFT_BROW, LEFT_EYE, RIGHT_BROW, RIGHT_EYE } from "@/lib/face/landmarks";
 import type { Pt } from "@/lib/face/makeup-paint";
 import { dilateMask, erodeMask, fillPolygon } from "@/lib/face/raster";
 
@@ -93,6 +93,47 @@ export function pixelIsHair(rgb: Uint8ClampedArray | Uint8Array, width: number, 
   return false;
 }
 
+const FOREHEAD = 10;
+const CHIN = 152;
+
+/** Box above the brows, grown a little so a fringe is included. Eyes are marked separately. */
+export function hairGate(points: Pt[] | null, width: number, height: number) {
+  const count = width * height;
+  const allow = new Uint8Array(count);
+  const eyes = new Uint8Array(count);
+  if (!points || points.length < 468) return { allow, eyes, ready: false };
+  const brows = [...LEFT_BROW, ...RIGHT_BROW].map((index) => points[index]).filter((point): point is Pt => Boolean(point));
+  const forehead = points[FOREHEAD];
+  const chin = points[CHIN];
+  const earL = points[EAR_LEFT];
+  const earR = points[EAR_RIGHT];
+  if (brows.length < 4 || !forehead || !chin || !earL || !earR) return { allow, eyes, ready: false };
+  const browY = Math.min(...brows.map((point) => point.y));
+  const faceH = Math.max(0.08, Math.abs(chin.y - forehead.y));
+  const left = Math.max(0, Math.min(earL.x, earR.x) - faceH * 0.35);
+  const right = Math.min(1, Math.max(earL.x, earR.x) + faceH * 0.35);
+  const top = 0;
+  fillPolygon(allow, width, height, [
+    { x: left * width, y: browY * height },
+    { x: left * width, y: top },
+    { x: right * width, y: top },
+    { x: right * width, y: browY * height },
+  ]);
+  const grown = dilateMask(allow, width, height, Math.max(2, Math.round(width / 40)));
+  for (const loop of [LEFT_EYE, RIGHT_EYE]) {
+    fillPolygon(
+      eyes,
+      width,
+      height,
+      loop.map((index) => {
+        const point = points[index];
+        return { x: (point?.x ?? 0) * width, y: (point?.y ?? 0) * height };
+      }),
+    );
+  }
+  return { allow: grown, eyes, ready: true };
+}
+
 function boxBlur(src: Uint8Array, width: number, height: number, radius: number) {
   if (radius <= 0) return Uint8Array.from(src);
   const horizontal = new Float32Array(src.length);
@@ -135,6 +176,7 @@ export function buildHairMask(input: HairMaskInput) {
   const skin = new Uint8Array(count);
   const oval = new Uint8Array(count);
   const points = input.points;
+  const gate = hairGate(points, width, height);
   if (points && points.length > 400) {
     fillPolygon(
       oval,
@@ -152,15 +194,19 @@ export function buildHairMask(input: HairMaskInput) {
     const faceSkinScore = input.faceSkinConf ? unit(input.faceSkinConf[i] ?? 0) : category === FACE_SKIN_CLASS ? 1 : 0;
     const faceSkin = faceSkinScore >= FACE_SKIN_CONFIDENCE || category === FACE_SKIN_CLASS;
     if (category === BODY_SKIN_CLASS || category === FACE_SKIN_CLASS) skin[i] = 255;
+    if (!gate.ready || !gate.allow[i] || gate.eyes[i]) continue;
     if (hairScore < HAIR_CONFIDENCE || faceSkin || category === BODY_SKIN_CLASS || oval[i]) continue;
     if (input.category && category !== HAIR_CLASS) continue;
     if (input.rgb && input.rgb.length >= count * 4 && !pixelIsHair(input.rgb, width, height, i)) continue;
     hard[i] = 255;
   }
   const closed = erodeMask(dilateMask(hard, width, height, HOLE_RADIUS), width, height, HOLE_RADIUS);
+  const blockedAt = (index: number) => {
+    const faceSkinScore = input.faceSkinConf ? unit(input.faceSkinConf[index] ?? 0) : input.category?.[index] === FACE_SKIN_CLASS ? 1 : 0;
+    return !gate.allow[index] || gate.eyes[index] || oval[index] || faceSkinScore >= FACE_SKIN_CONFIDENCE;
+  };
   for (let i = 0; i < count; i += 1) {
-    const faceSkinScore = input.faceSkinConf ? unit(input.faceSkinConf[i] ?? 0) : input.category?.[i] === FACE_SKIN_CLASS ? 1 : 0;
-    if (oval[i] || faceSkinScore >= FACE_SKIN_CONFIDENCE) closed[i] = 0;
+    if (blockedAt(i)) closed[i] = 0;
   }
   const erodeR = Math.max(2, Math.round(width / 96));
   const featherR = Math.max(1, Math.round(erodeR * 0.66));
@@ -168,8 +214,7 @@ export function buildHairMask(input: HairMaskInput) {
   const feathered = boxBlur(eroded, width, height, featherR);
   const packed = new Uint8Array(count * 4);
   for (let i = 0; i < count; i += 1) {
-    const blocked = oval[i] || (input.faceSkinConf ? unit(input.faceSkinConf[i] ?? 0) >= FACE_SKIN_CONFIDENCE : input.category?.[i] === FACE_SKIN_CLASS);
-    packed[i * 4] = blocked ? 0 : feathered[i] ?? 0;
+    packed[i * 4] = blockedAt(i) ? 0 : feathered[i] ?? 0;
     packed[i * 4 + 1] = skin[i] ?? 0;
     packed[i * 4 + 3] = 255;
   }

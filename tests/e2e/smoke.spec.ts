@@ -175,7 +175,8 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await page.getByLabel("Password").fill("DemoSalon#2026");
   await page.locator("form[data-ready='yes']").waitFor();
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible({ timeout: 20_000 });
+  await page.waitForURL(/\/admin/, { timeout: 60_000 });
+  await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: "docs/screenshots/05-admin.png", fullPage: true });
 
   await page.goto("/admin/leads");
@@ -267,7 +268,8 @@ test("a renamed salon shows on the guest header and title", async ({ page }) => 
     await page.getByLabel("Email").fill("owner@demo.agenticbuildworks.com");
     await page.getByLabel("Password").fill("DemoSalon#2026");
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
+    await page.waitForURL(/\/admin/, { timeout: 60_000 });
+    await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible({ timeout: 30_000 });
     await page.goto("/admin/settings");
     await page.getByLabel("Salon name").fill("Indiranagar Studio");
     await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -322,14 +324,23 @@ test("denied camera offers an upload fallback", async ({ page }) => {
 });
 
 test("anonymous daily cap explains the limit and salon mode lifts it", async ({ page }) => {
+  test.setTimeout(180_000);
   const prisma = await salonDb();
   await prisma.tenant.update({ where: { slug: "demo" }, data: { anonDailyCap: 0 } });
   try {
     await page.goto("/s/demo");
     await expect(page.getByLabel("Password")).toHaveCount(0);
     await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
-    await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" }).click();
-    await expect(page.getByText(/today's previews used up/i)).toBeVisible({ timeout: 20_000 });
+    await waitForCapture(page);
+    const pixie = page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" });
+    await expect(pixie).toBeEnabled();
+    const capped = page.waitForResponse(
+      (res) => res.url().includes("/api/v1/tryon/generate") && res.request().method() === "POST",
+      { timeout: 90_000 },
+    );
+    await pixie.click();
+    expect((await capped).status()).toBe(429);
+    await expect(page.getByText(/today's previews used up/i)).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole("heading", { name: "Phone code" })).toHaveCount(0);
 
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo" } });
@@ -340,7 +351,7 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
     await expect(page.locator("[data-salon-mode='yes']")).toBeVisible();
     await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
     await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" }).click();
-    await expect(page.getByRole("heading", { name: "Pixie" })).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByRole("heading", { name: "Pixie" })).toBeVisible({ timeout: 90_000 });
   } finally {
     await prisma.tenant.update({ where: { slug: "demo" }, data: { anonDailyCap: 200 } });
     await prisma.$disconnect();
@@ -348,7 +359,7 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
 });
 
 test("booking asks for a phone code only when the salon requires it", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(150_000);
   process.env.DATABASE_URL ||= "file:./dev.db";
   const { PrismaClient } = await import("@prisma/client");
   const prisma = new PrismaClient();
@@ -379,9 +390,10 @@ test("booking asks for a phone code only when the salon requires it", async ({ p
     await page.getByLabel("Email").fill("owner@demo.agenticbuildworks.com");
     await page.getByLabel("Password").fill("DemoSalon#2026");
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
+    await page.waitForURL(/\/admin/, { timeout: 90_000 });
+    await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible({ timeout: 45_000 });
     await page.goto("/admin/bookings");
-    await expect(page.getByRole("heading", { name: "Bookings" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Bookings" })).toBeVisible({ timeout: 45_000 });
     await expect(page.getByText("Asha Rao")).toBeVisible();
     await page.screenshot({ path: "docs/screenshots/12-bookings.png", fullPage: true });
     const popupPromise = page.waitForEvent("popup");

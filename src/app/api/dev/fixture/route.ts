@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const PORTRAITS = new Set(["glasses-beard.jpg", "malayali-beard.jpg", "bindi-smile.jpg"]);
-const LIVE = new Set(["woman-long-dark.jpg", "man-beard-dark.jpg"]);
+const LIVE = new Set(["woman-long-dark.jpg", "man-beard-dark.jpg", "night-dim.jpg", "buzz-cut.jpg"]);
 
 /** Still portraits for the live-look pixel test. Not available in production. */
 export async function GET(req: Request) {

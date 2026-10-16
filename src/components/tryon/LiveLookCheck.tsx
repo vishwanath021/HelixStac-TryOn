@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { LiveLookStage } from "@/components/tryon/LiveLookStage";
 
-const ALLOW = new Set(["woman-long-dark.jpg", "man-beard-dark.jpg", "glasses-beard.jpg", "malayali-beard.jpg", "bindi-smile.jpg"]);
+const ALLOW = new Set(["woman-long-dark.jpg", "man-beard-dark.jpg", "glasses-beard.jpg", "malayali-beard.jpg", "bindi-smile.jpg", "night-dim.jpg", "buzz-cut.jpg"]);
 
 export function LiveLookCheck() {
   const params = useSearchParams();
