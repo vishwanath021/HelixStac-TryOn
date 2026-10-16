@@ -66,6 +66,12 @@ export function brandButtonColors(brand: string) {
     : { background: lighter.background, color: INK };
 }
 
+/** Salon brand defaults. New rows use these. Existing rows are left as saved. */
+export const LOOKUVI_PRIMARY = "#69517D";
+export const LOOKUVI_ACCENT = "#B6A0C9";
+/** primaryColor is applied on the QR standee only. */
+export const BRAND_COLOUR_HINT = "Used on your QR poster.";
+
 const AUBERGINE = "#3e304b";
 const LOOKUVI_BAR = new Set(["#69517d", "#3e304b"]);
 

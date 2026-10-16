@@ -17,8 +17,8 @@ model Tenant {
   slug                String    @unique
   name                String
   logoUrl             String?
-  primaryColor        String    @default("#0E7C74")
-  accentColor         String    @default("#E9897A")
+  primaryColor        String    @default("#69517D")
+  accentColor         String    @default("#B6A0C9")
   languages           String    @default("[\"en\",\"hi\"]")
   defaultLang         String    @default("en")
   whatsapp            String    @default("")

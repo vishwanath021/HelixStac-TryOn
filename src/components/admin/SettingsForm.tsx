@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { BrandColourControl } from "@/components/admin/BrandColourControl";
 import { SalonModeCard } from "@/components/admin/SalonModeCard";
+import { LOOKUVI_ACCENT, LOOKUVI_PRIMARY } from "@/lib/contrast";
 import type { ToolId } from "@/lib/tools";
 
 export function SettingsForm({
@@ -172,14 +174,17 @@ export function SettingsForm({
         <details className="rounded-xl border border-line p-3">
           <summary className="cursor-pointer text-sm font-medium">Advanced</summary>
           <div className="mt-3 grid gap-3">
-            <div className="grid grid-cols-2 gap-3">
-              <label className="text-sm">Brand colour
-                <input className="mt-1 h-10 w-full" type="color" aria-label="Primary" value={form.primaryColor} onChange={(event) => set("primaryColor", event.target.value)} />
-              </label>
-              <label className="text-sm">Accent
-                <input className="mt-1 h-10 w-full" type="color" aria-label="Accent" value={form.accentColor} onChange={(event) => set("accentColor", event.target.value)} />
-              </label>
-            </div>
+            <BrandColourControl
+              value={form.primaryColor}
+              onChange={(value) => set("primaryColor", value)}
+              onReset={() => setForm((current) => ({ ...current, primaryColor: LOOKUVI_PRIMARY, accentColor: LOOKUVI_ACCENT }))}
+            />
+            <label className="text-sm">Accent
+              <span className="mt-1 flex items-center gap-2">
+                <input className="h-10 w-16" type="color" aria-label="Accent" value={/^#[0-9A-Fa-f]{6}$/.test(form.accentColor) ? form.accentColor.toLowerCase() : LOOKUVI_ACCENT.toLowerCase()} onChange={(event) => set("accentColor", event.target.value.toUpperCase())} />
+                <span className="font-mono text-sm">{form.accentColor.toUpperCase()}</span>
+              </span>
+            </label>
             <label className="text-sm">GSTIN<input className="field mt-1" value={form.gstin} onChange={(event) => set("gstin", event.target.value)} /></label>
             {showTryOn && enabledTools.includes("brows") ? (
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.toolBrows} onChange={(event) => set("toolBrows", event.target.checked)} /> Eyebrow mapping</label>
