@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { BrandColourControl } from "@/components/admin/BrandColourControl";
 import { LOCALES, LOCALE_LABELS, type Locale } from "@/data/i18n";
+import { LOOKUVI_PRIMARY } from "@/lib/contrast";
 
 export function OnboardingWizard({
   initial,
@@ -43,7 +45,7 @@ export function OnboardingWizard({
       {step === 0 && (
         <div className="mt-3 space-y-3">
           <label className="block text-sm">Salon name<input className="field mt-1" value={name} onChange={(event) => setName(event.target.value)} /></label>
-          <label className="block text-sm">Brand colour<input className="mt-1 h-10 w-full" type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label>
+          <BrandColourControl value={color} onChange={setColor} onReset={() => setColor(LOOKUVI_PRIMARY)} />
         </div>
       )}
       {step === 1 && (

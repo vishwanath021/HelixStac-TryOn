@@ -286,3 +286,48 @@ test("an owner can replace the salon logo and restore the Lookuvi mark", async (
     await prisma.$disconnect();
   }
 });
+
+test("owner can reset the brand colour to Lookuvi purple", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  test.setTimeout(120_000);
+  await page.goto("/login");
+  await expect(page.locator("form").first()).toHaveAttribute("data-ready", "yes");
+  await page.getByLabel("Email").fill("owner@demo.agenticbuildworks.com");
+  await page.getByLabel("Password").fill("DemoSalon#2026");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.waitForURL(/\/admin/, { timeout: 60_000 });
+
+  await page.goto("/admin/onboarding");
+  const onboardReset = page.getByRole("button", { name: "Reset to Lookuvi purple" });
+  await expect(onboardReset).toBeVisible();
+  await expect(onboardReset).toHaveClass(/secondary/);
+  await expect(page.getByText("Used on your QR poster.")).toBeVisible();
+  await page.getByLabel("Primary").fill("#112233");
+  await expect(page.getByText("#112233")).toBeVisible();
+  await onboardReset.click();
+  await expect(page.getByLabel("Primary")).toHaveValue("#69517d");
+  await expect(page.getByText("#69517D")).toBeVisible();
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/admin/settings");
+  const advanced = page.locator("details").filter({ hasText: "Brand colour" });
+  await advanced.locator("summary").click();
+  const reset = page.getByRole("button", { name: "Reset to Lookuvi purple" });
+  await expect(reset).toBeVisible();
+  await advanced.screenshot({ path: "/opt/cursor/artifacts/brand-reset/settings-375.png" });
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(reset).toBeVisible();
+  await advanced.screenshot({ path: "/opt/cursor/artifacts/brand-reset/settings-desktop.png" });
+  await page.getByLabel("Primary").fill("#112233");
+  await page.getByLabel("Accent").fill("#445566");
+  await expect(page.getByText("#112233")).toBeVisible();
+  await expect(page.getByText("#445566")).toBeVisible();
+  await expect(reset).toHaveClass(/secondary/);
+  await reset.click();
+  await expect(page.getByLabel("Primary")).toHaveValue("#69517d");
+  await expect(page.getByLabel("Accent")).toHaveValue("#b6a0c9");
+  await expect(page.getByText("#69517D")).toBeVisible();
+  await expect(page.getByText("#B6A0C9")).toBeVisible();
+  await expect(page.getByText("Used on your QR poster.")).toBeVisible();
+});
