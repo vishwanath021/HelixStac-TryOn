@@ -25,18 +25,12 @@ export function LiveLookCheck() {
         <figcaption className="absolute left-2 top-2 text-xs text-white">Before</figcaption>
       </figure>
       <figure className="relative mx-auto aspect-[3/4] w-full max-w-md overflow-hidden bg-black">
-        <LiveLookStage
-          image={image}
-          label="after"
-          lip="#9B2335"
-          kajal
-          lashes
-          blush
-          brow
-          hair="#C45C26"
-          hairStrength={0.85}
-        />
+        <LiveLookStage image={image} label="after" lip="#9B2335" kajal lashes blush brow />
         <figcaption className="absolute left-2 top-2 text-xs text-white">After</figcaption>
+      </figure>
+      <figure className="relative mx-auto aspect-[3/4] w-full max-w-md overflow-hidden bg-black">
+        <LiveLookStage image={image} label="hair" hair="#C45C26" hairStrength={0.5} />
+        <figcaption className="absolute left-2 top-2 text-xs text-white">Hair</figcaption>
       </figure>
     </main>
   );

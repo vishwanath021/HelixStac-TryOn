@@ -30,6 +30,41 @@ import { t } from "@/data/i18n";
 import { guestSessionId } from "@/lib/guest-session";
 import type { SalonConfig } from "@/lib/salon";
 
+function EyeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M1.5 8s2.4-3.5 6.5-3.5S14.5 8 14.5 8 12.1 11.5 8 11.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="8" cy="8" r="1.4" fill="currentColor" />
+    </svg>
+  );
+}
+
+function LashIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2 10.5c2-3 4-4.2 6-4.2s4 1.2 6 4.2" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M4 9.2 3.2 6.4M8 8.2V5.2M12 9.2l.8-2.8" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function BlushIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="5" cy="8.5" r="2.2" fill="currentColor" opacity="0.9" />
+      <circle cx="11" cy="8.5" r="2.2" fill="currentColor" opacity="0.9" />
+    </svg>
+  );
+}
+
+function BrowIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2 9.5c1.6-2.4 3.2-3.2 4.6-2.4 1.2.7 2.2.2 3.4-1.4C11.2 4.2 12.6 4 14 5.2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 type SavedLook = {
   id: string;
   lookId: string;
@@ -471,27 +506,25 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
                   onClose={stopLive}
                   onShutter={captureLive}
                   onRetake={() => beginLive("face")}
-                  onUpload={() => {
-                    stopLive();
-                    bridalFile.current?.click();
-                  }}
                   makeup={<MakeupStage video={camReady ? videoRef.current : null} lip={lipHex} kajal={kajal} lashes={lashes} blush={blushOn} brow={browOn} />}
                   footer={(
-                    <div className="grid w-full gap-1" role="group" aria-label="Live makeup">
-                      <div className="flex gap-1 overflow-x-auto">
-                        <button className="chip shrink-0" type="button" aria-pressed={kajal} onClick={() => setKajal((value) => !value)}>Kajal</button>
-                        <button className="chip shrink-0" type="button" aria-pressed={lashes} onClick={() => setLashes((value) => !value)}>Lashes</button>
-                        <button className="chip shrink-0" type="button" aria-pressed={blushOn} onClick={() => setBlushOn((value) => !value)}>Blush</button>
-                        <button className="chip shrink-0" type="button" aria-pressed={browOn} onClick={() => setBrowOn((value) => !value)}>Brows</button>
-                      </div>
-                      <div className="flex max-w-full gap-1 overflow-x-auto">
-                        {BRIDAL_LIPS.map((lip) => (
-                          <button key={lip.id} type="button" aria-pressed={lipId === lip.id} className="chip shrink-0" onClick={() => setLipId(lip.id)}>
-                            <span className="h-4 w-4 rounded-full" style={{ background: lip.hex }} aria-hidden="true" />
-                            {lip.name}
-                          </button>
-                        ))}
-                      </div>
+                    <div className="live-row" role="group" aria-label="Live makeup">
+                      <button className="live-pill" type="button" aria-pressed={kajal} aria-label="Kajal" onClick={() => setKajal((value) => !value)}>
+                        <EyeIcon />
+                      </button>
+                      <button className="live-pill" type="button" aria-pressed={lashes} aria-label="Lashes" onClick={() => setLashes((value) => !value)}>
+                        <LashIcon />
+                      </button>
+                      <button className="live-pill" type="button" aria-pressed={blushOn} aria-label="Blush" onClick={() => setBlushOn((value) => !value)}>
+                        <BlushIcon />
+                      </button>
+                      <button className="live-pill" type="button" aria-pressed={browOn} aria-label="Brows" onClick={() => setBrowOn((value) => !value)}>
+                        <BrowIcon />
+                      </button>
+                      <span className="mx-0.5 h-5 w-px shrink-0 self-center bg-white/35" aria-hidden="true" />
+                      {BRIDAL_LIPS.map((lip) => (
+                        <button key={lip.id} type="button" aria-pressed={lipId === lip.id} aria-label={lip.name} className="live-dot" style={{ background: lip.hex }} onClick={() => setLipId(lip.id)} />
+                      ))}
                     </div>
                   )}
                 />
@@ -540,10 +573,6 @@ export function BridalFlow({ config, showQueue = false }: { config: SalonConfig;
                 onClose={stopLive}
                 onShutter={captureLive}
                 onRetake={() => beginLive("hand")}
-                onUpload={() => {
-                  stopLive();
-                  mehendiFile.current?.click();
-                }}
               />
             ) : hand ? <img src={hand.url} alt="Your hand" className="h-full w-full object-cover" /> : <p className="grid h-full place-items-center px-6 text-center text-sm">Upload a photo of your hand.</p>}
           </div>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { lookSamples, smoothLandmarks, type Pt } from "@/lib/face/makeup-paint";
 import { createLiveGl, type LiveGl, type LiveLookOptions } from "@/lib/face/live-gl";
+import { buildHairMask } from "@/lib/face/hair-mask";
 import { copySource, loadLiveVision, type LiveVision } from "@/lib/face/live-vision";
 import { liveMakeupAllowed } from "@/lib/face/cover-point";
 
@@ -39,13 +40,32 @@ function writeSamples(canvas: HTMLCanvasElement, points: Pt[]) {
   });
 }
 
-function readMask(vision: LiveVision, shot: HTMLCanvasElement) {
+function copyFloat(mask: { getAsFloat32Array: () => Float32Array } | undefined) {
+  if (!mask) return null;
+  try {
+    return new Float32Array(mask.getAsFloat32Array());
+  } catch {
+    return null;
+  }
+}
+
+function readMask(vision: LiveVision, shot: HTMLCanvasElement, points: Pt[] | null) {
   if (!vision.segmenter) return null;
   const result = vision.segmenter.segment(shot);
   const cat = result.categoryMask;
-  const mask = cat ? { bytes: new Uint8Array(cat.getAsUint8Array()), width: cat.width, height: cat.height } : null;
+  const conf = result.confidenceMasks;
+  const width = cat?.width || conf?.[0]?.width || 0;
+  const height = cat?.height || conf?.[0]?.height || 0;
+  const category = cat ? new Uint8Array(cat.getAsUint8Array()) : null;
+  const hairConf = copyFloat(conf?.[1]);
+  const faceSkinConf = copyFloat(conf?.[3]);
   result.close();
-  return mask;
+  if (!width || !height || (!category && !hairConf)) return null;
+  return {
+    bytes: buildHairMask({ width, height, category, hairConf, faceSkinConf, points }),
+    width,
+    height,
+  };
 }
 
 export function LiveLookStage({
@@ -57,7 +77,7 @@ export function LiveLookStage({
   blush = false,
   brow = false,
   hair = null,
-  hairStrength = 0.72,
+  hairStrength = 0.5,
   mirror = false,
   makeup = false,
   label = "live",
@@ -169,7 +189,7 @@ export function LiveLookStage({
           return;
         }
         try {
-          const read = readMask(vision, shot);
+          const read = readMask(vision, shot, smoothed);
           if (read) {
             mask = read.bytes;
             maskW = read.width;
@@ -225,7 +245,7 @@ export function LiveLookStage({
           }
         } else if (slot === 3 && segOn && vision.segmenter) {
           try {
-            const read = readMask(vision, shot);
+            const read = readMask(vision, shot, smoothed);
             if (read) {
               mask = read.bytes;
               maskW = read.width;

@@ -418,7 +418,48 @@ textarea { min-height: 48px; }
   font-weight: 700;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
 }
+.cam-round.cam-rail {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  font-size: 16px;
+}
 .cam-round:disabled { background: #d9d4de; color: #4e4656; box-shadow: none; }
+.live-row {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 2px 4px;
+  scrollbar-width: none;
+}
+.live-row::-webkit-scrollbar { display: none; }
+.live-pill,
+.live-dot {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(22, 14, 28, 0.42);
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
+}
+.live-pill[aria-pressed="true"] {
+  background: #fff;
+  color: #3e304b;
+  border-color: #fff;
+}
+.live-dot[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px #fff, 0 4px 10px rgba(0, 0, 0, 0.22);
+}
 .cam-shutter {
   width: 76px;
   height: 76px;

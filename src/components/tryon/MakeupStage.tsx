@@ -31,7 +31,6 @@ export function MakeupStage({
         lashes={lashes}
         blush={blush}
         brow={brow}
-        mirror
         makeup
         label="makeup"
         onPhase={(phase) => setNote(phase === "fallback" ? FALLBACK : "")}

@@ -42,7 +42,7 @@ export function loadLiveVision(): Promise<LiveVision | null> {
         const seg = {
           runningMode: "IMAGE" as const,
           outputCategoryMask: true,
-          outputConfidenceMasks: false,
+          outputConfidenceMasks: true,
         };
         const createSeg = (delegate: "GPU" | "CPU") =>
           vision.ImageSegmenter.createFromOptions(files, {

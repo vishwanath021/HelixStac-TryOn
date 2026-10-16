@@ -72,9 +72,6 @@ uniform float u_browOn;
 uniform float u_hairOn;
 uniform float u_hairStrength;
 uniform float u_hasMask;
-uniform float u_noseY;
-uniform float u_faceCx;
-uniform float u_faceHalf;
 
 bool insidePoly(vec2 p, vec2 poly[20], int n) {
   bool hit = false;
@@ -138,13 +135,9 @@ float polyEdge(vec2 p, vec2 poly[20], int n) {
   return best;
 }
 
-float classAt(vec2 uv) {
-  return floor(texture(u_mask, uv).r * 255.0 + 0.5);
-}
-
-float lashField(vec2 p, vec2 poly[9], int n, float len, float width) {
-  float best = width;
-  for (int i = 0; i < 7; i++) {
+float lashStroke(vec2 p, vec2 poly[9], int n, float len, float width) {
+  float cover = 0.0;
+  for (int i = 0; i < 6; i++) {
     if (i + 2 >= n) break;
     vec2 a = poly[i];
     vec2 b = poly[i + 2];
@@ -153,12 +146,20 @@ float lashField(vec2 p, vec2 poly[9], int n, float len, float width) {
     vec2 nrm = vec2(-dir.y, dir.x);
     vec2 mid = (a + b) * 0.5;
     if (dot(nrm, mid - poly[4]) < 0.0) nrm = -nrm;
-    vec2 tip = mid + nrm * len;
-    vec2 s = tip - mid;
-    float t = clamp(dot(p - mid, s) / (dot(s, s) + 1e-5), 0.0, 1.0);
-    best = min(best, length(p - (mid + s * t)));
+    float curl = len * (0.18 + 0.08 * float(i));
+    vec2 ctrl = mid + nrm * len * 0.62 + dir * curl;
+    vec2 tip = mid + nrm * len * 0.92 + dir * curl * 1.7;
+    for (int s = 0; s <= 5; s++) {
+      float t = float(s) / 5.0;
+      float u = 1.0 - t;
+      vec2 pos = mid * u * u + ctrl * 2.0 * u * t + tip * t * t;
+      float taper = width * (1.0 - t * 0.82);
+      float hit = 1.0 - smoothstep(taper * 0.2, taper, length(p - pos));
+      hit *= smoothstep(0.0, 0.22, t);
+      cover = max(cover, hit);
+    }
   }
-  return 1.0 - smoothstep(width * 0.35, width, best);
+  return cover;
 }
 
 vec3 softLight(vec3 base, vec3 blend) {
@@ -174,34 +175,20 @@ vec3 keepLuma(vec3 base, vec3 dyed) {
 void main() {
   vec2 p = vec2(v_uv.x, 1.0 - v_uv.y);
   vec3 base = texture(u_camera, v_uv).rgb;
-  float hairW = 0.0;
-  float skinW = 0.0;
-  float center = 0.0;
-  if (u_hasMask > 0.5) {
-    vec2 texel = vec2(1.0) / vec2(textureSize(u_mask, 0));
-    center = classAt(v_uv);
-    for (int y = -1; y <= 1; y++) {
-      for (int x = -1; x <= 1; x++) {
-        float cls = classAt(v_uv + texel * vec2(float(x), float(y)));
-        if (cls == 1.0) hairW += 1.0;
-        if (cls == 2.0 || cls == 3.0) skinW += 1.0;
-      }
-    }
-    hairW /= 9.0;
-    skinW /= 9.0;
-  }
-  bool skin = u_hasMask < 0.5 || skinW > 0.34;
-  bool beard = center == 1.0 && p.y > u_noseY && abs(p.x - u_faceCx) < u_faceHalf;
+  vec4 maskPx = texture(u_mask, v_uv);
+  float hairW = u_hasMask > 0.5 ? maskPx.r : 0.0;
+  float skinW = u_hasMask > 0.5 ? maskPx.g : 1.0;
+  bool skin = skinW > 0.34;
   bool outer = insidePoly(p, u_outer, 20);
   bool inner = insidePoly(p, u_inner, 20);
   vec3 color = base;
 
-  if (u_hairOn > 0.5 && hairW > 0.2 && !beard && !(outer && !inner)) {
-    vec3 dyed = mix(base, u_hair, u_hairStrength);
-    color = mix(color, keepLuma(base, dyed), hairW * 0.92);
+  if (u_hairOn > 0.5 && hairW > 0.03) {
+    vec3 dyed = keepLuma(base, u_hair);
+    color = mix(color, dyed, hairW * clamp(u_hairStrength, 0.0, 0.5));
   }
 
-  if (u_blushOn > 0.5 && skin && !beard) {
+  if (u_blushOn > 0.5 && skin && hairW < 0.2) {
     float r = u_faceUv * 0.18;
     float blush = max(
       1.0 - smoothstep(r * 0.15, r, length(p - u_cheekR)),
@@ -232,13 +219,13 @@ void main() {
 
   if (u_lashes > 0.5) {
     float lash = max(
-      lashField(p, u_upR, 9, u_faceUv * 0.03, width * 0.45),
-      lashField(p, u_upL, 9, u_faceUv * 0.03, width * 0.45)
+      lashStroke(p, u_upR, 9, u_faceUv * 0.018, width * 0.22),
+      lashStroke(p, u_upL, 9, u_faceUv * 0.018, width * 0.22)
     );
-    color = mix(color, color * vec3(0.05, 0.04, 0.05), lash * 0.8);
+    color = mix(color, color * vec3(0.08, 0.06, 0.07), lash * 0.34);
   }
 
-  if (u_lipOn > 0.5 && outer && !inner && skin && hairW < 0.45 && !beard) {
+  if (u_lipOn > 0.5 && outer && !inner && skin && hairW < 0.25) {
     float edge = max(u_faceUv * 0.012, max(u_px.x, u_px.y) * 1.5);
     float dist = min(polyEdge(p, u_outer, 20), polyEdge(p, u_inner, 20));
     float feather = smoothstep(0.0, edge, dist);
@@ -327,9 +314,9 @@ export function createLiveGl(canvas: HTMLCanvasElement): LiveGl | null {
     gl.bindTexture(gl.TEXTURE_2D, maskTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, mask);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, mask);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
@@ -383,10 +370,7 @@ export function createLiveGl(canvas: HTMLCanvasElement): LiveGl | null {
       gl.uniform1f(loc("u_blushOn"), hasFace && options.blush ? 1 : 0);
       gl.uniform1f(loc("u_browOn"), hasFace && options.brow ? 1 : 0);
       gl.uniform1f(loc("u_hairOn"), options.hair ? 1 : 0);
-      gl.uniform1f(loc("u_hairStrength"), Math.max(0, Math.min(1, options.hairStrength)));
-      gl.uniform1f(loc("u_noseY"), hasFace ? (pts[2]?.y ?? 0.55) : 2);
-      gl.uniform1f(loc("u_faceCx"), (faceL.x + faceR.x) / 2);
-      gl.uniform1f(loc("u_faceHalf"), faceUv * 0.42);
+      gl.uniform1f(loc("u_hairStrength"), Math.max(0, Math.min(0.5, options.hairStrength)));
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     },
     destroy() {

@@ -32,6 +32,8 @@ export type LookSamples = {
   near: Pt;
   eye: Pt;
   hair: Pt;
+  forehead: Pt;
+  cheek: Pt;
   beard: Pt;
   brow: Pt;
 };
@@ -59,7 +61,12 @@ export function lookSamples(points: Pt[]): LookSamples | null {
     lip,
     near: { x: lip.x * 0.25 + chin.x * 0.75, y: lip.y * 0.25 + chin.y * 0.75 },
     eye: centroid(eyeSpots),
-    hair: { x: forehead.x, y: Math.max(0.02, forehead.y - 0.08) },
+    hair: {
+      x: points[332]?.x ?? forehead.x,
+      y: Math.max(0.02, Math.min(forehead.y, points[332]?.y ?? forehead.y) - 0.12),
+    },
+    forehead: { x: forehead.x, y: forehead.y + 0.03 },
+    cheek: points[50] ?? { x: forehead.x - 0.12, y: forehead.y + 0.28 },
     beard: { x: chin.x, y: Math.min(0.98, chin.y) },
     brow: centroid(browSpots),
   };

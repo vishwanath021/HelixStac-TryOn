@@ -47,6 +47,8 @@ describe("live look samples", () => {
     expect(samples.lip.y).toBeCloseTo(0.72);
     expect(samples.near.y).toBeGreaterThan(samples.lip.y);
     expect(samples.beard.y).toBeGreaterThan(samples.lip.y);
+    expect(samples.hair.y).toBeLessThan(samples.forehead.y);
+    expect(samples.forehead.y).toBeLessThan(samples.brow.y);
     expect(samples.hair.y).toBeLessThan(samples.brow.y);
     expect(samples.eye.y).toBeCloseTo(0.4);
   });
