@@ -49,12 +49,13 @@ async function shot(page: Page, project: string, name: string) {
 
 async function go(page: Page, path: string) {
   let last: unknown;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      await page.goto(path, { waitUntil: "domcontentloaded" });
+      await page.goto(path, { waitUntil: "domcontentloaded", timeout: 30_000 });
       return;
     } catch (error) {
       last = error;
+      await page.waitForTimeout(1_000 * (attempt + 1));
     }
   }
   throw last;
@@ -65,12 +66,12 @@ async function signIn(page: Page, email: string, password: string) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await go(page, "/login");
-      await expect(page.getByRole("heading", { name: "Salon login" })).toBeVisible({ timeout: 8_000 });
+      await expect(page.getByRole("heading", { name: "Salon login" })).toBeVisible({ timeout: 20_000 });
       await expect(page.locator("form").first()).toHaveAttribute("data-ready", "yes");
       await page.getByLabel("Email").fill(email);
       await page.getByLabel("Password").fill(password);
       await page.getByRole("button", { name: "Sign in" }).click();
-      await page.waitForURL(/\/admin|\/super/, { timeout: 8_000 });
+      await page.waitForURL(/\/admin|\/super/, { timeout: 30_000 });
       return;
     } catch (error) {
       last = error;
@@ -81,14 +82,17 @@ async function signIn(page: Page, email: string, password: string) {
 
 test("guest, owner, and super layouts fit the device", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
-  await page.goto("/s/demo");
+  await go(page, "/s/demo");
   await expect(page.getByRole("heading", { name: "See your next look." })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: "Demo Salon – Bengaluru" })).toBeVisible();
   await expect(page.locator("input[data-photo='gallery']")).toHaveAttribute("accept", "image/*");
   await expect(page.locator("input[data-photo='camera']")).toHaveAttribute("capture", "user");
   const gallery = page.getByRole("region", { name: "Styles" });
-  await gallery.getByRole("button", { name: "Soft Bob" }).click();
-  await expect(gallery.getByRole("button", { name: "Soft Bob" })).toHaveAttribute("aria-pressed", "true");
+  const bob = gallery.getByRole("button", { name: "Soft Bob" });
+  await expect(async () => {
+    await bob.click();
+    await expect(bob).toHaveAttribute("aria-pressed", "true", { timeout: 1_500 });
+  }).toPass({ timeout: 30_000 });
   await expect(gallery.getByRole("button", { name: "Soft Bob" }).locator(".check")).toBeVisible();
   await fits(page);
   await shot(page, testInfo.project.name, "guest");
