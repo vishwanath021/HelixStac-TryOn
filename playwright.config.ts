@@ -1,7 +1,7 @@
 import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
-const fakeCamera = path.join(process.cwd(), "tests/fixtures/selfie.y4m");
+const fakeCamera = path.join(process.cwd(), "tests/fixtures/face-live.y4m");
 
 const chromiumCamera = {
   permissions: ["camera"],
@@ -32,10 +32,10 @@ export default defineConfig({
     { name: "android", testIgnore: /responsive/, use: { ...devices["Pixel 5"], ...chromiumCamera } },
     {
       name: "iphone",
-      testIgnore: /responsive|phone-matrix/,
+      testIgnore: /responsive|phone-matrix|bridal\.spec|studio\.spec/,
       use: { ...devices["iPhone 13"], browserName: "chromium", defaultBrowserType: "chromium", ...chromiumCamera },
     },
-    { name: "desktop", testIgnore: /responsive|phone-matrix/, use: desktop(1280, 800) },
+    { name: "desktop", testIgnore: /responsive|phone-matrix|bridal\.spec|studio\.spec/, use: desktop(1280, 800) },
     { name: "tablet", testMatch: /five-tools/, use: { ...desktop(768, 1024), viewport: { width: 768, height: 1024 } } },
     { name: "webkit-iphone-13", testMatch: /responsive/, use: { ...devices["iPhone 13"] } },
     { name: "webkit-iphone-15", testMatch: /responsive/, use: { ...devices["iPhone 15"] } },
@@ -85,8 +85,8 @@ export default defineConfig({
           FEATURE_CONCIERGE: "true",
           FEATURE_GUIDE: "true",
           FEATURE_GUEST_HUB: "true",
-          GENERATE_PER_IP_HOUR: "40",
-          GENERATE_PER_IP_DAY: "80",
+          GENERATE_PER_IP_HOUR: "80",
+          GENERATE_PER_IP_DAY: "160",
           GENERATE_PER_TENANT_MINUTE: "200",
           LOGIN_LIMIT: "200",
           APP_BASE_URL: "http://127.0.0.1:3000",

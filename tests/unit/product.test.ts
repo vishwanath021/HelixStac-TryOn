@@ -346,7 +346,7 @@ describe("privacy helpers", () => {
     expect(redact({ photo: "abc", note: "ok", apiKey: "sk-abcdefghij" })).toEqual({ photo: "[redacted]", note: "ok", apiKey: "[redacted]" });
     expect(redact("data:image/jpeg;base64,aaaa")).toBe("[redacted-string]");
     expect(redact("sk-abcdefghij")).toBe("[redacted-string]");
-    expect(CONSENT_VERSION).toBe("2026-10-11");
+    expect(CONSENT_VERSION).toBe("2026-10-15");
     expect(CONSENT_HASH).toHaveLength(64);
   });
 

@@ -28,6 +28,19 @@ async function referenceCard(styleId: string, styleName: string, folder: ThumbFo
     .toBuffer();
 }
 
+/** Sample bridal preview. The name sits on a bar at the bottom so the face stays clear. */
+export async function demoBridalSample(userJpeg: Buffer, styleName: string) {
+  const width = 768;
+  const height = 1024;
+  const base = await sharp(userJpeg).rotate().resize(width, height, { fit: "cover" }).jpeg({ quality: 86 }).toBuffer();
+  const title = escapeXml((styleName || "Bridal look").slice(0, 42));
+  const bar = Buffer.from(`<svg width="${width}" height="64" xmlns="http://www.w3.org/2000/svg">
+    <rect width="${width}" height="64" fill="#3E304B"/>
+    <text x="24" y="40" font-family="Georgia, serif" font-size="22" fill="#ffffff">${title}</text>
+  </svg>`);
+  return sharp(base).composite([{ input: bar, top: height - 64, left: 0 }]).jpeg({ quality: 84 }).toBuffer();
+}
+
 /** Guest photo, with the chosen style's portrait in a labelled card. Not a flat colour block. */
 export async function demoStyleComposite(userJpeg: Buffer, styleId: string, styleName: string, folder: ThumbFolder = "styles") {
   const width = 768;

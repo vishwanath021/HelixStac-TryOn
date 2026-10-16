@@ -1,12 +1,17 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
+import { bridalFinishById, bridalHairById, bridalLipById, bridalLookById, bridalMakeupById, mehendiCardById, mehendiChoice, MEHENDI_COVERAGE, MEHENDI_DENSITY, MEHENDI_SHADES, MEHENDI_STYLES } from "@/data/bridal";
+import { readBridalGenerateFields } from "@/lib/bridal-request";
 import { parseBrowColour, parseBrowThickness } from "@/data/brows";
 import { claimGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
 import { BROWS_NEED_OPENAI, browsRoute, demoGuestPreview, engineForGuestTool, guestEngineReady, loadGuestReference, readGuestEngine, runGuestHairstyleIfReady, runGuestLookIfReady } from "@/lib/ai/guest-hairstyle";
 import { guestPreviewHeaders } from "@/lib/ai/guest-response";
 import { auth } from "@/auth";
 import { resolveFalKey } from "@/lib/ai/credentials";
+import { bridalReferenceJpeg } from "@/lib/bridal-reference";
+import { buildBridalPrompt, buildMehendiPrompt } from "@/lib/prompts";
+import { styleEnabledForTenant } from "@/lib/style-menu";
 import { consumePreviewRateShared, guestLimitMessage, toolEnabled, type PreviewTool, type ToolId } from "@/lib/tools";
 import { resolveLook } from "@/lib/guidance";
 import { classifySkinPhoto } from "@/lib/hand-photo";
@@ -60,7 +65,8 @@ export async function POST(req: Request) {
   const sessionId = String(form.get("sessionId") || "");
   const consentId = String(form.get("consentId") || "");
   const rawTool = String(form.get("tool") || "style");
-  const tool = rawTool === "brows" || rawTool === "beard" || rawTool === "nails" || rawTool === "colour" ? rawTool : "style";
+  const tool = rawTool === "brows" || rawTool === "beard" || rawTool === "nails" || rawTool === "colour" || rawTool === "bridal" || rawTool === "mehendi" ? rawTool : "style";
+  const bridalTool = tool === "bridal" || tool === "mehendi";
   const shadeId = form.get("shadeId") ? String(form.get("shadeId")) : null;
   const browThickness = parseBrowThickness(form.get("browThickness"));
   const browColour = parseBrowColour(form.get("browColour"));
@@ -77,7 +83,10 @@ export async function POST(req: Request) {
   if (tenant.status === "SUSPENDED") {
     return NextResponse.json({ error: "SUSPENDED", message: "This salon's try-on is paused." }, { status: 403 });
   }
-  if (!tenant.productTryOn) {
+  if (bridalTool && !tenant.productBridal) {
+    return NextResponse.json({ error: "PRODUCT", message: "Bridal is turned off for this salon." }, { status: 404 });
+  }
+  if (!bridalTool && !tenant.productTryOn) {
     return NextResponse.json({ error: "PRODUCT", message: "Try-on is not available for this salon." }, { status: 404 });
   }
 
@@ -99,16 +108,36 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "DAILY_CAP", message: guestLimitMessage("daily") }, { status: 429 });
   }
 
-  const look = resolveLook(tool, styleId);
-  const platformTool: ToolId = tool === "style" ? "hairstyle" : tool;
-  const toolOn =
-    toolEnabled(platformTool) &&
-    (tool === "brows" ? tenant.toolBrows : tool === "beard" ? tenant.toolBeard : tool === "nails" ? tenant.toolNails : tool === "colour" ? tenant.toolColour : tenant.toolStyle);
+  const bridalFields = readBridalGenerateFields(form);
+  const makeup = bridalMakeupById(bridalFields.makeup || "");
+  const hair = bridalHairById(bridalFields.hair || "");
+  const finish = bridalFinishById(bridalFields.finish || makeup?.finishId || "hd");
+  const lip = bridalLipById(bridalFields.lip || makeup?.lipId || "red");
+  const mehendiCard = mehendiCardById(bridalFields.mehendiCard || "");
+  const mehendiStyle = mehendiChoice(MEHENDI_STYLES, bridalFields.mehendiStyle || mehendiCard?.styleId || styleId);
+  const mehendiCoverage = mehendiChoice(MEHENDI_COVERAGE, bridalFields.coverage || "");
+  const mehendiShade = mehendiChoice(MEHENDI_SHADES, bridalFields.mehendiShade || "");
+  const mehendiDensity = mehendiChoice(MEHENDI_DENSITY, bridalFields.density || "");
+  const bridalLook = tool === "bridal" ? bridalLookById(styleId) : null;
+  const look = bridalTool
+    ? bridalLook
+      ? { id: bridalLook.id, name: bridalLook.name, serviceKeys: [] as string[] }
+      : tool === "mehendi" && mehendiStyle && mehendiCoverage && mehendiShade && mehendiDensity
+        ? { id: mehendiStyle.id, name: `Mehendi · ${mehendiStyle.label}`, serviceKeys: [] as string[] }
+        : null
+    : resolveLook(tool, styleId);
+  const platformTool: ToolId = tool === "style" ? "hairstyle" : tool === "bridal" || tool === "mehendi" ? "hairstyle" : tool;
+  const toolOn = bridalTool
+    ? true
+    : toolEnabled(platformTool) &&
+      (tool === "brows" ? tenant.toolBrows : tool === "beard" ? tenant.toolBeard : tool === "nails" ? tenant.toolNails : tool === "colour" ? tenant.toolColour : tenant.toolStyle);
   if (!toolOn) return NextResponse.json({ error: "TOOL", message: "That try-on is turned off for this salon." }, { status: 403 });
-  if (!look) return NextResponse.json({ error: "STYLE", message: "That look is not on this salon's menu." }, { status: 400 });
-  if (tool === "style") {
-    const enabled = await prisma.tenantStyle.findUnique({ where: { tenantId_styleId: { tenantId: tenant.id, styleId } } });
-    if (!enabled?.enabled) return NextResponse.json({ error: "STYLE", message: "That style is not on this salon's menu." }, { status: 400 });
+  if (!look) {
+    const message = tool === "mehendi" ? "Choose a mehendi design first." : bridalTool ? "Choose a bridal look first." : "That look is not on this salon's menu.";
+    return NextResponse.json({ error: "STYLE", message }, { status: 400 });
+  }
+  if (tool === "style" && !(await styleEnabledForTenant(tenant.id, styleId))) {
+    return NextResponse.json({ error: "STYLE", message: "That style is not on this salon's menu." }, { status: 400 });
   }
 
   const salonToken = String(form.get("salonToken") || "");
@@ -139,10 +168,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: code, message: "Use a JPEG, PNG, or WebP selfie under 2 MB." }, { status: 400 });
   }
 
-  if (tool === "nails") {
+  if (tool === "nails" || tool === "mehendi") {
     const small = await sharp(jpeg).resize(48, 48, { fit: "fill" }).removeAlpha().raw().toBuffer();
     if (classifySkinPhoto(small, 48, 48, 3) === "face") {
-      return NextResponse.json({ error: "HAND", message: "That looks like a face. Upload a photo of your hand." }, { status: 400 });
+      return NextResponse.json({ error: "HAND", message: tool === "mehendi" ? "That looks like a face. Upload a photo of your hand for the mehendi." : "That looks like a face. Upload a photo of your hand." }, { status: 400 });
     }
   }
 
@@ -152,7 +181,21 @@ export async function POST(req: Request) {
     const claim = await claimGenerationJob({
       tenantId: tenant.id,
       requestId,
-      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: tool === "brows" ? `${browThickness}:${browColour}` : tool === "style" ? shadeId || "" : "", mode: tool }),
+      fingerprint: jobFingerprint({
+        photo: jpeg,
+        styleId,
+        tool,
+        shadeId: tool === "brows"
+          ? `${browThickness}:${browColour}`
+          : tool === "style"
+            ? shadeId || ""
+            : tool === "bridal"
+              ? [finish.id, lip.id, makeup?.id || "", hair?.id || ""].join(":")
+              : tool === "mehendi"
+                ? [mehendiStyle?.id || "", mehendiCoverage?.id || "", mehendiShade?.id || "", mehendiDensity?.id || ""].join(":")
+                : "",
+        mode: tool,
+      }),
     });
     if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
     if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
@@ -200,7 +243,20 @@ export async function POST(req: Request) {
     }
   }
 
-  const guestLook = tool === "style" ? null : await loadGuestReference(tool, styleId, tool === "brows" ? { thickness: browThickness, colour: browColour } : undefined);
+  const guestLook = tool === "style"
+    ? null
+    : tool === "bridal" && bridalLook
+      ? { prompt: buildBridalPrompt(bridalLook, finish, lip, {
+          kajal: bridalFields.kajal === "1",
+          lashes: bridalFields.lashes === "1",
+          blush: bridalFields.blush === "1",
+          brow: bridalFields.browTint === "1",
+          makeup: makeup?.prompt,
+          hair: hair?.prompt,
+        }), reference: await bridalReferenceJpeg(bridalLook.id), referenceFile: `${bridalLook.id}.jpg` }
+      : tool === "mehendi" && mehendiStyle && mehendiCoverage && mehendiShade && mehendiDensity
+        ? { prompt: buildMehendiPrompt(mehendiStyle, mehendiCoverage, mehendiShade, mehendiDensity), reference: await bridalReferenceJpeg(mehendiCard?.id || `mehendi-${mehendiStyle.id}`), referenceFile: `${mehendiCard?.id || mehendiStyle.id}.jpg` }
+        : await loadGuestReference(tool as "brows" | "beard" | "nails" | "colour", styleId, tool === "brows" ? { thickness: browThickness, colour: browColour } : undefined);
   if (tool !== "style" && !guestLook) {
     await failGenerationJob(jobId, { outcome: "style", message: "That look is not on this salon's menu." });
     return NextResponse.json({ error: "STYLE", message: "That look is not on this salon's menu." }, { status: 400 });
@@ -219,7 +275,7 @@ export async function POST(req: Request) {
   const limited = await takePreviewSlot();
   if (limited) return limited;
 
-  const kind = tool === "brows" ? "BROWS" : tool === "beard" ? "BEARD" : tool === "nails" ? "NAILS" : tool === "colour" ? "COLOUR" : "STYLE";
+  const kind = tool === "brows" ? "BROWS" : tool === "beard" ? "BEARD" : tool === "nails" ? "NAILS" : tool === "colour" ? "COLOUR" : tool === "bridal" ? "BRIDAL" : tool === "mehendi" ? "MEHENDI" : "STYLE";
   const effective = engineForGuestTool(tool, engine);
   const superUser = placementDebug ? await viewerIsSuper() : false;
   const withPose = (response: NextResponse) => {

@@ -5,6 +5,7 @@ import { resolveLook } from "@/lib/guidance";
 import { loadTenantBySlug, servicesForLook, toSalonConfig } from "@/lib/salon";
 import { tooMany } from "@/lib/http/guard";
 import { prisma } from "@/lib/prisma";
+import { shareableLookUrl } from "@/lib/media-link";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 
 const bodySchema = z.object({
@@ -20,21 +21,6 @@ const bodySchema = z.object({
   outletId: z.string().optional().nullable(),
   lookUrl: z.string().max(2000).optional().nullable(),
 });
-
-function shareableLookUrl(value: string | null | undefined) {
-  if (!value) return "";
-  try {
-    const url = new URL(value);
-    const base = new URL(process.env.APP_BASE_URL || "http://localhost:3000");
-    if (url.origin !== base.origin) return "";
-    if (url.pathname !== "/api/v1/media") return "";
-    const key = url.searchParams.get("key") || "";
-    if (!key.startsWith("generations/") || !url.searchParams.get("exp") || !url.searchParams.get("sig")) return "";
-    return url.toString();
-  } catch {
-    return "";
-  }
-}
 
 export async function POST(req: Request) {
   const limited = await tooMany(req, "leads", 30, 60 * 60 * 1000);

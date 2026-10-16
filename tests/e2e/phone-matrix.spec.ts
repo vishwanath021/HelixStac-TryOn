@@ -43,7 +43,6 @@ async function previewLook(page: Page, styleName: string) {
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   const gallery = page.getByRole("region", { name: "Styles" });
   await gallery.getByRole("button", { name: "Women", exact: true }).click();
-  await gallery.getByRole("button", { name: "All styles" }).click();
   await gallery.getByRole("button", { name: styleName }).click();
   await expect(page.getByText("Reading your photo...")).toBeVisible();
   await expect(page.getByRole("heading", { name: styleName })).toBeVisible({ timeout: 30_000 });
@@ -71,6 +70,7 @@ test.afterEach(async () => {
         status: "TRIAL",
         productTryOn: true,
         productQueue: false,
+        productBridal: true,
         creditBalance: 900,
         whatsapp: "919800011122",
       },
@@ -89,13 +89,14 @@ test("guest: upload, every tab including bridal, generate, before/after, save, a
     await expect(page.getByRole("tab", { name })).toHaveAttribute("aria-selected", "true");
   }
   await page.getByRole("tab", { name: "Nails" }).click();
-  await expect(page.getByRole("button", { name: "Take a photo of your hand" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Upload a hand photo" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Live nails" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use photo" })).toBeVisible();
 
   await page.getByRole("tab", { name: "Hair style" }).click();
   const gallery = page.getByRole("region", { name: "Styles" });
+  await expect(gallery.getByRole("button", { name: "Bridal", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Bridal", exact: true })).toBeVisible();
   await gallery.getByRole("button", { name: "Women", exact: true }).click();
-  await gallery.getByRole("button", { name: "Bridal", exact: true }).click();
   for (const look of ["Bridal Bun", "Braided Updo", "Side-Swept Curls", "Half-Up with Flowers", "South-Indian Bridal Braid"]) {
     await expect(gallery.getByRole("button", { name: look })).toBeVisible();
   }
@@ -284,6 +285,7 @@ test("super-admin: try-on only, queue only, and both change what the owner and g
   await sheet.getByRole("tab", { name: "Plan & credits" }).click();
   await expect(sheet.getByRole("checkbox", { name: /AI Try-on/ })).toBeChecked();
   await expect(sheet.getByRole("checkbox", { name: /^Queue/ })).not.toBeChecked();
+  await expect(sheet.getByRole("checkbox", { name: /^Bridal/ })).toBeChecked();
 
   const guestTryOn = await freshPage(browser);
   await guestTryOn.page.goto(`/s/${slug}`);
@@ -306,6 +308,8 @@ test("super-admin: try-on only, queue only, and both change what the owner and g
   await expect(sheet.getByRole("checkbox", { name: /^Queue/ })).toBeChecked();
   await sheet.getByRole("checkbox", { name: /AI Try-on/ }).click();
   await expect(sheet.getByRole("checkbox", { name: /AI Try-on/ })).not.toBeChecked();
+  await sheet.getByRole("checkbox", { name: /^Bridal/ }).click();
+  await expect(sheet.getByRole("checkbox", { name: /^Bridal/ })).not.toBeChecked();
 
   const guestQueue = await freshPage(browser);
   await guestQueue.page.goto(`/s/${slug}`);
@@ -325,9 +329,12 @@ test("super-admin: try-on only, queue only, and both change what the owner and g
 
   await sheet.getByRole("checkbox", { name: /AI Try-on/ }).click();
   await expect(sheet.getByRole("checkbox", { name: /AI Try-on/ })).toBeChecked();
+  await sheet.getByRole("checkbox", { name: /^Bridal/ }).click();
+  await expect(sheet.getByRole("checkbox", { name: /^Bridal/ })).toBeChecked();
   const guestBoth = await freshPage(browser);
   await guestBoth.page.goto(`/s/${slug}`);
   await expect(guestBoth.page.getByRole("tab", { name: "Hair style" })).toBeVisible();
+  await expect(guestBoth.page.getByRole("button", { name: "Bridal", exact: true })).toBeVisible();
   await expect(guestBoth.page.getByRole("link", { name: "Join queue" })).toBeVisible();
   await guestBoth.context.close();
 });
@@ -440,7 +447,7 @@ test("edge: a paused queue tells the guest to ask at the desk", async ({ page })
 
 test("edge: both products off hides the tools and says so", async ({ page }) => {
   const prisma = await salonDb();
-  await prisma.tenant.update({ where: { slug: "demo" }, data: { productTryOn: false, productQueue: false } });
+  await prisma.tenant.update({ where: { slug: "demo" }, data: { productTryOn: false, productQueue: false, productBridal: false } });
   await prisma.$disconnect();
   await page.goto("/s/demo");
   await expect(page.getByText("Try-on is not available.")).toBeVisible();

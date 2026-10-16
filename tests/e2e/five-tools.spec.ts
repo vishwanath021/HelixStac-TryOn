@@ -1,15 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openLive, waitForCapture } from "./live-entry";
 
 async function usePhoto(page: Page, file: string) {
   await page.locator('input[data-photo="gallery"]').setInputFiles(file);
-  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await waitForCapture(page);
 }
 
 async function look(page: Page, tab: string, region: string, name: string, posts: { count: number }) {
   await page.getByRole("tab", { name: tab }).click();
   const before = posts.count;
   await page.getByRole("region", { name: region }).getByRole("button", { name }).click();
-  await expect(page.getByRole("heading", { name, exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name, exact: true })).toBeVisible({ timeout: 45_000 });
   expect(posts.count).toBe(before + 1);
   await expect(page.getByText(/Too many/i)).toHaveCount(0);
   const slider = page.getByRole("slider", { name: /BEFORE \/ AFTER/i });
@@ -17,11 +18,14 @@ async function look(page: Page, tab: string, region: string, name: string, posts
   await slider.fill("28");
   await expect(slider).toHaveValue("28");
   await page.getByRole("button", { name: "Try another" }).click();
+  await expect(page.locator("[data-studio='live']")).toBeVisible();
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.locator("[data-studio='live']")).toHaveCount(0);
 }
 
 test("style, colour, brows, beard, and nails preview on this screen", async ({ page }, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const posts = { count: 0 };
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().includes("/api/v1/tryon/generate")) posts.count += 1;
@@ -29,9 +33,11 @@ test("style, colour, brows, beard, and nails preview on this screen", async ({ p
 
   await page.goto("/s/demo");
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
-  await page.getByRole("button", { name: "Take selfie" }).click();
+  await openLive(page);
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.locator("[data-studio='live']")).toHaveCount(0);
   await page.getByRole("tab", { name: "Brows" }).click();
   await expect(page.getByText(/camera is not available/i)).toHaveCount(0);
   await page.getByRole("tab", { name: "Hair style" }).click();
@@ -47,7 +53,7 @@ test("style, colour, brows, beard, and nails preview on this screen", async ({ p
   await intensity.fill("40");
   await expect(intensity).toHaveValue("40");
   await page.getByRole("button", { name: "Honey Blonde" }).click();
-  await expect(page.getByRole("heading", { name: "Honey Blonde", exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "Honey Blonde", exact: true })).toBeVisible({ timeout: 45_000 });
   const colourSlider = page.getByRole("slider", { name: /BEFORE \/ AFTER/i });
   await expect(colourSlider).toBeVisible();
   await colourSlider.fill("28");

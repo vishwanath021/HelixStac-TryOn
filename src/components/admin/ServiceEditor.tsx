@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { BRIDAL_PACKAGES, BRIDAL_PACKAGE_KEYS } from "@/data/bridal";
 
 type Row = { id: string; key: string; name: string; priceInr: number; durationMin: number | null; active: boolean };
 
@@ -66,12 +67,49 @@ export function ServiceEditor({ initial }: { initial: Row[] }) {
     setRows((current) => current.map((item) => (item.id === row.id ? { ...item, priceInr } : item)));
   }
 
+  const packages = BRIDAL_PACKAGES.map((pack) => rows.find((row) => row.key === pack.key)).filter((row): row is Row => Boolean(row));
+  const everyday = rows.filter((row) => !BRIDAL_PACKAGE_KEYS.has(row.key));
+
+  async function savePackage(row: Row, name: string, priceRaw: string) {
+    const priceInr = priceRaw.trim() === "" ? 0 : Math.max(0, Math.round(Number(priceRaw)));
+    const nextName = name.trim().length >= 2 ? name.trim() : row.name;
+    const res = await fetch(`/api/v1/admin/services/${row.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: nextName, priceInr }),
+    });
+    if (!res.ok) {
+      setMessage("Could not save that package.");
+      return;
+    }
+    setRows((current) => current.map((item) => (item.id === row.id ? { ...item, name: nextName, priceInr } : item)));
+    setMessage(priceInr > 0 ? "Package saved. Brides can see it." : "Package hidden until it has a price.");
+  }
+
   return (
     <div>
-      <h2 className="mb-2 font-serif text-2xl">Your services</h2>
-      {rows.length === 0 ? <p className="text-sm text-muted">No services yet.</p> : null}
-      <ul className="space-y-2" data-service-count={rows.length}>
-        {rows.map((row) => (
+      <h2 className="mb-2 font-serif text-2xl">Bridal packages</h2>
+      <p className="mb-3 text-sm text-muted">Add a price to show a package before booking. Leave the price empty to hide it.</p>
+      <ul className="space-y-2" aria-label="Bridal packages">
+        {packages.map((row) => {
+          const hint = BRIDAL_PACKAGES.find((pack) => pack.key === row.key)?.hint;
+          return (
+            <li key={row.id} className="card grid gap-2 p-3 text-sm">
+              <label>Name
+                <input className="field mt-1" aria-label={`${row.name} package name`} defaultValue={row.name} onBlur={(event) => void savePackage(row, event.target.value, String(row.priceInr || ""))} />
+              </label>
+              <label>Price in rupees
+                <input className="field mt-1" inputMode="numeric" aria-label={`${row.name} price`} placeholder="Empty hides it" defaultValue={row.priceInr > 0 ? row.priceInr : ""} onBlur={(event) => void savePackage(row, row.name, event.target.value)} />
+              </label>
+              {hint ? <p className="text-xs text-muted">{hint}</p> : null}
+            </li>
+          );
+        })}
+      </ul>
+      <h2 className="mb-2 mt-8 font-serif text-2xl">Your services</h2>
+      {everyday.length === 0 ? <p className="text-sm text-muted">No services yet.</p> : null}
+      <ul className="space-y-2" data-service-count={everyday.length}>
+        {everyday.map((row) => (
           <li key={row.id} className="card flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
             <span>
               {row.name}

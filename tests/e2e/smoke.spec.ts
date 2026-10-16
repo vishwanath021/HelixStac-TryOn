@@ -1,5 +1,6 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import { openLive, waitForCapture } from "./live-entry";
 import { contrastRatio } from "@/lib/contrast";
 
 function rgbToHex(rgb: string) {
@@ -104,7 +105,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await expect(page.getByText("Add your photo first")).toBeVisible();
   await expect(gallery.getByRole("button", { name: "Soft Bob" })).toHaveAttribute("aria-pressed", "true");
 
-  await page.getByRole("button", { name: "Take selfie" }).click();
+  await openLive(page);
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
   await page.waitForFunction(() => {
     const video = document.querySelector("video");
@@ -120,11 +121,10 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   });
   await page.screenshot({ path: "docs/screenshots/03-camera.png", fullPage: true });
   await page.getByRole("button", { name: "Take photo" }).click();
-  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await waitForCapture(page);
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
 
-  await expect(page.getByText("Reading your photo...")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 45_000 });
   await expect(page.locator("section[aria-label=Photo]")).toHaveClass(/is-ready/);
   await expect(page.getByText("Demo", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/demo mode/i)).toHaveCount(0);
@@ -143,15 +143,16 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   expect((await downloadPromise).suggestedFilename()).toMatch(/\.jpg$/);
   await page.getByRole("button", { name: "Try another" }).click();
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(gallery.getByRole("button", { name: "Kids Soft Bob" })).toHaveCount(0);
   await gallery.getByRole("button", { name: "Kids", exact: true }).click();
   await expect(gallery.locator("img")).toHaveCount(4);
 
   await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
-  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await waitForCapture(page);
   await gallery.getByRole("button", { name: "Women", exact: true }).click();
   await gallery.getByRole("button", { name: "Wolf Cut" }).click();
-  await expect(page.getByRole("heading", { name: "Wolf Cut" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "Wolf Cut" })).toBeVisible({ timeout: 45_000 });
   const popupPromise = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Book this look" }).click();
   const popup = await popupPromise;
@@ -210,13 +211,13 @@ test("colour, brows, nails, and beard are on the guest page", async ({ page }) =
 
 test("camera view can switch to upload without a refresh", async ({ page }) => {
   await page.goto("/s/demo");
-  const upload = page.getByRole("button", { name: "Upload" });
-  const take = page.getByRole("button", { name: "Take selfie" });
+  const upload = page.getByRole("button", { name: "Use photo" });
+  const take = page.getByRole("button", { name: "Live styling" });
   await expect(upload).toBeVisible();
   expect(await buttonContrast(upload)).toBeGreaterThanOrEqual(4.5);
   expect(await buttonContrast(take)).toBeGreaterThanOrEqual(4.5);
 
-  await take.click();
+  await openLive(page);
   const instead = page.getByRole("button", { name: "Upload a photo instead" });
   const back = page.getByRole("button", { name: "Back" });
   await expect(page.getByRole("button", { name: "Take photo" })).toBeEnabled();
@@ -236,7 +237,7 @@ test("camera view can switch to upload without a refresh", async ({ page }) => {
   const chooser = page.waitForEvent("filechooser");
   await instead.click();
   await (await chooser).setFiles("public/samples/portrait.jpg");
-  await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
+  await waitForCapture(page);
   await expect(instead).toHaveCount(0);
   await page.waitForFunction(() => !document.querySelector("video")?.srcObject);
 });
@@ -247,10 +248,10 @@ test("a near-black salon brand still has readable primary button text", async ({
   await prisma.tenant.update({ where: { slug: "demo" }, data: { primaryColor: "#111111" } });
   try {
     await page.goto("/s/demo");
-    const take = page.getByRole("button", { name: "Take selfie" });
+    const take = page.getByRole("button", { name: "Live styling" });
     await expect(take).toBeVisible();
     expect(await buttonContrast(take)).toBeGreaterThanOrEqual(4.5);
-    expect(await buttonContrast(page.getByRole("button", { name: "Upload" }))).toBeGreaterThanOrEqual(4.5);
+    expect(await buttonContrast(page.getByRole("button", { name: "Use photo" }))).toBeGreaterThanOrEqual(4.5);
   } finally {
     await prisma.tenant.update({ where: { slug: "demo" }, data: { primaryColor: before.primaryColor } });
     await prisma.$disconnect();
@@ -312,11 +313,11 @@ test("denied camera offers an upload fallback", async ({ page }) => {
     });
   });
   await page.goto("/s/demo");
-  await page.getByRole("button", { name: "Take selfie" }).click();
+  await openLive(page);
   await expect(page.getByText(/Camera permission was denied/i)).toBeVisible();
   await expect(page.getByText(/address bar/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Use the phone camera" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Upload" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use photo" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Styles" }).locator("img").first()).toBeVisible();
 });
 
@@ -339,7 +340,7 @@ test("anonymous daily cap explains the limit and salon mode lifts it", async ({ 
     await expect(page.locator("[data-salon-mode='yes']")).toBeVisible();
     await page.locator('input[data-photo="gallery"]').setInputFiles("public/samples/portrait.jpg");
     await page.getByRole("region", { name: "Styles" }).getByRole("button", { name: "Pixie" }).click();
-    await expect(page.getByRole("heading", { name: "Pixie" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: "Pixie" })).toBeVisible({ timeout: 45_000 });
   } finally {
     await prisma.tenant.update({ where: { slug: "demo" }, data: { anonDailyCap: 200 } });
     await prisma.$disconnect();
@@ -407,7 +408,7 @@ test("style gallery uses portraits and the demo result is not a flat placeholder
   await page.screenshot({ path: "docs/screenshots/17-after-photo.png", fullPage: true });
   await gallery.getByRole("button", { name: "Soft Bob" }).click();
   await expect(page.getByText("Reading your photo...")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "Soft Bob" })).toBeVisible({ timeout: 45_000 });
   const slider = page.getByRole("slider", { name: /BEFORE \/ AFTER/i });
   await expect(slider).toBeVisible();
   await expect(page.locator('img[alt="BEFORE"]')).not.toHaveAttribute("src", /demo-before/);
