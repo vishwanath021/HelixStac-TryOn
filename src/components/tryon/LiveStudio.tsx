@@ -94,7 +94,7 @@ export function LiveStudio({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black text-white" data-studio="live">
+    <div className="absolute inset-0 z-20 overflow-hidden bg-black text-white" data-studio="live">
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute inset-0 origin-center" style={{ transform: `scale(${zoom})`, position: "absolute" }}>
           <video
@@ -112,8 +112,8 @@ export function LiveStudio({
           </div>
         </div>
       </div>
-      <button className="cam-round absolute left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20" type="button" aria-label="Back" onClick={onBack}>‹</button>
-      <button className="cam-round absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20" type="button" aria-label="Close" onClick={onClose}>×</button>
+      <button className="cam-round absolute left-3 top-3 z-20" type="button" aria-label="Back" onClick={onBack}>‹</button>
+      <button className="cam-round absolute right-3 top-3 z-20" type="button" aria-label="Close" onClick={onClose}>×</button>
       <StudioRail
         onRetake={onRetake}
         onZoomIn={() => onZoom(Math.min(2, Math.round((zoom + 0.25) * 100) / 100))}
@@ -123,7 +123,7 @@ export function LiveStudio({
         onDownload={onDownload}
         canDownload={canDownload}
       />
-      <div className="absolute inset-x-0 bottom-0 z-20 grid justify-items-center gap-3 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <div className="absolute inset-x-0 bottom-0 z-20 grid justify-items-center gap-2 px-3 pb-3">
         {footer}
         <button className="cam-shutter" type="button" aria-label="Take photo" disabled={!ready || count !== null || busy} onClick={() => void shoot()} />
         {onUpload ? (
@@ -132,7 +132,7 @@ export function LiveStudio({
       </div>
       {count !== null && (
         <div className="absolute inset-0 z-30 grid place-items-center bg-black/45" role="status">
-          <p className="font-serif text-7xl">{count === "capturing" ? "Capturing..." : count}</p>
+          <p className="font-serif text-5xl">{count === "capturing" ? "Capturing..." : count}</p>
         </div>
       )}
       {busy && stage && (

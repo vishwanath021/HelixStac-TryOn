@@ -191,13 +191,13 @@ test("a new catalogue style generates before the salon has a menu row", async ({
   test.setTimeout(120_000);
   const prisma = await salonDb();
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "demo" } });
-  await prisma.tenantStyle.deleteMany({ where: { tenantId: tenant.id, styleId: "jasmine-bridal-braid" } });
+  await prisma.tenantStyle.deleteMany({ where: { tenantId: tenant.id, styleId: "wolf-cut" } });
   await prisma.$disconnect();
   await page.goto("/s/demo");
   await page.locator("input[data-photo='gallery']").setInputFiles("public/samples/portrait.jpg");
   const gallery = page.getByRole("region", { name: "Styles" });
   await gallery.getByRole("button", { name: "Women", exact: true }).click();
-  await gallery.getByRole("button", { name: "South-Indian Bridal Braid" }).click();
+  await gallery.getByRole("button", { name: "Wolf Cut" }).click();
   await expect(page.getByText("That style is not on this salon's menu.")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "South-Indian Bridal Braid" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Wolf Cut" })).toBeVisible({ timeout: 30_000 });
 });

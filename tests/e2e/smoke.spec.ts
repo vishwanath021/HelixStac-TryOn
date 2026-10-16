@@ -89,7 +89,7 @@ test("customer can consent, use the camera, preview a cut, and an owner can open
   await expect(photo.getByText("Your photo is used only for this preview.")).toBeVisible();
   const gallery = page.getByRole("region", { name: "Styles" });
   await expect(gallery.getByRole("button", { name: "Women", exact: true })).toBeVisible();
-  await expect(gallery.locator("img")).toHaveCount(30);
+  await expect(gallery.locator("img")).toHaveCount(25);
   await expect(gallery.getByRole("button", { name: "Soft Bob" })).toBeVisible();
   await page.screenshot({ path: "docs/screenshots/01-home.png", fullPage: true });
   await page.screenshot({ path: "docs/screenshots/16-landing-grid.png", fullPage: true });
@@ -399,7 +399,7 @@ test("booking asks for a phone code only when the salon requires it", async ({ p
 test("style gallery uses portraits and the demo result is not a flat placeholder", async ({ page }) => {
   await page.goto("/s/demo");
   const gallery = page.getByRole("region", { name: "Styles" });
-  await expect(gallery.locator("img")).toHaveCount(30);
+  await expect(gallery.locator("img")).toHaveCount(25);
   const womenPhoto = gallery.locator("img").first();
   await expect(womenPhoto).toHaveAttribute("src", /\/styles\/.+\.jpg/);
   await expect(womenPhoto).toHaveAttribute("alt", /style reference/);

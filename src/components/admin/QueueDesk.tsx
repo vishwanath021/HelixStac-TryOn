@@ -125,7 +125,7 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
                   <>
                     <p className="text-xs uppercase tracking-[0.14em] text-muted">Token</p>
                     <p className="font-serif text-7xl leading-none" data-queue-token={seat.entry.token}>{seat.entry.token}</p>
-                    <p className="text-lg">{seat.entry.name}{seat.entry.serviceName ? ` · ${seat.entry.serviceName}` : ""}</p>
+                    <p className="break-all text-lg">{seat.entry.name}{seat.entry.serviceName ? ` · ${seat.entry.serviceName}` : ""}</p>
                     {seat.entry.onTheWay ? <p className="text-sm">{t(lang, "queueOnTheWayBadge")}</p> : null}
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button className="btn" type="button" disabled={busy} onClick={() => void act({ action: "done", id: seat.entry?.id })}>{t(lang, "queueDone")}</button>
@@ -151,7 +151,7 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
               <article key={card.id} className="card p-4">
                 <p className="text-xs uppercase tracking-[0.14em] text-muted">Token</p>
                 <p className="font-serif text-7xl leading-none" data-queue-token={card.token}>{card.token}</p>
-                <p className="text-lg">{card.name}{card.serviceName ? ` · ${card.serviceName}` : ""}</p>
+                <p className="break-all text-lg">{card.name}{card.serviceName ? ` · ${card.serviceName}` : ""}</p>
                 <p className="text-sm text-muted">{t(lang, "queueMinShort", { min: card.waitMin })} · {t(lang, "queueAheadShort", { ahead: card.ahead })}</p>
                 {card.onTheWay ? <p className="text-sm">{t(lang, "queueOnTheWayBadge")}</p> : null}
                 <div className="mt-3 flex flex-wrap gap-2">

@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { flushSync } from "react-dom";
-import dynamic from "next/dynamic";
 import { isPlatformLogo, LookuviMark } from "@/components/brand/LookuviMark";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
 import { guestSessionId } from "@/lib/guest-session";
@@ -15,6 +14,7 @@ import { HairTypePicker } from "@/components/tryon/HairTypePicker";
 import { StyleCard } from "@/components/tryon/StyleCard";
 import { BROW_COLOURS, BROW_THICKNESS, browsForAudience, type BrowColour, type BrowThickness } from "@/data/brows";
 import { t } from "@/data/i18n";
+import { styleHasPhoto } from "@/data/style-photos";
 import { orderStylesForPicker, suggestStyles, type HairReading } from "@/lib/hair-suitability";
 import { captureShouldMirror, visiblePortraitCrop } from "@/lib/capture";
 import { alignGeneratedPhoto } from "@/lib/face/align-client";
@@ -91,10 +91,22 @@ function firstTool(config: SalonConfig, requested?: string): TryTool {
   return allowed[0] ?? "style";
 }
 
-const BridalFlow = dynamic(() => import("@/components/tryon/BridalFlow").then((mod) => mod.BridalFlow), {
-  ssr: false,
-  loading: () => <p className="mt-4 text-sm">Opening bridal looks…</p>,
-});
+type BridalPaneProps = { config: SalonConfig; showQueue?: boolean };
+
+function useBridalPane(active: boolean) {
+  const [Pane, setPane] = useState<ComponentType<BridalPaneProps> | null>(null);
+  useEffect(() => {
+    if (!active || Pane) return;
+    let live = true;
+    void import("@/components/tryon/BridalFlow").then((mod) => {
+      if (live) setPane(() => mod.BridalFlow);
+    });
+    return () => {
+      live = false;
+    };
+  }, [active, Pane]);
+  return Pane;
+}
 
 function sessionId() {
   return guestSessionId();
@@ -129,6 +141,9 @@ export function TryOnApp({
   showEveryday?: boolean;
 }) {
   const lang = config.defaultLang || "en";
+  const [section, setSection] = useState<"everyday" | "bridal">(showEveryday ? "everyday" : "bridal");
+  const bridalOn = section === "bridal" && showBridal;
+  const BridalPane = useBridalPane(bridalOn);
   const [sid, setSid] = useState("");
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
@@ -146,7 +161,6 @@ export function TryOnApp({
   const [browColour, setBrowColour] = useState<BrowColour>("natural");
   const [stylePhase, setStylePhase] = useState<"pick" | "result">("pick");
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<"everyday" | "bridal">(showEveryday ? "everyday" : "bridal");
   const [stageMs, setStageMs] = useState(0);
   const [pickedDensity, setPickedDensity] = useState("");
   const [pickedTexture, setPickedTexture] = useState("");
@@ -227,16 +241,16 @@ export function TryOnApp({
   const visibleStyles = config.hairPickerOn
     ? orderStylesForPicker(styles, { density: pickedDensity, texture: pickedTexture }, showAllStyles)
     : styles;
-  const shownStyles = visibleStyles;
+  const shownStyles = visibleStyles.filter((style) => styleHasPhoto(style.id));
   const stageCopy = stageMs < 8000 ? t(lang, "stageReading") : stageMs < 22000 ? t(lang, "stageStyling") : t(lang, "stageAlmost");
   const stagePct = Math.min(92, Math.round((stageMs / 40000) * 100));
   const hairSuggestions = hairReading
-    ? suggestStyles(styles, hairReading).map((row) => ({
+    ? suggestStyles(styles, hairReading).flatMap((row) => styleHasPhoto(row.style.id) ? [{
         id: row.style.id,
         name: row.style.name,
         reason: row.reason,
         serviceKeys: row.style.serviceKeys ?? [],
-      }))
+      }] : [])
     : [];
   const showResult = stylePhase === "result" && active?.tool === tool && !busy;
   useEffect(() => {
@@ -376,6 +390,7 @@ export function TryOnApp({
       setCameraOn(true);
       dropLiveShot(nextFacing);
     });
+    frameRef.current?.scrollIntoView({ block: "end" });
     void attachCamera(pending, gen);
   }
 
@@ -820,8 +835,8 @@ export function TryOnApp({
   const platformLogo = isPlatformLogo(config.logoUrl);
 
   return (
-    <div data-salon-mode={salonMode ? "yes" : "no"} className={embed ? "" : "mx-auto max-w-6xl px-4 pb-16"}>
-      <header className={`salon-bar header-metal sticky top-0 z-20 mb-6 px-4 ${embed ? "" : "-mx-4"}`}>
+    <div data-salon-mode={salonMode ? "yes" : "no"} className={embed ? "flex h-dvh flex-col" : "mx-auto flex h-dvh max-w-6xl flex-col px-4"}>
+      <header className={`salon-bar header-metal z-20 shrink-0 px-4 ${embed ? "" : "-mx-4"}`}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-white">
@@ -849,51 +864,25 @@ export function TryOnApp({
         </div>
       </header>
       <ConsentSheet open={consent.open} onAgree={() => { track("consent_accepted", { lang }); void consent.agree(); }} onClose={consent.close} />
-      {cameraOn && (
-        <LiveStudio
-          videoRef={videoRef}
-          ready={cameraReady}
-          facing={facing}
-          guide={tool === "nails" ? "hand" : "face"}
-          zoom={zoom}
-          onZoom={setZoom}
-          onBack={() => { setZoom(1); stopCamera(); }}
-          onClose={() => { setZoom(1); stopCamera(); }}
-          onShutter={() => shutter()}
-          onRetake={() => { setZoom(1); startCamera(tool === "nails" ? "environment" : "user"); }}
-          onUpload={() => { stopCamera(); openFile(); }}
-          onDownload={active ? () => void downloadLook() : undefined}
-          canDownload={Boolean(active)}
-          makeup={tool === "colour" && modelStatus !== "error" ? (
-            <div className="absolute inset-0">
-              <ColourStage
-                video={videoEl}
-                image={null}
-                shade={shade}
-                intensity={intensity}
-                mirror={facing === "user"}
-                onStatus={setModelStatus}
-              />
-            </div>
-          ) : null}
-        />
-      )}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-16 pt-6">
       {showBridal && showEveryday && (
-        <div className="mb-4 grid grid-cols-2 gap-3">
+        <div className="mb-4 grid grid-cols-2 items-start gap-3">
           <button type="button" className={`card min-h-24 p-3 text-left ${section === "everyday" ? "ring-2 ring-[var(--brand)]" : ""}`} aria-pressed={section === "everyday"} aria-label="Everyday" onClick={() => setSection("everyday")}>
             <span className="block text-xs text-muted" aria-hidden="true">Hair, colour, brows</span>
             <span className="block font-serif text-2xl leading-tight" aria-hidden="true">Everyday</span>
           </button>
-          <button type="button" className={`card min-h-24 p-3 text-left ${section === "bridal" ? "ring-2 ring-[var(--brand)]" : ""}`} aria-pressed={section === "bridal"} aria-label="Bridal" onClick={() => setSection("bridal")}>
-            <span className="block text-xs text-muted" aria-hidden="true">Hair, makeup, jewellery</span>
-            <span className="block font-serif text-2xl leading-tight" aria-hidden="true">Bridal</span>
-          </button>
+          <div>
+            <button type="button" className={`card min-h-24 w-full p-3 text-left ${section === "bridal" ? "ring-2 ring-[var(--brand)]" : ""}`} aria-pressed={section === "bridal"} aria-label="Bridal" onClick={() => setSection("bridal")}>
+              <span className="block text-xs text-muted" aria-hidden="true">Hair, makeup, jewellery</span>
+              <span className="block font-serif text-2xl leading-tight" aria-hidden="true">Bridal</span>
+            </button>
+            {bridalOn && !BridalPane ? <p className="mt-2 text-sm text-muted">Opening bridal looks…</p> : null}
+          </div>
         </div>
       )}
-      {section === "bridal" && showBridal ? <>
-      {showQueue ? <p className="mb-3"><a className="btn secondary" href={`/s/${config.slug}/queue`}>{t(lang, "queueJoinLook")}</a></p> : null}
-      <BridalFlow config={config} />
-      </> : <>
+      {bridalOn && !showEveryday && !BridalPane ? <p className="mt-2 text-sm text-muted">Opening bridal looks…</p> : null}
+      {bridalOn && BridalPane ? <BridalPane config={config} showQueue={showQueue} /> : null}
+      {bridalOn ? null : <>
       <h2 className="page-title">{t(lang, "pageTitle")}</h2>
       {showQueue ? <p className="mt-3"><a className="btn secondary" href={`/s/${config.slug}/queue`}>{t(lang, "queueJoinLook")}</a></p> : null}
 
@@ -955,6 +944,35 @@ export function TryOnApp({
           </div>
         ) : (
           <div className="relative aspect-[3/4] overflow-hidden">
+            {cameraOn && (
+              <LiveStudio
+                videoRef={videoRef}
+                ready={cameraReady}
+                facing={facing}
+                guide={tool === "nails" ? "hand" : "face"}
+                zoom={zoom}
+                onZoom={setZoom}
+                onBack={() => { setZoom(1); stopCamera(); }}
+                onClose={() => { setZoom(1); stopCamera(); }}
+                onShutter={() => shutter()}
+                onRetake={() => { setZoom(1); startCamera(tool === "nails" ? "environment" : "user"); }}
+                onUpload={() => { stopCamera(); openFile(); }}
+                onDownload={active ? () => void downloadLook() : undefined}
+                canDownload={Boolean(active)}
+                makeup={tool === "colour" && modelStatus !== "error" ? (
+                  <div className="absolute inset-0">
+                    <ColourStage
+                      video={videoEl}
+                      image={null}
+                      shade={shade}
+                      intensity={intensity}
+                      mirror={facing === "user"}
+                      onStatus={setModelStatus}
+                    />
+                  </div>
+                ) : null}
+              />
+            )}
             {activeShot && !cameraOn && (
               <div className="absolute inset-0" style={{ transform: `scale(${zoom})` }}>
                 <img src={activeShot.url} alt="" className="h-full w-full object-contain" />
@@ -1105,9 +1123,6 @@ export function TryOnApp({
               {config.showMen && <button className="chip" type="button" aria-pressed={gender === "men"} onClick={() => chooseGender("men")}>{t(lang, "men")}</button>}
               {config.showKids && <button className="chip" type="button" aria-pressed={gender === "kids"} onClick={() => chooseGender("kids")}>{t(lang, "kids")}</button>}
             </div>
-            {gender === "women" && showBridal && (
-              <p className="mb-4 text-sm"><button className="underline" type="button" onClick={() => setSection("bridal")}>See full bridal looks</button></p>
-            )}
             <HairTypePicker
               pickerOn={config.hairPickerOn}
               suggestOn={config.hairSuggestOn}
@@ -1213,6 +1228,7 @@ export function TryOnApp({
         </p>
       )}
       <p className="mt-6 text-center text-xs text-muted"><a href="/login">Salon login</a></p>
+      </div>
     </div>
   );
 }
