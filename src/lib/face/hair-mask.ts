@@ -1,11 +1,10 @@
 /**
- * Hair colour lands only on segmenter hair, and only inside the dilated
- * region above the brow line. Skin, eyes, and the background stay untouched.
- * Confidence ≥ 0.42 so a dim strand still counts. Small holes are closed,
- * then the edge is feathered.
+ * Hair colour follows the segmenter. The face oval (dilated a little) and
+ * the eyes stay clear, including long hair below the chin. Confidence ≥ 0.42.
+ * Isolated blobs are dropped. Small holes are closed, then the edge is feathered.
  */
 
-import { EAR_LEFT, EAR_RIGHT, FACE_OVAL, LEFT_BROW, LEFT_EYE, RIGHT_BROW, RIGHT_EYE } from "@/lib/face/landmarks";
+import { FACE_OVAL, LEFT_EYE, RIGHT_EYE } from "@/lib/face/landmarks";
 import type { Pt } from "@/lib/face/makeup-paint";
 import { dilateMask, erodeMask, fillPolygon } from "@/lib/face/raster";
 
@@ -15,8 +14,9 @@ export const HAIR_BLEND = 0.5;
 export const HAIR_CONFIDENCE = 0.42;
 /** Pixels this close to hair are filled, then the outline is restored. */
 const HOLE_RADIUS = 2;
-/** Near-black hair is lifted only up to this luma so the dye stays visible. */
+/** Near-black hair moves this far toward the lift. Light and grey hair stay put. */
 export const HAIR_LUMA_LIFT = 0.28;
+export const HAIR_LUMA_LIFT_MIX = 0.4;
 export const HAIR_LUMA_LIFT_START = 0.05;
 export const HAIR_LUMA_LIFT_END = 0.35;
 const FACE_SKIN_CONFIDENCE = 0.35;
@@ -49,12 +49,40 @@ function smoothstep(edge0: number, edge1: number, value: number) {
 }
 
 /**
- * Luma used when recolouring hair. Very dark hair is lifted toward 0.28
- * so a night photo still shows the dye. Hair that is already mid-tone keeps its luma.
+ * Luma used when recolouring hair. Dark hair moves 40% of the way toward 0.28
+ * so a night strand still shows the dye and neighbouring strands stay apart.
+ * Light hair and grey hair keep their own luma.
  */
-export function liftHairLuma(luma: number) {
+export function liftHairLuma(luma: number, saturation = 1) {
   const t = smoothstep(HAIR_LUMA_LIFT_START, HAIR_LUMA_LIFT_END, luma);
-  return HAIR_LUMA_LIFT * (1 - t) + luma * t;
+  const grey = smoothstep(0.22, 0.08, saturation);
+  const amount = HAIR_LUMA_LIFT_MIX * (1 - t) * (1 - grey);
+  const target = HAIR_LUMA_LIFT * (1 - t) + luma * t;
+  return luma * (1 - amount) + target * amount;
+}
+
+function channelLuma(rgb: readonly [number, number, number]) {
+  return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+}
+
+function softLightChannel(base: number, blend: number) {
+  return (1 - 2 * blend) * base * base + 2 * blend * base;
+}
+
+/**
+ * Soft-light mixed with a colour blend at the lifted luma.
+ * The result keeps the strand's own brightness instead of a flat fill.
+ */
+export function dyeHairColor(base: readonly [number, number, number], dye: readonly [number, number, number]): [number, number, number] {
+  const luma = channelLuma(base);
+  const max = Math.max(base[0], base[1], base[2]);
+  const min = Math.min(base[0], base[1], base[2]);
+  const saturation = max <= 0 ? 0 : (max - min) / max;
+  const lifted = liftHairLuma(luma, saturation);
+  const dyeLuma = Math.max(channelLuma(dye), 0.02);
+  const colored = dye.map((channel) => Math.min(1, Math.max(0, channel * (lifted / dyeLuma)))) as [number, number, number];
+  const soft = [0, 1, 2].map((index) => softLightChannel(base[index] ?? 0, dye[index] ?? 0)) as [number, number, number];
+  return [0, 1, 2].map((index) => (soft[index] ?? 0) * 0.45 + (colored[index] ?? 0) * 0.55) as [number, number, number];
 }
 
 /** Dark or textured hair, including a lit patch on otherwise dark hair. A smooth light scalp stays skin. */
@@ -88,38 +116,27 @@ export function pixelIsHair(rgb: Uint8ClampedArray | Uint8Array, width: number, 
   const max = Math.max(here.r, here.g, here.b);
   const min = Math.min(here.r, here.g, here.b);
   const sat = max === 0 ? 0 : (max - min) / max;
+  if (sat < 0.14 && here.luma > 40) return false;
   if (here.luma < 96 && sat < 0.72) return true;
-  if (variance > 260 && here.luma < 150) return true;
+  if (variance > 260 && here.luma < 150 && sat >= 0.08) return true;
   return false;
 }
 
-const FOREHEAD = 10;
-const CHIN = 152;
-
-/** Box above the brows, grown a little so a fringe is included. Eyes are marked separately. */
-export function hairGate(points: Pt[] | null, width: number, height: number) {
+/** Face oval, grown slightly, plus the eyes. Hair outside this may be coloured. */
+export function faceExclude(points: Pt[] | null, width: number, height: number) {
   const count = width * height;
-  const allow = new Uint8Array(count);
+  const oval = new Uint8Array(count);
   const eyes = new Uint8Array(count);
-  if (!points || points.length < 468) return { allow, eyes, ready: false };
-  const brows = [...LEFT_BROW, ...RIGHT_BROW].map((index) => points[index]).filter((point): point is Pt => Boolean(point));
-  const forehead = points[FOREHEAD];
-  const chin = points[CHIN];
-  const earL = points[EAR_LEFT];
-  const earR = points[EAR_RIGHT];
-  if (brows.length < 4 || !forehead || !chin || !earL || !earR) return { allow, eyes, ready: false };
-  const browY = Math.min(...brows.map((point) => point.y));
-  const faceH = Math.max(0.08, Math.abs(chin.y - forehead.y));
-  const left = Math.max(0, Math.min(earL.x, earR.x) - faceH * 0.35);
-  const right = Math.min(1, Math.max(earL.x, earR.x) + faceH * 0.35);
-  const top = 0;
-  fillPolygon(allow, width, height, [
-    { x: left * width, y: browY * height },
-    { x: left * width, y: top },
-    { x: right * width, y: top },
-    { x: right * width, y: browY * height },
-  ]);
-  const grown = dilateMask(allow, width, height, Math.max(2, Math.round(width / 40)));
+  if (!points || points.length < 468) return { block: oval, eyes, ready: false };
+  fillPolygon(
+    oval,
+    width,
+    height,
+    FACE_OVAL.map((index) => {
+      const point = points[index];
+      return { x: (point?.x ?? 0) * width, y: (point?.y ?? 0) * height };
+    }),
+  );
   for (const loop of [LEFT_EYE, RIGHT_EYE]) {
     fillPolygon(
       eyes,
@@ -131,7 +148,40 @@ export function hairGate(points: Pt[] | null, width: number, height: number) {
       }),
     );
   }
-  return { allow: grown, eyes, ready: true };
+  const block = dilateMask(oval, width, height, Math.max(2, Math.round(width / 56)));
+  const eyeBlock = dilateMask(eyes, width, height, 1);
+  return { block, eyes: eyeBlock, ready: true };
+}
+
+/** Drop specks that are too small to be a head of hair. */
+export function dropSmallBlobs(mask: Uint8Array, width: number, height: number) {
+  const minArea = Math.max(20, Math.round((width * height) / 900));
+  const seen = new Uint8Array(mask.length);
+  const stack: number[] = [];
+  const members: number[] = [];
+  for (let start = 0; start < mask.length; start += 1) {
+    if (!mask[start] || seen[start]) continue;
+    stack.length = 0;
+    members.length = 0;
+    stack.push(start);
+    seen[start] = 1;
+    while (stack.length) {
+      const current = stack.pop() ?? 0;
+      members.push(current);
+      const x = current % width;
+      const y = Math.floor(current / width);
+      const next = [x > 0 ? current - 1 : -1, x + 1 < width ? current + 1 : -1, y > 0 ? current - width : -1, y + 1 < height ? current + width : -1];
+      for (const neighbor of next) {
+        if (neighbor < 0 || seen[neighbor] || !mask[neighbor]) continue;
+        seen[neighbor] = 1;
+        stack.push(neighbor);
+      }
+    }
+    if (members.length < minArea) {
+      for (const index of members) mask[index] = 0;
+    }
+  }
+  return mask;
 }
 
 function boxBlur(src: Uint8Array, width: number, height: number, radius: number) {
@@ -174,37 +224,23 @@ export function buildHairMask(input: HairMaskInput) {
   const count = width * height;
   const hard = new Uint8Array(count);
   const skin = new Uint8Array(count);
-  const oval = new Uint8Array(count);
   const points = input.points;
-  const gate = hairGate(points, width, height);
-  if (points && points.length > 400) {
-    fillPolygon(
-      oval,
-      width,
-      height,
-      FACE_OVAL.map((index) => {
-        const point = points[index];
-        return { x: (point?.x ?? 0) * width, y: (point?.y ?? 0) * height };
-      }),
-    );
-  }
+  const face = faceExclude(points, width, height);
   for (let i = 0; i < count; i += 1) {
     const category = input.category?.[i] ?? -1;
     const hairScore = input.hairConf ? unit(input.hairConf[i] ?? 0) : category === HAIR_CLASS ? 1 : 0;
     const faceSkinScore = input.faceSkinConf ? unit(input.faceSkinConf[i] ?? 0) : category === FACE_SKIN_CLASS ? 1 : 0;
     const faceSkin = faceSkinScore >= FACE_SKIN_CONFIDENCE || category === FACE_SKIN_CLASS;
     if (category === BODY_SKIN_CLASS || category === FACE_SKIN_CLASS) skin[i] = 255;
-    if (!gate.ready || !gate.allow[i] || gate.eyes[i]) continue;
-    if (hairScore < HAIR_CONFIDENCE || faceSkin || category === BODY_SKIN_CLASS || oval[i]) continue;
+    if (face.block[i] || face.eyes[i]) continue;
+    if (hairScore < HAIR_CONFIDENCE || faceSkin || category === BODY_SKIN_CLASS) continue;
     if (input.category && category !== HAIR_CLASS) continue;
     if (input.rgb && input.rgb.length >= count * 4 && !pixelIsHair(input.rgb, width, height, i)) continue;
     hard[i] = 255;
   }
-  const closed = erodeMask(dilateMask(hard, width, height, HOLE_RADIUS), width, height, HOLE_RADIUS);
-  const blockedAt = (index: number) => {
-    const faceSkinScore = input.faceSkinConf ? unit(input.faceSkinConf[index] ?? 0) : input.category?.[index] === FACE_SKIN_CLASS ? 1 : 0;
-    return !gate.allow[index] || gate.eyes[index] || oval[index] || faceSkinScore >= FACE_SKIN_CONFIDENCE;
-  };
+  dropSmallBlobs(hard, width, height);
+  const closed = dropSmallBlobs(erodeMask(dilateMask(hard, width, height, HOLE_RADIUS), width, height, HOLE_RADIUS), width, height);
+  const blockedAt = (index: number) => face.block[index] || face.eyes[index];
   for (let i = 0; i < count; i += 1) {
     if (blockedAt(i)) closed[i] = 0;
   }

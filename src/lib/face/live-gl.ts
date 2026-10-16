@@ -17,7 +17,7 @@ import {
   UPPER_LASH_R,
   type Pt,
 } from "@/lib/face/makeup-paint";
-import { HAIR_LUMA_LIFT, HAIR_LUMA_LIFT_END, HAIR_LUMA_LIFT_START } from "@/lib/face/hair-mask";
+import { HAIR_LUMA_LIFT, HAIR_LUMA_LIFT_END, HAIR_LUMA_LIFT_MIX, HAIR_LUMA_LIFT_START } from "@/lib/face/hair-mask";
 import { liveEffectsFor, livePreset, type LookAudience } from "@/lib/face/makeup-blend";
 
 export type LiveLookOptions = {
@@ -252,12 +252,20 @@ vec3 softLight(vec3 base, vec3 blend) {
   return (1.0 - 2.0 * blend) * base * base + 2.0 * blend * base;
 }
 
-vec3 keepLuma(vec3 base, vec3 dyed) {
+vec3 dyeHair(vec3 base, vec3 dye) {
   float luma = dot(base, vec3(0.2126, 0.7152, 0.0722));
-  float dyedLuma = max(dot(dyed, vec3(0.2126, 0.7152, 0.0722)), 0.02);
+  float maxC = max(base.r, max(base.g, base.b));
+  float minC = min(base.r, min(base.g, base.b));
+  float sat = maxC <= 0.001 ? 0.0 : (maxC - minC) / maxC;
   float t = smoothstep(${HAIR_LUMA_LIFT_START.toFixed(2)}, ${HAIR_LUMA_LIFT_END.toFixed(2)}, luma);
-  float lifted = mix(${HAIR_LUMA_LIFT.toFixed(2)}, luma, t);
-  return clamp(dyed * (lifted / dyedLuma), 0.0, 1.0);
+  float grey = smoothstep(0.22, 0.08, sat);
+  float amount = ${HAIR_LUMA_LIFT_MIX.toFixed(2)} * (1.0 - t) * (1.0 - grey);
+  float target = mix(${HAIR_LUMA_LIFT.toFixed(2)}, luma, t);
+  float lifted = mix(luma, target, amount);
+  float dyeLuma = max(dot(dye, vec3(0.2126, 0.7152, 0.0722)), 0.02);
+  vec3 colored = clamp(dye * (lifted / dyeLuma), 0.0, 1.0);
+  vec3 soft = softLight(base, dye);
+  return mix(soft, colored, 0.55);
 }
 
 void main() {
@@ -274,8 +282,14 @@ void main() {
   vec3 color = base;
 
   if (u_hairOn > 0.5 && hairW > 0.03) {
-    vec3 dyed = keepLuma(base, u_hair);
-    color = mix(color, dyed, hairW * clamp(u_hairStrength, 0.0, 0.5));
+    float luma = dot(base, vec3(0.2126, 0.7152, 0.0722));
+    float maxC = max(base.r, max(base.g, base.b));
+    float minC = min(base.r, min(base.g, base.b));
+    float sat = maxC <= 0.001 ? 0.0 : (maxC - minC) / maxC;
+    float light = smoothstep(0.45, 0.70, luma);
+    float grey = smoothstep(0.18, 0.02, sat) * step(0.16, luma);
+    vec3 dyed = dyeHair(base, u_hair);
+    color = mix(color, dyed, hairW * clamp(u_hairStrength, 0.0, 0.5) * (1.0 - max(light, grey)));
   }
 
   if (u_blushOn > 0.5 && skin && hairW < 0.2 && eye < 0.5) {
