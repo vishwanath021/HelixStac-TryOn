@@ -4,12 +4,12 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { LiveLookStage } from "@/components/tryon/LiveLookStage";
 
-const ALLOW = new Set(["glasses-beard.jpg", "malayali-beard.jpg", "bindi-smile.jpg"]);
+const ALLOW = new Set(["woman-long-dark.jpg", "man-beard-dark.jpg", "glasses-beard.jpg", "malayali-beard.jpg", "bindi-smile.jpg"]);
 
 export function LiveLookCheck() {
   const params = useSearchParams();
-  const requested = params.get("src") || "glasses-beard.jpg";
-  const name = ALLOW.has(requested) ? requested : "glasses-beard.jpg";
+  const requested = params.get("src") || "woman-long-dark.jpg";
+  const name = ALLOW.has(requested) ? requested : "woman-long-dark.jpg";
   const [image, setImage] = useState<HTMLImageElement | null>(null);
 
   useEffect(() => {

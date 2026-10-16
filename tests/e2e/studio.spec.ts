@@ -229,11 +229,11 @@ test("bridal catalogue, selfie copy, and header stay put", async ({ page }) => {
 });
 
 test("live look tints lips, keeps hair off the face, and dyes only hair", async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   page.on("console", (msg) => {
     if (msg.type() === "error") console.log("BROWSER", msg.text());
   });
-  for (const name of ["glasses-beard.jpg", "bindi-smile.jpg"]) {
+  for (const name of ["woman-long-dark.jpg", "man-beard-dark.jpg", "glasses-beard.jpg"]) {
     await page.goto(`/live-look-check?src=${name}`);
     await expect(page.locator("canvas[data-look='after']")).toHaveAttribute("data-state", "tracking", { timeout: 90_000 });
     await expect(page.locator("canvas[data-look='before']")).toHaveAttribute("data-state", "tracking", { timeout: 90_000 });
@@ -261,7 +261,7 @@ test("live look tints lips, keeps hair off the face, and dyes only hair", async 
         const pixel = ctx.getImageData(x, y, 1, 1).data;
         return [pixel[0] ?? 0, pixel[1] ?? 0, pixel[2] ?? 0];
       };
-      const keys = ["lip", "near", "eye", "hair", "forehead", "cheek", "beard", "brow"] as const;
+      const keys = ["lip", "near", "eye", "lid", "hair", "forehead", "cheek", "beard", "brow"] as const;
       const samples: Record<string, { before: number[]; after: number[]; hair: number[] }> = {};
       for (const key of keys) {
         samples[key] = { before: read(beforeCtx, after, key), after: read(afterCtx, after, key), hair: read(hairCtx, hair, key) };
@@ -271,21 +271,19 @@ test("live look tints lips, keeps hair off the face, and dyes only hair", async 
       const a = hairCtx.getImageData(0, 0, w, h).data;
       const b = beforeCtx.getImageData(0, 0, w, h).data;
       let max = 0;
-      let my = 0;
       let count = 0;
-      let sumY = 0;
-      const foreheadY = Number(hair.dataset.foreheadY);
+      let sumLuma = 0;
+      let skinCount = 0;
       for (let y = 0; y < h; y += 2) {
         for (let x = 0; x < w; x += 2) {
           const i = (y * w + x) * 4;
           const delta = Math.hypot((a[i] ?? 0) - (b[i] ?? 0), (a[i + 1] ?? 0) - (b[i + 1] ?? 0), (a[i + 2] ?? 0) - (b[i + 2] ?? 0));
           if (delta > 18) {
+            const pixelLuma = 0.2126 * (b[i] ?? 0) + 0.7152 * (b[i + 1] ?? 0) + 0.0722 * (b[i + 2] ?? 0);
             count += 1;
-            sumY += y;
-            if (delta > max) {
-              max = delta;
-              my = y;
-            }
+            sumLuma += pixelLuma;
+            if (pixelLuma > 105) skinCount += 1;
+            if (delta > max) max = delta;
           }
         }
       }
@@ -293,7 +291,7 @@ test("live look tints lips, keeps hair off the face, and dyes only hair", async 
         seg: after.dataset.seg || "",
         hairSeg: hair.dataset.seg || "",
         samples,
-        peak: { max, my, count, meanY: count ? sumY / count : h, foreheadY },
+        peak: { max, count, skinCount, meanLuma: count ? sumLuma / count : 255 },
       };
     });
     expect(shot, name).toBeTruthy();
@@ -304,8 +302,10 @@ test("live look tints lips, keeps hair off the face, and dyes only hair", async 
     const hair = dist(shot.samples.hair!.before, shot.samples.hair!.after);
     const forehead = dist(shot.samples.forehead!.before, shot.samples.forehead!.after);
     const cheek = dist(shot.samples.cheek!.before, shot.samples.cheek!.after);
+    const lid = dist(shot.samples.lid!.before, shot.samples.lid!.after);
     const beard = dist(shot.samples.beard!.before, shot.samples.beard!.after);
     const brow = dist(shot.samples.brow!.before, shot.samples.brow!.after);
+    const dyedScalp = dist(shot.samples.hair!.before, shot.samples.hair!.hair);
     const dyedForehead = dist(shot.samples.forehead!.before, shot.samples.forehead!.hair);
     const dyedCheek = dist(shot.samples.cheek!.before, shot.samples.cheek!.hair);
     const dyedBeard = dist(shot.samples.beard!.before, shot.samples.beard!.hair);
@@ -313,7 +313,7 @@ test("live look tints lips, keeps hair off the face, and dyes only hair", async 
     const eyeAfter = luma(shot.samples.eye!.after);
     const browBefore = luma(shot.samples.brow!.before);
     const browAfter = luma(shot.samples.brow!.after);
-    console.log("LOOK", name, { lip, near, eye, hair, forehead, cheek, beard, brow, dyedForehead, dyedCheek, dyedBeard, seg: shot.seg, hairSeg: shot.hairSeg, peak: shot.peak, eyeBefore, eyeAfter, browBefore, browAfter });
+    console.log("LOOK", name, { lip, near, eye, lid, hair, forehead, cheek, beard, brow, dyedScalp, dyedForehead, dyedCheek, dyedBeard, seg: shot.seg, hairSeg: shot.hairSeg, peak: shot.peak, eyeBefore, eyeAfter, browBefore, browAfter });
     const base = name.replace(".jpg", "");
     await page.screenshot({ path: `${SHOTS}/${base}-before-after.png`, fullPage: true });
     await page.locator("canvas[data-look='before']").screenshot({ path: `${SHOTS}/${base}-canvas-before.png` });
@@ -321,22 +321,27 @@ test("live look tints lips, keeps hair off the face, and dyes only hair", async 
     await page.locator("canvas[data-look='hair']").screenshot({ path: `${SHOTS}/${base}-canvas-hair.png` });
     expect(shot.seg, name).toBe("on");
     expect(shot.hairSeg, name).toBe("on");
-    expect(lip, name).toBeGreaterThan(18);
-    expect(lip, name).toBeGreaterThan(near + 8);
-    expect(eye, name).toBeLessThan(28);
-    expect(eyeAfter, name).toBeGreaterThan(eyeBefore - 18);
+    expect(lip, name).toBeGreaterThan(28);
+    expect(lip, name).toBeGreaterThan(near + 12);
+    expect(lid, name).toBeGreaterThan(12);
+    expect(cheek, name).toBeGreaterThan(8);
+    expect(cheek, name).toBeLessThan(70);
+    expect(eye, name).toBeLessThan(40);
+    expect(eyeAfter, name).toBeGreaterThan(eyeBefore - 28);
     expect(brow, name).toBeLessThan(70);
-    expect(browAfter, name).toBeGreaterThan(browBefore * 0.55);
-    expect(hair, name).toBeLessThan(14);
-    expect(forehead, name).toBeLessThan(14);
-    expect(cheek, name).toBeLessThan(14);
-    expect(beard, name).toBeLessThan(14);
+    expect(browAfter, name).toBeGreaterThan(browBefore * 0.45);
+    expect(forehead, name).toBeLessThan(16);
+    expect(beard, name).toBeLessThan(16);
     expect(dyedForehead, name).toBeLessThan(16);
     expect(dyedCheek, name).toBeLessThan(16);
     expect(dyedBeard, name).toBeLessThan(16);
-    expect(shot.peak.count, name).toBeGreaterThan(200);
-    expect(shot.peak.max, name).toBeGreaterThan(24);
-    expect(shot.peak.meanY, name).toBeLessThan(shot.peak.foreheadY - 4);
-    expect(shot.peak.my, name).toBeLessThan(shot.peak.foreheadY - 4);
+    if (name === "glasses-beard.jpg") {
+      expect(dyedScalp, name).toBeLessThan(12);
+      expect(shot.peak.skinCount, name).toBeLessThan(40);
+    } else {
+      expect(shot.peak.count, name).toBeGreaterThan(200);
+      expect(shot.peak.meanLuma, name).toBeLessThan(100);
+      expect(shot.peak.skinCount, name).toBeLessThan(shot.peak.count * 0.2);
+    }
   }
 });

@@ -61,8 +61,17 @@ function readMask(vision: LiveVision, shot: HTMLCanvasElement, points: Pt[] | nu
   const faceSkinConf = copyFloat(conf?.[3]);
   result.close();
   if (!width || !height || (!category && !hairConf)) return null;
+  const pixels = document.createElement("canvas");
+  pixels.width = width;
+  pixels.height = height;
+  const ctx = pixels.getContext("2d", { willReadFrequently: true });
+  let rgb: Uint8ClampedArray | null = null;
+  if (ctx) {
+    ctx.drawImage(shot, 0, 0, width, height);
+    rgb = ctx.getImageData(0, 0, width, height).data;
+  }
   return {
-    bytes: buildHairMask({ width, height, category, hairConf, faceSkinConf, points }),
+    bytes: buildHairMask({ width, height, category, hairConf, faceSkinConf, points, rgb }),
     width,
     height,
   };

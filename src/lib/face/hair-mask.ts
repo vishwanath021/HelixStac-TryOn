@@ -25,11 +25,49 @@ export type HairMaskInput = {
   /** Class 3, same scale as hairConf. */
   faceSkinConf: Float32Array | null;
   points: Pt[] | null;
+  /** Photo colours in mask resolution, RGBA. Used to reject a smooth bald scalp. */
+  rgb?: Uint8ClampedArray | Uint8Array | null;
 };
 
 function unit(value: number) {
   if (!Number.isFinite(value) || value <= 0) return 0;
   return value > 1 ? value / 255 : value;
+}
+
+/** Dark or textured hair. A smooth, lighter scalp is skin even when the segmenter calls it hair. */
+export function pixelIsHair(rgb: Uint8ClampedArray | Uint8Array, width: number, height: number, index: number) {
+  const x = index % width;
+  const y = Math.floor(index / width);
+  const at = (xx: number, yy: number) => {
+    const p = (yy * width + xx) * 4;
+    const r = rgb[p] ?? 0;
+    const g = rgb[p + 1] ?? 0;
+    const b = rgb[p + 2] ?? 0;
+    return { r, g, b, luma: 0.2126 * r + 0.7152 * g + 0.0722 * b };
+  };
+  const here = at(x, y);
+  let sum = 0;
+  let sumSq = 0;
+  let n = 0;
+  for (let dy = -2; dy <= 2; dy += 1) {
+    for (let dx = -2; dx <= 2; dx += 1) {
+      const xx = x + dx;
+      const yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= width || yy >= height) continue;
+      const luma = at(xx, yy).luma;
+      sum += luma;
+      sumSq += luma * luma;
+      n += 1;
+    }
+  }
+  const mean = n ? sum / n : here.luma;
+  const variance = n ? Math.max(0, sumSq / n - mean * mean) : 0;
+  const max = Math.max(here.r, here.g, here.b);
+  const min = Math.min(here.r, here.g, here.b);
+  const sat = max === 0 ? 0 : (max - min) / max;
+  if (here.luma < 96 && sat < 0.72) return true;
+  if (variance > 260 && here.luma < 150) return true;
+  return false;
 }
 
 function boxBlur(src: Uint8Array, width: number, height: number, radius: number) {
@@ -91,8 +129,9 @@ export function buildHairMask(input: HairMaskInput) {
     const faceSkinScore = input.faceSkinConf ? unit(input.faceSkinConf[i] ?? 0) : category === FACE_SKIN_CLASS ? 1 : 0;
     const faceSkin = faceSkinScore >= FACE_SKIN_CONFIDENCE || category === FACE_SKIN_CLASS;
     if (category === BODY_SKIN_CLASS || category === FACE_SKIN_CLASS) skin[i] = 255;
-    if (hairScore < HAIR_CONFIDENCE || faceSkin || oval[i]) continue;
-    if (input.category && category !== HAIR_CLASS && hairScore < 0.85) continue;
+    if (hairScore < HAIR_CONFIDENCE || faceSkin || category === BODY_SKIN_CLASS || oval[i]) continue;
+    if (input.category && category !== HAIR_CLASS) continue;
+    if (input.rgb && input.rgb.length >= count * 4 && !pixelIsHair(input.rgb, width, height, i)) continue;
     hard[i] = 255;
   }
   const erodeR = Math.max(2, Math.round(width / 96));

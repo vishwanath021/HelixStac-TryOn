@@ -189,19 +189,20 @@ void main() {
   }
 
   if (u_blushOn > 0.5 && skin && hairW < 0.2) {
-    float r = u_faceUv * 0.18;
+    float r = u_faceUv * 0.2;
     float blush = max(
-      1.0 - smoothstep(r * 0.15, r, length(p - u_cheekR)),
-      1.0 - smoothstep(r * 0.15, r, length(p - u_cheekL))
+      1.0 - smoothstep(r * 0.2, r, length(p - u_cheekR)),
+      1.0 - smoothstep(r * 0.2, r, length(p - u_cheekL))
     );
-    color = mix(color, softLight(color, u_blush), blush * 0.28);
+    vec3 warm = mix(softLight(color, u_blush), u_blush, 0.42);
+    color = mix(color, warm, blush * 0.5);
   }
 
   if (u_browOn > 0.5 && (insideBrow(p, u_browR) || insideBrow(p, u_browL))) {
     color = mix(color, color * u_brow, 0.32);
   }
 
-  float width = max(u_px.x, u_px.y) * 2.4;
+  float width = max(u_px.x, u_px.y) * 3.4;
   float kajalA = 0.0;
   if (u_kajal > 0.5) {
     kajalA = max(kajalA, lineField(p, u_upR, 9, width));
@@ -214,15 +215,15 @@ void main() {
     wingDir = normalize(u_upL[0] - u_upL[2] + vec2(1e-4));
     wing = 1.0 - smoothstep(width * 0.4, width, length(p - (u_upL[0] + wingDir * u_faceUv * 0.045)));
     kajalA = max(kajalA, wing * 0.85);
-    color = mix(color, color * vec3(0.08, 0.06, 0.07), kajalA * 0.72);
+    color = mix(color, vec3(0.02, 0.012, 0.018), kajalA * 0.9);
   }
 
   if (u_lashes > 0.5) {
     float lash = max(
-      lashStroke(p, u_upR, 9, u_faceUv * 0.018, width * 0.22),
-      lashStroke(p, u_upL, 9, u_faceUv * 0.018, width * 0.22)
+      lashStroke(p, u_upR, 9, u_faceUv * 0.026, width * 0.3),
+      lashStroke(p, u_upL, 9, u_faceUv * 0.026, width * 0.3)
     );
-    color = mix(color, color * vec3(0.08, 0.06, 0.07), lash * 0.34);
+    color = mix(color, vec3(0.03, 0.02, 0.025), lash * 0.58);
   }
 
   if (u_lipOn > 0.5 && outer && !inner && skin && hairW < 0.25) {
@@ -230,7 +231,9 @@ void main() {
     float dist = min(polyEdge(p, u_outer, 20), polyEdge(p, u_inner, 20));
     float feather = smoothstep(0.0, edge, dist);
     float clip = u_hasMask > 0.5 ? skinW : 1.0;
-    color = mix(color, softLight(color, u_lip), 0.62 * feather * clip);
+    vec3 stained = mix(base, u_lip, 0.8);
+    vec3 soft = softLight(base, u_lip);
+    color = mix(color, mix(soft, stained, 0.75), 0.9 * feather * clip);
   }
 
   outColor = vec4(color, 1.0);

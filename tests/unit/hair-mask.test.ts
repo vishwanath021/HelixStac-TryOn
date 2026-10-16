@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FACE_OVAL } from "@/lib/face/landmarks";
-import { buildHairMask } from "@/lib/face/hair-mask";
+import { buildHairMask, pixelIsHair } from "@/lib/face/hair-mask";
 
 function blank(width: number, height: number) {
   return {
@@ -53,5 +53,37 @@ describe("hair colour mask", () => {
     expect(alpha(38, 8)).toBe(0);
     expect(packed[(8 * width + 8) * 4 + 1]).toBe(0);
     expect(packed[(8 * width + 38) * 4 + 1]).toBe(255);
+  });
+
+  it("rejects a smooth light scalp and keeps dark hair", () => {
+    const width = 24;
+    const height = 16;
+    const rgb = new Uint8ClampedArray(width * height * 4);
+    for (let i = 0; i < width * height; i += 1) {
+      const scalp = i % width < 12;
+      rgb[i * 4] = scalp ? 168 : 28;
+      rgb[i * 4 + 1] = scalp ? 150 : 22;
+      rgb[i * 4 + 2] = scalp ? 140 : 18;
+      rgb[i * 4 + 3] = 255;
+    }
+    const scalp = 8 * width + 4;
+    const hair = 8 * width + 18;
+    expect(pixelIsHair(rgb, width, height, scalp)).toBe(false);
+    expect(pixelIsHair(rgb, width, height, hair)).toBe(true);
+    const category = new Uint8Array(width * height);
+    const hairConf = new Float32Array(width * height);
+    category.fill(1);
+    hairConf.fill(0.95);
+    const packed = buildHairMask({
+      width,
+      height,
+      category,
+      hairConf,
+      faceSkinConf: new Float32Array(width * height),
+      points: null,
+      rgb,
+    });
+    expect(packed[scalp * 4]).toBe(0);
+    expect(packed[hair * 4]).toBeGreaterThan(180);
   });
 });
