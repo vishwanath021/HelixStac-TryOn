@@ -12,15 +12,21 @@ import { captureShouldMirror, visiblePortraitCrop } from "@/lib/capture";
 import {
   BRIDAL_EVENTS,
   BRIDAL_FINISHES,
+  BRIDAL_HAIR,
+  BRIDAL_LOOKS,
   BRIDAL_LIPS,
-  MEHENDI_COVERAGE,
-  MEHENDI_DENSITY,
-  MEHENDI_SHADES,
+  BRIDAL_MAKEUP,
+  MEHENDI_CARDS,
   MEHENDI_STYLES,
   bridalEventById,
+  bridalStylesFor,
+  cardsForStyle,
+  defaultBridalStyle,
   looksForEvent,
   type BridalEventId,
+  type BridalStyleId,
 } from "@/data/bridal";
+import { guestSessionId } from "@/lib/guest-session";
 import type { SalonConfig } from "@/lib/salon";
 
 type SavedLook = {
@@ -70,27 +76,25 @@ async function blobUrlToData(url: string) {
   });
 }
 
-function sessionId() {
-  const key = "helix_session";
-  const existing = sessionStorage.getItem(key);
-  if (existing) return existing;
-  const created = crypto.randomUUID();
-  sessionStorage.setItem(key, created);
-  return created;
-}
-
 export function BridalFlow({ config }: { config: SalonConfig }) {
   const [eventId, setEventId] = useState<BridalEventId>("wedding");
   const [panel, setPanel] = useState<"looks" | "mehendi" | "saved">("looks");
+  const [lookStyle, setLookStyle] = useState<BridalStyleId>(defaultBridalStyle(BRIDAL_LOOKS));
+  const [makeupStyle, setMakeupStyle] = useState<BridalStyleId>(defaultBridalStyle(BRIDAL_MAKEUP));
+  const [hairStyle, setHairStyle] = useState<BridalStyleId>(defaultBridalStyle(BRIDAL_HAIR));
+  const [mehendiCategory, setMehendiCategory] = useState<BridalStyleId>(defaultBridalStyle(MEHENDI_CARDS));
   const [lookId, setLookId] = useState(looksForEvent("wedding")[0]?.id || "");
+  const [makeupId, setMakeupId] = useState("makeup-classic-red");
+  const [hairId, setHairId] = useState("");
   const [finishId, setFinishId] = useState("hd");
   const [lipId, setLipId] = useState("red");
   const [face, setFace] = useState<Shot | null>(null);
   const [hand, setHand] = useState<Shot | null>(null);
+  const [mehendiCardId, setMehendiCardId] = useState("mehendi-bridal");
   const [mehendiStyle, setMehendiStyle] = useState("bridal");
   const [coverage, setCoverage] = useState("full");
-  const [mehendiShade, setMehendiShade] = useState("brown");
-  const [density, setDensity] = useState("medium");
+  const [mehendiShade, setMehendiShade] = useState("maroon");
+  const [density, setDensity] = useState("heavy");
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState("Reading your photo...");
   const [error, setError] = useState("");
@@ -116,7 +120,11 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
   const [sliderOn, setSliderOn] = useState(true);
   const [mehendiDone, setMehendiDone] = useState("");
   const [camError, setCamError] = useState("");
-  const looks = looksForEvent(eventId);
+  const eventLooks = looksForEvent(eventId);
+  const looks = cardsForStyle(eventLooks, lookStyle);
+  const makeupCards = cardsForStyle(BRIDAL_MAKEUP, makeupStyle);
+  const hairCards = cardsForStyle(BRIDAL_HAIR, hairStyle);
+  const mehendiCards = cardsForStyle(MEHENDI_CARDS, mehendiCategory);
   const chosen = looks.find((look) => look.id === lookId) || looks[0];
 
   useEffect(() => {
@@ -147,24 +155,27 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
     return `${url}|${mehendiStyle}|${coverage}|${mehendiShade}|${density}`;
   }
 
-  async function generate(kind: "look" | "mehendi", shot: Shot, overrides?: { finishId?: string; lipId?: string }) {
+  async function generate(kind: "look" | "mehendi", shot: Shot, overrides?: { finishId?: string; lipId?: string; makeupId?: string; hairId?: string }) {
     if (busy) return;
     setBusy(true);
     setError("");
     setStage("Reading your photo...");
     const finish = overrides?.finishId || finishId;
     const lip = overrides?.lipId || lipId;
+    const makeup = overrides?.makeupId ?? makeupId;
+    const hair = overrides?.hairId ?? hairId;
     try {
       const body = new FormData();
       body.set("photo", shot.blob, kind === "mehendi" ? "hand.jpg" : "selfie.jpg");
       body.set("slug", config.slug);
-      body.set("sessionId", sessionId());
-      const consentId = consent.consentId();
+      body.set("sessionId", guestSessionId());
+      const consentId = (await consent.persist()) || consent.consentId();
       if (consentId) body.set("consentId", consentId);
       body.set("requestId", crypto.randomUUID());
       body.set("tool", kind === "mehendi" ? "mehendi" : "bridal");
       if (kind === "mehendi") {
         body.set("styleId", mehendiStyle);
+        body.set("mehendiCard", mehendiCardId);
         body.set("mehendiStyle", mehendiStyle);
         body.set("coverage", coverage);
         body.set("mehendiShade", mehendiShade);
@@ -173,6 +184,8 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
         body.set("styleId", chosen.id);
         body.set("finish", finish);
         body.set("lip", lip);
+        if (makeup) body.set("makeup", makeup);
+        if (hair) body.set("hair", hair);
         body.set("kajal", kajal ? "1" : "0");
         body.set("lashes", lashes ? "1" : "0");
         body.set("blush", blushOn ? "1" : "0");
@@ -254,7 +267,7 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         slug: config.slug,
-        sessionId: sessionId(),
+        sessionId: guestSessionId(),
         name,
         eventId,
         eventDate,
@@ -356,6 +369,59 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
     }
   }
 
+  function pickMakeup(id: string) {
+    const card = BRIDAL_MAKEUP.find((item) => item.id === id);
+    if (!card) return;
+    setMakeupId(card.id);
+    setLipId(card.lipId);
+    setFinishId(card.finishId);
+    if (face && result?.kind === "look" && result.lookId === chosen?.id) {
+      void generate("look", face, { finishId: card.finishId, lipId: card.lipId, makeupId: card.id });
+    }
+  }
+
+  function pickHair(id: string) {
+    const next = hairId === id ? "" : id;
+    setHairId(next);
+    if (face && result?.kind === "look" && result.lookId === chosen?.id) {
+      void generate("look", face, { hairId: next });
+    }
+  }
+
+  function pickMehendi(id: string) {
+    const card = MEHENDI_CARDS.find((item) => item.id === id);
+    if (!card) return;
+    setMehendiCardId(card.id);
+    setMehendiStyle(card.styleId);
+    setCoverage(card.coverageId);
+    setMehendiShade(card.shadeId);
+    setDensity(card.densityId);
+  }
+
+  function chooseLookStyle(next: BridalStyleId) {
+    setLookStyle(next);
+    const shown = cardsForStyle(looksForEvent(eventId), next);
+    if (!shown.some((look) => look.id === lookId)) setLookId(shown[0]?.id || "");
+  }
+
+  function chooseMakeupStyle(next: BridalStyleId) {
+    setMakeupStyle(next);
+    const shown = cardsForStyle(BRIDAL_MAKEUP, next);
+    if (!shown.some((card) => card.id === makeupId) && shown[0]) pickMakeup(shown[0].id);
+  }
+
+  function chooseHairStyle(next: BridalStyleId) {
+    setHairStyle(next);
+    const shown = cardsForStyle(BRIDAL_HAIR, next);
+    if (hairId && !shown.some((card) => card.id === hairId)) pickHair(hairId);
+  }
+
+  function chooseMehendiCategory(next: BridalStyleId) {
+    setMehendiCategory(next);
+    const shown = cardsForStyle(MEHENDI_CARDS, next);
+    if (!shown.some((card) => card.id === mehendiCardId) && shown[0]) pickMehendi(shown[0].id);
+  }
+
   const lipHex = BRIDAL_LIPS.find((item) => item.id === lipId)?.hex || "#9B2335";
 
   return (
@@ -409,29 +475,19 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
 
       {panel === "looks" && (
         <div className="mt-4 grid gap-4">
-          <div>
+          <div data-step="event">
             <p className="mb-2 text-sm font-medium">1. The event</p>
             <div className="flex flex-wrap gap-2" role="group" aria-label="Event">
               {BRIDAL_EVENTS.map((item) => (
-                <button key={item.id} className="chip" type="button" aria-pressed={eventId === item.id} onClick={() => { setEventId(item.id); setLookId(looksForEvent(item.id)[0]?.id || ""); }}>{item.label}</button>
+                <button key={item.id} className="chip" type="button" aria-pressed={eventId === item.id} onClick={() => { setEventId(item.id); setLookId(cardsForStyle(looksForEvent(item.id), lookStyle)[0]?.id || ""); }}>{item.label}</button>
               ))}
             </div>
           </div>
-          <div>
-            <p className="mb-2 text-sm font-medium">2. The look</p>
-            <div className="grid grid-cols-2 gap-3" role="list" aria-label="Bridal looks">
-              {looks.map((look) => (
-                <div key={look.id} role="listitem">
-                  <button type="button" aria-pressed={look.id === chosen?.id} className={`w-full overflow-hidden rounded-[14px] border bg-white text-left shadow-sm ${look.id === chosen?.id ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => setLookId(look.id)}>
-                    <BridalLookCard id={look.id} name={look.name} blurb={look.blurb} />
-                    <span className="block px-2 py-2 text-sm font-medium leading-snug">{look.name}</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="mb-2 text-sm font-medium">3. Your selfie</p>
+          <PhotoGrid step="look" label="2. The look" group="Bridal looks" styles={bridalStylesFor(eventLooks)} style={lookStyle} onStyle={chooseLookStyle} items={looks} value={chosen?.id || ""} onChange={setLookId} />
+          <PhotoGrid step="makeup" label="3. Makeup" group="Makeup" styles={bridalStylesFor(BRIDAL_MAKEUP)} style={makeupStyle} onStyle={chooseMakeupStyle} items={makeupCards} value={makeupId} onChange={pickMakeup} />
+          <PhotoGrid step="hair" label="4. Hair" hint="Optional. Tap again to leave the look’s own hair." group="Hair" styles={bridalStylesFor(BRIDAL_HAIR)} style={hairStyle} onStyle={chooseHairStyle} items={hairCards} value={hairId} onChange={pickHair} />
+          <div data-step="selfie">
+            <p className="mb-2 text-sm font-medium">5. Your selfie</p>
             <p className="mb-2 text-sm">Face the light. Keep your whole face inside the outline. No sunglasses.</p>
             <div className="relative mx-auto aspect-[3/4] max-h-[420px] max-w-sm overflow-hidden rounded-2xl bg-[#F3E6D8]">
               {face ? <img src={face.url} alt="Your selfie" className="h-full w-full object-cover" /> : <p className="grid h-full place-items-center px-6 text-center text-sm">Upload a selfie to see this look on you.</p>}
@@ -459,6 +515,7 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
 
       {panel === "mehendi" && (
         <div className="mt-4 grid gap-4">
+          <PhotoGrid step="mehendi" label="Mehendi" group="Mehendi" styles={bridalStylesFor(MEHENDI_CARDS)} style={mehendiCategory} onStyle={chooseMehendiCategory} items={mehendiCards} value={mehendiCardId} onChange={pickMehendi} />
           <p className="text-sm">Hold your hand flat in good light. Fill the photo with your palm.</p>
           <div className="relative mx-auto aspect-[3/4] max-h-[360px] max-w-sm overflow-hidden rounded-2xl bg-[#F3E6D8]">
             {hand ? <img src={hand.url} alt="Your hand" className="h-full w-full object-cover" /> : <p className="grid h-full place-items-center px-6 text-center text-sm">Upload a photo of your hand.</p>}
@@ -471,10 +528,6 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
             if (!file) return;
             void fileToShot(file).then((shot) => { setHand(shot); setResult(null); });
           }} />
-          <OptionRow label="Mehendi style" options={MEHENDI_STYLES} value={mehendiStyle} onChange={setMehendiStyle} />
-          <OptionRow label="Coverage" options={MEHENDI_COVERAGE} value={coverage} onChange={setCoverage} />
-          <OptionRow label="Shade" options={MEHENDI_SHADES} value={mehendiShade} onChange={setMehendiShade} />
-          <OptionRow label="Density" options={MEHENDI_DENSITY} value={density} onChange={setDensity} />
           {hand && mehendiDone !== mehendiStamp(hand.url) && <button className="btn" type="button" disabled={busy} onClick={() => void generate("mehendi", hand)}>{busy ? stage : "See the mehendi"}</button>}
         </div>
       )}
@@ -587,6 +640,32 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
           </form>
         </div>
       )}
+    </div>
+  );
+}
+
+function PhotoGrid({ step, label, hint, group, styles, style, onStyle, items, value, onChange }: { step: string; label: string; hint?: string; group: string; styles: { id: BridalStyleId; label: string }[]; style: BridalStyleId; onStyle: (id: BridalStyleId) => void; items: { id: string; name: string }[]; value: string; onChange: (id: string) => void }) {
+  return (
+    <div data-step={step}>
+      <p className="mb-2 text-sm font-medium">{label}</p>
+      {hint ? <p className="mb-2 text-sm text-muted">{hint}</p> : null}
+      {styles.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2" role="group" aria-label={`${group} style`}>
+          {styles.map((item) => (
+            <button key={item.id} className="chip" type="button" aria-pressed={style === item.id} onClick={() => onStyle(item.id)}>{item.label}</button>
+          ))}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3" role="list" aria-label={group}>
+        {items.map((item) => (
+          <div key={item.id} role="listitem">
+            <button type="button" aria-pressed={item.id === value} className={`w-full overflow-hidden rounded-[14px] border bg-white text-left shadow-sm ${item.id === value ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => onChange(item.id)}>
+              <BridalLookCard id={item.id} name={item.name} />
+              <span className="block px-2 py-2 text-sm font-medium leading-snug">{item.name}</span>
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

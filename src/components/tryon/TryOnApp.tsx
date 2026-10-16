@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import dynamic from "next/dynamic";
 import { isPlatformLogo, LookuviMark } from "@/components/brand/LookuviMark";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
-import { BridalFlow } from "@/components/tryon/BridalFlow";
+import { guestSessionId } from "@/lib/guest-session";
 import { ConsentSheet } from "@/components/tryon/ConsentSheet";
 import { LiveStudio, StudioRail } from "@/components/tryon/LiveStudio";
 import { usePhotoConsent } from "@/components/tryon/usePhotoConsent";
@@ -90,13 +91,13 @@ function firstTool(config: SalonConfig, requested?: string): TryTool {
   return allowed[0] ?? "style";
 }
 
+const BridalFlow = dynamic(() => import("@/components/tryon/BridalFlow").then((mod) => mod.BridalFlow), {
+  ssr: false,
+  loading: () => <p className="mt-4 text-sm">Opening bridal looks…</p>,
+});
+
 function sessionId() {
-  const key = "helix_session";
-  const existing = sessionStorage.getItem(key);
-  if (existing) return existing;
-  const created = crypto.randomUUID();
-  sessionStorage.setItem(key, created);
-  return created;
+  return guestSessionId();
 }
 
 export function TryOnApp({

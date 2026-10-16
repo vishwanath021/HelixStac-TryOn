@@ -1,19 +1,54 @@
-/** Indian bridal catalogue. Hyderabad / Telugu looks stay first. */
+/** Telugu bridal only: Andhra and Telangana. Other regions are not on this menu. */
 
 export type BridalEventId = "wedding" | "engagement" | "haldi" | "mehendi" | "sangeet" | "reception";
+
+/** Trending is the modern editorial set. Temple is the vintage Telugu set already supplied. */
+export type BridalStyleId = "trending" | "temple";
 
 export type BridalLook = {
   id: string;
   name: string;
   region: string;
+  style: BridalStyleId;
   blurb: string;
   prompt: string;
   events: BridalEventId[];
 };
 
+export type BridalMakeup = {
+  id: string;
+  name: string;
+  style: BridalStyleId;
+  lipId: string;
+  finishId: string;
+  prompt: string;
+};
+
+export type BridalHair = {
+  id: string;
+  name: string;
+  style: BridalStyleId;
+  prompt: string;
+};
+
+export type MehendiCard = {
+  id: string;
+  name: string;
+  style: BridalStyleId;
+  styleId: string;
+  coverageId: string;
+  shadeId: string;
+  densityId: string;
+};
+
 export type BridalFinish = { id: string; label: string; prompt: string };
 export type BridalLip = { id: string; name: string; hex: string };
 export type MehendiOption = { id: string; label: string };
+
+export const BRIDAL_STYLES: { id: BridalStyleId; label: string }[] = [
+  { id: "trending", label: "Trending" },
+  { id: "temple", label: "Temple & Traditional" },
+];
 
 export const BRIDAL_EVENTS: { id: BridalEventId; label: string }[] = [
   { id: "wedding", label: "Wedding" },
@@ -29,121 +64,111 @@ export const BRIDAL_LOOKS: BridalLook[] = [
     id: "telugu-muhurtham",
     name: "Telugu Muhurtham Classic",
     region: "Telugu",
-    blurb: "Poola jada, gold-copper eyes, berry lip, temple jewellery",
-    prompt: "Telugu bride, full jasmine-rose poola jada braid with gold jada billalu, HD full-coverage base, gold-copper eyeshadow, thick kohl, berry lip, round red bindi, nethichutti, temple gold necklace, red-green pattu saree",
+    style: "temple",
+    blurb: "Red and green pattu, temple gold, sleek low bun",
+    prompt: "Telugu muhurtham bride in a red and green silk pattu saree, temple gold necklace, nethichutti, jhumkas, round red bindi, and a sleek low bun with a centre parting and soft volume at the crown",
     events: ["wedding"],
   },
   {
-    id: "telugu-jasmine-bun",
-    name: "Telugu Jasmine Bun",
+    id: "gadwal-telangana",
+    name: "Telangana Gadwal Bride",
     region: "Telugu",
-    blurb: "Low jasmine bun, red lip, maang tikka",
-    prompt: "South Indian bride, low round bun wrapped in jasmine, gold shimmer lids, kohl, classic red matte lip, red bindi, gold maang tikka, jhumkas, Kanjeevaram saree",
-    events: ["wedding", "reception"],
-  },
-  {
-    id: "tamil-kanjeevaram",
-    name: "Tamil Kanjeevaram",
-    region: "Tamil",
-    blurb: "Jasmine braid, bold kohl, maroon lip",
-    prompt: "Tamil bride, long braid with jasmine strands, dramatic kohl top and bottom, gold eyes, maroon lip, red bindi, nethichutti, temple jewellery, kanjeevaram silk",
+    style: "temple",
+    blurb: "Green Gadwal saree, coin necklace, sleek bun",
+    prompt: "Telangana bride in a green Gadwal silk saree with a red-gold border, long gold coin necklace, nose ring, jhumkas, and a sleek low bun with soft volume at the crown",
     events: ["wedding"],
   },
   {
-    id: "kerala-kasavu",
-    name: "Kerala Kasavu Minimal",
-    region: "Kerala",
-    blurb: "Jasmine bun, dewy skin, nude lip, minimal gold",
-    prompt: "Kerala bride, jasmine bun, dewy natural skin, kohl-lined eyes, nude-pink lip, small bindi, gold-bordered off-white kasavu saree, palakka necklace",
+    id: "uppada-andhra",
+    name: "Andhra Uppada Bride",
+    region: "Telugu",
+    style: "temple",
+    blurb: "Peach Uppada silk, coin braid, temple gold",
+    prompt: "Andhra bride in a peach-gold Uppada silk saree, maang tikka, coin necklace, jhumkas, and a textured side bun",
     events: ["wedding"],
   },
   {
-    id: "punjabi-glam",
-    name: "Punjabi Glam Updo",
-    region: "Punjabi",
-    blurb: "Updo, glitter eyes, red lip, maang tikka and nath",
-    prompt: "Punjabi bride, sleek updo under red embroidered dupatta, glittery gold eyes, winged liner, false lashes, red lip, dewy highlight, large maang tikka, big nath with chain",
-    events: ["wedding", "sangeet"],
-  },
-  {
-    id: "bengali-chandan",
-    name: "Bengali Chandan",
-    region: "Bengali",
-    blurb: "Chandan dots, winged liner, red lip, mukut",
-    prompt: "Bengali bride, red bindi with white chandan dot pattern on forehead, winged liner, gold-red eyeshadow, red lip, dewy skin, white shola topor/mukut, red Benarasi saree",
-    events: ["wedding"],
-  },
-  {
-    id: "marathi-nauvari",
-    name: "Marathi Nauvari",
-    region: "Marathi",
-    blurb: "Gajra bun, crescent bindi, nath, mundavalya",
-    prompt: "Maharashtrian bride, bun with mogra gajra, pearl mundavalya across forehead, crescent bindi, kohl, soft gold eyes, crimson lip, Maharashtrian nath, Paithani nauvari saree",
-    events: ["wedding"],
-  },
-  {
-    id: "gujarati-panetar",
-    name: "Gujarati Panetar",
-    region: "Gujarati",
-    blurb: "Bun, bold kohl, deep lip, kundan, seedha pallu",
-    prompt: "Gujarati bride, neat bun, bold kohl and shimmer eyes, deep red lip, kundan maang tikka and choker, white-red panetar saree in seedha pallu drape",
-    events: ["wedding"],
-  },
-  {
-    id: "nikah-kohl",
-    name: "Nikah Kohl Glow",
-    region: "Nikah",
-    blurb: "Side-swept hair, passa, dark kohl, dewy highlight",
-    prompt: "Muslim bride for nikah, side-swept hair with jhoomar passa, dark smudged kohl eyes, strong highlighter, dewy skin, rose-nude lip, heavy embroidered dupatta, velvet outfit",
-    events: ["wedding", "reception"],
-  },
-  {
-    id: "christian-gown",
-    name: "Christian White Gown",
-    region: "Christian",
-    blurb: "Half-up waves, veil, soft smoky eye, pink lip",
-    prompt: "Christian bride, soft half-up curls, long white veil with tiara, luminous light base, soft brown smoky eye, peach blush, pink lip, white lace gown, diamond studs",
-    events: ["wedding"],
-  },
-  {
-    id: "engagement-soft-glam",
-    name: "Engagement Soft Glam",
-    region: "Engagement",
-    blurb: "Soft waves, dewy skin, nude-pink lip",
-    prompt: "Indian bride at engagement, voluminous soft waves, dewy HD base, champagne shimmer eyes, nude-pink gloss lip, diamond earrings, pastel lehenga",
-    events: ["engagement"],
-  },
-  {
-    id: "haldi-fresh",
-    name: "Haldi Fresh",
-    region: "Haldi",
-    blurb: "Marigold braid, no-makeup glow",
-    prompt: "Indian bride at haldi, messy side braid with yellow marigold flowers, no-makeup dewy skin, tinted lips, floral jewellery, yellow outfit",
+    id: "pellikuthuru-haldi",
+    name: "Pellikuthuru Haldi",
+    region: "Telugu",
+    style: "temple",
+    blurb: "Yellow saree, turmeric marks, sleek bun",
+    prompt: "Telugu pellikuthuru at haldi, yellow saree, turmeric marks on the cheeks, a sleek low bun, and floral jewellery",
     events: ["haldi"],
   },
   {
-    id: "mehendi-boho",
-    name: "Mehendi Boho",
-    region: "Mehendi",
-    blurb: "Floral braid, coral lip, floral tikka",
-    prompt: "Indian bride at mehendi, loose braid with mixed flowers, warm bronze eyes, coral lip, floral maang tikka and earrings, green lehenga",
-    events: ["mehendi"],
+    id: "telugu-sangeet-glam",
+    name: "Telugu Sangeet Glam",
+    region: "Telugu",
+    style: "temple",
+    blurb: "Magenta embroidery, open waves, chandelier earrings",
+    prompt: "Telugu sangeet look, magenta blouse with gold floral embroidery, open waves, chandelier earrings, and a smoky eye",
+    events: ["sangeet", "engagement", "mehendi"],
   },
   {
-    id: "sangeet-smokey",
-    name: "Sangeet Smokey Glam",
-    region: "Sangeet",
-    blurb: "Hollywood curls, smokey eye, nude lip",
-    prompt: "Indian bride at sangeet, glam open curls, black-bronze smokey eye with glitter, sculpted contour, nude-brown matte lip, statement earrings, sequinned lehenga",
-    events: ["sangeet"],
-  },
-  {
-    id: "reception-luxe",
-    name: "Reception Airbrush Luxe",
-    region: "Reception",
-    blurb: "Sleek bun, wine lip, diamond set",
-    prompt: "Indian bride at reception, sleek low bun with accessory, flawless airbrush matte base, cut-crease eyes, wine lip, diamond necklace set, embellished saree gown",
+    id: "telugu-reception-modern",
+    name: "Telugu Reception Modern",
+    region: "Telugu",
+    style: "temple",
+    blurb: "Champagne saree, diamonds, open waves",
+    prompt: "Telugu reception look, champagne embroidered saree, diamond necklace and earrings, open waves, and a polished evening finish",
     events: ["reception", "engagement"],
+  },
+];
+
+export const BRIDAL_MAKEUP: BridalMakeup[] = [
+  {
+    id: "makeup-classic-red",
+    name: "Classic Red",
+    style: "temple",
+    lipId: "red",
+    finishId: "hd",
+    prompt: "Makeup: classic bridal red lip, even HD base, kohl, and a round red bindi.",
+  },
+  {
+    id: "makeup-maroon",
+    name: "Maroon Matte",
+    style: "temple",
+    lipId: "maroon",
+    finishId: "matte",
+    prompt: "Makeup: maroon matte lip, matte skin, and a defined eye.",
+  },
+  {
+    id: "makeup-nude-rose",
+    name: "Nude-Rose Dewy",
+    style: "temple",
+    lipId: "nude-rose",
+    finishId: "dewy",
+    prompt: "Makeup: nude-rose lip, dewy skin, and a soft glow.",
+  },
+  {
+    id: "makeup-reception-glam",
+    name: "Reception Glam",
+    style: "temple",
+    lipId: "berry",
+    finishId: "glam",
+    prompt: "Makeup: reception glam with a gold smoky eye, lashes, and a deep berry lip.",
+  },
+];
+
+export const BRIDAL_HAIR: BridalHair[] = [
+  {
+    id: "hair-sleek-low-bun",
+    name: "Sleek low bun",
+    style: "temple",
+    prompt: "Hairstyle to add: a sleek low bun with a clean centre parting, a matha patti along the hairline, and soft volume at the crown. Keep the hair free of flowers.",
+  },
+  {
+    id: "hair-textured-side-bun",
+    name: "Textured side bun",
+    style: "temple",
+    prompt: "Hairstyle to add: a textured side bun with a soft side parting, a maang tikka, and a little height at the crown. Keep the hair free of flowers.",
+  },
+  {
+    id: "hair-volume-updo",
+    name: "Volume updo with matha patti",
+    style: "temple",
+    prompt: "Hairstyle to add: a volume updo with a centre parting, a matha patti, and soft crown volume. Keep the hair free of flowers.",
   },
 ];
 
@@ -163,14 +188,17 @@ export const BRIDAL_LIPS: BridalLip[] = [
   { id: "fuchsia", name: "Fuchsia", hex: "#C43B6E" },
   { id: "pink", name: "Pink", hex: "#E58AA0" },
   { id: "nude", name: "Nude", hex: "#C48A78" },
+  { id: "nude-rose", name: "Nude-Rose", hex: "#C98986" },
 ];
 
 export const MEHENDI_STYLES: MehendiOption[] = [
-  { id: "bridal", label: "Bridal" },
-  { id: "arabic", label: "Arabic" },
-  { id: "mandala", label: "Mandala" },
-  { id: "simple", label: "Simple" },
-  { id: "rajasthani", label: "Rajasthani" },
+  { id: "bridal", label: "Full traditional bridal" },
+  { id: "simple", label: "Light modern" },
+];
+
+export const MEHENDI_CARDS: MehendiCard[] = [
+  { id: "mehendi-bridal", name: "Full traditional bridal", style: "temple", styleId: "bridal", coverageId: "full", shadeId: "maroon", densityId: "heavy" },
+  { id: "mehendi-simple", name: "Light modern", style: "temple", styleId: "simple", coverageId: "palm", shadeId: "brown", densityId: "light" },
 ];
 
 export const MEHENDI_COVERAGE: MehendiOption[] = [
@@ -217,13 +245,41 @@ export function bridalLipById(id: string) {
   return BRIDAL_LIPS.find((lip) => lip.id === id) ?? BRIDAL_LIPS[0];
 }
 
-/** Telugu looks stay first. Looks for the chosen event come next. */
+/** A known makeup card, or null when the id was not one of the four. */
+export function bridalMakeupById(id: string) {
+  return BRIDAL_MAKEUP.find((item) => item.id === id) ?? null;
+}
+
+export function bridalHairById(id: string) {
+  return BRIDAL_HAIR.find((item) => item.id === id) ?? null;
+}
+
+export function mehendiCardById(id: string) {
+  return MEHENDI_CARDS.find((item) => item.id === id) ?? null;
+}
+
+/** Styles that have their own cards. An empty Trending set is omitted so its chip stays hidden. */
+export function bridalStylesFor(items: { style: BridalStyleId }[]) {
+  return BRIDAL_STYLES.filter((style) => items.some((item) => item.style === style.id));
+}
+
+/** Trending when that set exists, otherwise Temple & Traditional. */
+export function defaultBridalStyle(items: { style: BridalStyleId }[]): BridalStyleId {
+  return bridalStylesFor(items)[0]?.id ?? "temple";
+}
+
+/** Cards in this style. An empty Trending request shows Temple & Traditional so the step is not blank. */
+export function cardsForStyle<T extends { style: BridalStyleId }>(items: T[], style: BridalStyleId): T[] {
+  const own = items.filter((item) => item.style === style);
+  if (own.length || style === "temple") return own;
+  return items.filter((item) => item.style === "temple");
+}
+
+/** Looks tagged for this event. A day with no portrait of its own uses the wedding set. */
 export function looksForEvent(eventId: string) {
-  const telugu = BRIDAL_LOOKS.filter((look) => look.region === "Telugu");
-  const rest = BRIDAL_LOOKS.filter((look) => look.region !== "Telugu");
-  const matched = rest.filter((look) => look.events.includes(eventId as BridalEventId));
-  const other = rest.filter((look) => !look.events.includes(eventId as BridalEventId));
-  return [...telugu, ...matched, ...other];
+  const matched = BRIDAL_LOOKS.filter((look) => look.events.includes(eventId as BridalEventId));
+  if (matched.length) return matched;
+  return BRIDAL_LOOKS.filter((look) => look.events.includes("wedding"));
 }
 
 export function mehendiChoice(list: MehendiOption[], id: string) {

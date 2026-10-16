@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
-import { bridalFinishById, bridalLipById, bridalLookById, mehendiChoice, MEHENDI_COVERAGE, MEHENDI_DENSITY, MEHENDI_SHADES, MEHENDI_STYLES } from "@/data/bridal";
+import { bridalFinishById, bridalHairById, bridalLipById, bridalLookById, bridalMakeupById, mehendiCardById, mehendiChoice, MEHENDI_COVERAGE, MEHENDI_DENSITY, MEHENDI_SHADES, MEHENDI_STYLES } from "@/data/bridal";
+import { readBridalGenerateFields } from "@/lib/bridal-request";
 import { parseBrowColour, parseBrowThickness } from "@/data/brows";
 import { claimGenerationJob, failGenerationJob, jobFingerprint } from "@/lib/ai/dedupe";
 import { BROWS_NEED_OPENAI, browsRoute, demoGuestPreview, engineForGuestTool, guestEngineReady, loadGuestReference, readGuestEngine, runGuestHairstyleIfReady, runGuestLookIfReady } from "@/lib/ai/guest-hairstyle";
@@ -107,12 +108,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "DAILY_CAP", message: guestLimitMessage("daily") }, { status: 429 });
   }
 
-  const finish = bridalFinishById(String(form.get("finish") || "hd"));
-  const lip = bridalLipById(String(form.get("lip") || "red"));
-  const mehendiStyle = mehendiChoice(MEHENDI_STYLES, String(form.get("mehendiStyle") || styleId));
-  const mehendiCoverage = mehendiChoice(MEHENDI_COVERAGE, String(form.get("coverage") || ""));
-  const mehendiShade = mehendiChoice(MEHENDI_SHADES, String(form.get("mehendiShade") || ""));
-  const mehendiDensity = mehendiChoice(MEHENDI_DENSITY, String(form.get("density") || ""));
+  const bridalFields = readBridalGenerateFields(form);
+  const makeup = bridalMakeupById(bridalFields.makeup || "");
+  const hair = bridalHairById(bridalFields.hair || "");
+  const finish = bridalFinishById(bridalFields.finish || makeup?.finishId || "hd");
+  const lip = bridalLipById(bridalFields.lip || makeup?.lipId || "red");
+  const mehendiCard = mehendiCardById(bridalFields.mehendiCard || "");
+  const mehendiStyle = mehendiChoice(MEHENDI_STYLES, bridalFields.mehendiStyle || mehendiCard?.styleId || styleId);
+  const mehendiCoverage = mehendiChoice(MEHENDI_COVERAGE, bridalFields.coverage || "");
+  const mehendiShade = mehendiChoice(MEHENDI_SHADES, bridalFields.mehendiShade || "");
+  const mehendiDensity = mehendiChoice(MEHENDI_DENSITY, bridalFields.density || "");
   const bridalLook = tool === "bridal" ? bridalLookById(styleId) : null;
   const look = bridalTool
     ? bridalLook
@@ -127,7 +132,10 @@ export async function POST(req: Request) {
     : toolEnabled(platformTool) &&
       (tool === "brows" ? tenant.toolBrows : tool === "beard" ? tenant.toolBeard : tool === "nails" ? tenant.toolNails : tool === "colour" ? tenant.toolColour : tenant.toolStyle);
   if (!toolOn) return NextResponse.json({ error: "TOOL", message: "That try-on is turned off for this salon." }, { status: 403 });
-  if (!look) return NextResponse.json({ error: "STYLE", message: bridalTool ? "Choose a bridal look first." : "That look is not on this salon's menu." }, { status: 400 });
+  if (!look) {
+    const message = tool === "mehendi" ? "Choose a mehendi design first." : bridalTool ? "Choose a bridal look first." : "That look is not on this salon's menu.";
+    return NextResponse.json({ error: "STYLE", message }, { status: 400 });
+  }
   if (tool === "style" && !(await styleEnabledForTenant(tenant.id, styleId))) {
     return NextResponse.json({ error: "STYLE", message: "That style is not on this salon's menu." }, { status: 400 });
   }
@@ -173,7 +181,21 @@ export async function POST(req: Request) {
     const claim = await claimGenerationJob({
       tenantId: tenant.id,
       requestId,
-      fingerprint: jobFingerprint({ photo: jpeg, styleId, tool, shadeId: tool === "brows" ? `${browThickness}:${browColour}` : tool === "style" ? shadeId || "" : "", mode: tool }),
+      fingerprint: jobFingerprint({
+        photo: jpeg,
+        styleId,
+        tool,
+        shadeId: tool === "brows"
+          ? `${browThickness}:${browColour}`
+          : tool === "style"
+            ? shadeId || ""
+            : tool === "bridal"
+              ? [finish.id, lip.id, makeup?.id || "", hair?.id || ""].join(":")
+              : tool === "mehendi"
+                ? [mehendiStyle?.id || "", mehendiCoverage?.id || "", mehendiShade?.id || "", mehendiDensity?.id || ""].join(":")
+                : "",
+        mode: tool,
+      }),
     });
     if (claim.kind === "conflict") return NextResponse.json({ error: "CONFLICT", message: claim.message }, { status: 409 });
     if (claim.kind === "inflight") return NextResponse.json({ error: "IN_FLIGHT", message: claim.message }, { status: 409 });
@@ -225,13 +247,15 @@ export async function POST(req: Request) {
     ? null
     : tool === "bridal" && bridalLook
       ? { prompt: buildBridalPrompt(bridalLook, finish, lip, {
-          kajal: String(form.get("kajal") || "") === "1",
-          lashes: String(form.get("lashes") || "") === "1",
-          blush: String(form.get("blush") || "") === "1",
-          brow: String(form.get("browTint") || "") === "1",
+          kajal: bridalFields.kajal === "1",
+          lashes: bridalFields.lashes === "1",
+          blush: bridalFields.blush === "1",
+          brow: bridalFields.browTint === "1",
+          makeup: makeup?.prompt,
+          hair: hair?.prompt,
         }), reference: await bridalReferenceJpeg(bridalLook.id), referenceFile: `${bridalLook.id}.jpg` }
       : tool === "mehendi" && mehendiStyle && mehendiCoverage && mehendiShade && mehendiDensity
-        ? { prompt: buildMehendiPrompt(mehendiStyle, mehendiCoverage, mehendiShade, mehendiDensity), reference: await bridalReferenceJpeg(`mehendi-${mehendiStyle.id}`), referenceFile: `mehendi-${mehendiStyle.id}.jpg` }
+        ? { prompt: buildMehendiPrompt(mehendiStyle, mehendiCoverage, mehendiShade, mehendiDensity), reference: await bridalReferenceJpeg(mehendiCard?.id || `mehendi-${mehendiStyle.id}`), referenceFile: `${mehendiCard?.id || mehendiStyle.id}.jpg` }
         : await loadGuestReference(tool as "brows" | "beard" | "nails" | "colour", styleId, tool === "brows" ? { thickness: browThickness, colour: browColour } : undefined);
   if (tool !== "style" && !guestLook) {
     await failGenerationJob(jobId, { outcome: "style", message: "That look is not on this salon's menu." });

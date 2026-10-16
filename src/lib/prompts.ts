@@ -104,7 +104,7 @@ export function buildBridalPrompt(
   look: BridalLook,
   finish: BridalFinish,
   lip: BridalLip,
-  live?: { kajal?: boolean; lashes?: boolean; blush?: boolean; brow?: boolean },
+  live?: { kajal?: boolean; lashes?: boolean; blush?: boolean; brow?: boolean; makeup?: string; hair?: string },
 ) {
   const marks = [
     live?.kajal ? "kajal on" : "kajal off",
@@ -117,11 +117,13 @@ export function buildBridalPrompt(
     `Apply one full look: hair, makeup, bindi, and jewellery together. The look is ${look.name}. ${look.prompt}`,
     finish.prompt,
     `Lip colour: ${lip.name}.`,
+    live?.makeup || "",
+    live?.hair || "",
     `The live mirror choices were ${marks.join(", ")}. Paint those on the real portrait. This is a full look, not a camera filter.`,
     "Keep the same person: identity, skin tone, age, and expression.",
     "A portrait, photorealistic, with natural light. No text, logos, watermarks, or extra people.",
     "This is a salon trial preview, not a guarantee of the finished makeup.",
-  ].join(" ");
+  ].filter(Boolean).join(" ");
 }
 
 /** Mehendi on the hand in image 1. */

@@ -17,7 +17,10 @@ export async function POST(req: Request) {
   const limited = await tooMany(req, "consent", 60, 60 * 60 * 1000);
   if (limited) return limited;
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "INVALID" }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "INVALID", message: "The photo notice could not be saved." }, { status: 400 });
+  if (!parsed.data.accepted || !parsed.data.ageGate) {
+    return NextResponse.json({ error: "CONSENT", message: "Agree to the photo notice, then try again." }, { status: 400 });
+  }
   const tenant = await prisma.tenant.findUnique({ where: { slug: parsed.data.slug } });
   if (!tenant || tenant.status === "SUSPENDED") return NextResponse.json({ error: "TENANT" }, { status: 404 });
   const ua = req.headers.get("user-agent") || "";

@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-
-function sessionId() {
-  const key = "helix_session";
-  const existing = sessionStorage.getItem(key);
-  if (existing) return existing;
-  const created = crypto.randomUUID();
-  sessionStorage.setItem(key, created);
-  return created;
-}
+import { guestSessionId } from "@/lib/guest-session";
 
 /** One photo notice per browser session. The camera stays closed until the guest agrees. */
 export function usePhotoConsent(slug: string, lang: string) {
@@ -40,7 +32,7 @@ export function usePhotoConsent(slug: string, lang: string) {
     const res = await fetch("/api/v1/consent", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ slug, sessionId: sessionId(), lang: lang || "en", accepted: true, ageGate: true }),
+      body: JSON.stringify({ slug, sessionId: guestSessionId(), lang: lang || "en", accepted: true, ageGate: true }),
     });
     const data = await res.json().catch(() => ({}));
     if (!data.id) return "";

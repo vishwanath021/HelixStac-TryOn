@@ -53,11 +53,21 @@ test("guest can pick an event and a look, refine it, try mehendi, save, compare,
   await expect(page.getByRole("heading", { name: "Bridal", exact: true })).toBeVisible();
   const looks = page.getByRole("list", { name: "Bridal looks" });
   await expect(looks.getByRole("listitem").first()).toContainText("Telugu Muhurtham Classic");
-  await expect(looks.getByRole("listitem").nth(1)).toContainText("Telugu Jasmine Bun");
-  await shot(page, "02-looks");
+  await expect(looks.getByRole("listitem").nth(1)).toContainText("Telangana Gadwal Bride");
+  await expect(page.getByRole("group", { name: "Bridal looks style" }).getByRole("button", { name: "Temple & Traditional" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("group", { name: "Makeup style" }).getByRole("button", { name: "Temple & Traditional" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Trending", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Makeup" }).getByRole("button", { name: "Classic Red" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Sleek low bun" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Textured side bun" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Volume updo with matha patti" })).toBeVisible();
+  await page.locator("[data-step='look']").screenshot({ path: `${SHOTS}/02-looks.png` });
+  await page.locator("[data-step='makeup']").screenshot({ path: `${SHOTS}/02-makeup.png` });
+  await page.locator("[data-step='hair']").screenshot({ path: `${SHOTS}/02-hair.png` });
+  await page.locator("[data-step='event']").screenshot({ path: `${SHOTS}/02-event.png` });
 
   await page.getByRole("button", { name: "Haldi", exact: true }).click();
-  await expect(looks.getByRole("button", { name: "Haldi Fresh" })).toBeVisible();
+  await expect(looks.getByRole("button", { name: "Pellikuthuru Haldi" })).toBeVisible();
   await page.getByRole("button", { name: "Wedding", exact: true }).click();
   await looks.getByRole("button", { name: "Telugu Muhurtham Classic" }).click();
   await page.locator("[data-photo='bridal']").setInputFiles("public/samples/portrait.jpg");
@@ -81,11 +91,11 @@ test("guest can pick an event and a look, refine it, try mehendi, save, compare,
   await page.getByRole("button", { name: "Save this look" }).click();
 
   await page.getByRole("tab", { name: "Mehendi" }).click();
-  await expect(page.getByRole("button", { name: "Arabic", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Full hand", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Reddish brown", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Heavy", exact: true })).toBeVisible();
-  await shot(page, "06-mehendi");
+  await expect(page.getByRole("button", { name: "Full traditional bridal", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Light modern", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Arabic", exact: true })).toHaveCount(0);
+  await page.locator("[data-step='mehendi']").screenshot({ path: `${SHOTS}/06-mehendi.png` });
+  await shot(page, "06-mehendi-page");
   await page.locator("[data-photo='mehendi']").setInputFiles("tests/fixtures/hand.jpg");
   await page.getByRole("button", { name: "See the mehendi" }).click();
   await expect(page.getByRole("heading", { name: /Mehendi/ })).toBeVisible({ timeout: 30_000 });
