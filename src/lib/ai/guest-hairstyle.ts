@@ -26,6 +26,9 @@ export const GUEST_OPENAI_MODEL = "gpt-image-2.5-sunburst";
 
 export type GuestEngine = "fal" | "openai";
 
+/** Salon try-ons use sunburst at quality medium unless a salon or platform setting says fal. */
+export const DEFAULT_GUEST_ENGINE: GuestEngine = "openai";
+
 export function parseGuestEngine(value: string): GuestEngine | null {
   if (value === "fal" || value === "openai") return value;
   return null;
@@ -36,12 +39,38 @@ export function guestEngineModel(engine: GuestEngine) {
 }
 
 /**
- * Brows use the same engine as style, colour, beard, and nails.
- * The default is fal FLUX.3, which asks for the selfie aspect ratio.
- * Sunburst pads a 3:4 photo into 1024×1536 and was returning grey bars.
+ * Hairstyle, beard, colour, makeup, and bridal use the same engine.
+ * The default is OpenAI gpt-image-2.5-sunburst at quality medium.
+ * fal FLUX.3 is the automatic fallback when OpenAI is not ready or fails without a bill.
  */
 export function engineForGuestTool(_tool: string, selected: GuestEngine): GuestEngine {
   return selected;
+}
+
+/** First attempt. A missing OpenAI key uses fal when that key is ready. */
+export function guestEngineToRun(selected: GuestEngine, openaiReady: boolean, falReady: boolean): GuestEngine | null {
+  const engine = engineForGuestTool("", selected);
+  if (engine === "openai") {
+    if (openaiReady) return "openai";
+    return falReady ? "fal" : null;
+  }
+  return falReady ? "fal" : null;
+}
+
+/**
+ * Second attempt after OpenAI. A timeout or a billed failure is not sent again.
+ * An unbilled rejection can try fal FLUX.3.
+ */
+export function guestEngineAfterFailure(
+  selected: GuestEngine,
+  falReady: boolean,
+  failure: { outcome: string; billedAttempt?: boolean },
+): GuestEngine | null {
+  if (engineForGuestTool("", selected) !== "openai") return null;
+  if (!falReady) return null;
+  if (failure.outcome === "uncertain" || failure.outcome === "spend-cap" || failure.billedAttempt) return null;
+  if (failure.outcome !== "provider") return null;
+  return "fal";
 }
 
 async function setting(key: string) {
@@ -49,14 +78,14 @@ async function setting(key: string) {
   return row?.value ?? "";
 }
 
-/** Salon override wins. An empty override uses the platform default, which is fal. */
+/** Salon override wins. An empty override uses sunburst. */
 export async function readGuestEngine(tenantId: string): Promise<{ engine: GuestEngine; source: "salon" | "platform" }> {
   if (tenantId) {
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { hairstyleEngine: true } });
     const override = parseGuestEngine(tenant?.hairstyleEngine || "");
     if (override) return { engine: override, source: "salon" };
   }
-  return { engine: parseGuestEngine(await setting("guest_hairstyle_engine")) || "fal", source: "platform" };
+  return { engine: parseGuestEngine(await setting("guest_hairstyle_engine")) || DEFAULT_GUEST_ENGINE, source: "platform" };
 }
 
 export async function guestEngineReady(engine: GuestEngine) {
@@ -171,8 +200,10 @@ type GuestEditArgs = {
  */
 async function runGuestEdit(args: GuestEditArgs): Promise<NextResponse | null> {
   const selected = (await readGuestEngine(args.tenantId)).engine;
-  const engine = engineForGuestTool(args.tool, selected);
-  if (!(await guestEngineReady(engine))) return null;
+  const openaiReady = await guestEngineReady("openai");
+  const falReady = await guestEngineReady("fal");
+  const engine = guestEngineToRun(engineForGuestTool(args.tool, selected), openaiReady, falReady);
+  if (!engine) return null;
   const creditRef = `guest:${args.tenantId}:${args.requestId || args.jobId || "preview"}`;
   try {
     await reserveCredits(args.tenantId, 1, creditRef);
@@ -196,12 +227,26 @@ async function runGuestEdit(args: GuestEditArgs): Promise<NextResponse | null> {
       quality: "medium",
       guest: args.guest,
     });
+    const fallback = guestEngineAfterFailure(selected, falReady, executed.ok ? { outcome: "ok" } : executed);
+    if (fallback) {
+      executed = await executeReferenceEdit({
+        jpeg: args.jpeg,
+        original: args.original,
+        styleId: args.styleId,
+        tenantId: args.tenantId,
+        source: "tryon",
+        tool: args.tool,
+        modelId: guestEngineModel(fallback),
+        quality: "medium",
+        guest: args.guest,
+      });
+    }
   } catch (error) {
     await settleCredits(args.tenantId, creditRef, "REFUND");
     throw error;
   }
   const kind = args.kind;
-  const framed = executed.ok ? await cropLetterbox(executed.imagePng) : null;
+  const framed = executed.ok ? await cropLetterbox(executed.framedPng) : null;
   if (executed.ok && args.tool === "colour" && framed) {
     const change = await hairChange(args.jpeg, framed).catch(() => null);
     if (change?.unchanged) {
@@ -244,7 +289,7 @@ async function runGuestEdit(args: GuestEditArgs): Promise<NextResponse | null> {
     });
     return NextResponse.json({ error: "PREVIEW", message: guestMessage(executed.outcome) }, { status: executed.httpStatus });
   }
-  const jpegOut = await sharp(framed || executed.imagePng).jpeg({ quality: 90 }).toBuffer();
+  const jpegOut = await sharp(framed || executed.framedPng).jpeg({ quality: 90 }).toBuffer();
   const tryOn = await prisma.tryOn.create({
     data: {
       tenantId: args.tenantId,

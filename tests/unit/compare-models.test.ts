@@ -62,7 +62,7 @@ describe("comparison models", () => {
     if (sunburst.ok) {
       expect(sunburst.model).toBe("gpt-image-2.5-sunburst");
       expect(sunburst.inputFidelity).toBeNull();
-      expect(sunburst.size).toBe("1024x1536");
+      expect(sunburst.size).toBe("1024x1360");
       expect(sunburst.estimateInr).toBeLessThanOrEqual(sunburst.capInr);
       const planned = planImageEdit({
         model: sunburst.model,

@@ -170,6 +170,18 @@ export function costUsdFromUsage(model: string, usage: UsageNumbers | undefined)
   return Math.round(usd * 1_000_000) / 1_000_000;
 }
 
+/** Counts and USD taken from a provider usage object. costUsd is 0 when the usage cannot be priced. */
+export function providerUsageLog(model: string, usage: UsageNumbers | undefined) {
+  const costUsd = costUsdFromUsage(model, usage);
+  return {
+    costUsd: costUsd ?? 0,
+    known: costUsd != null,
+    textCount: usage?.textTokens ?? 0,
+    pictureIn: usage?.imageTokens ?? 0,
+    pictureOut: usage?.outputTokens ?? 0,
+  };
+}
+
 /** Same rates as costUsdFromUsage, for a quote that has not called the provider yet. */
 export function usdFromTokenCounts(model: string, counts: { textIn: number; imageIn: number; output: number }): number | null {
   const rates = tokenRates(model);

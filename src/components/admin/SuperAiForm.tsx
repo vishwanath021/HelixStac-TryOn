@@ -49,7 +49,7 @@ export function SuperAiForm({
   const [openRouterEnabled, setOpenRouterEnabled] = useState(initial.openRouterKey.enabled);
   const [openaiDraft, setOpenaiDraft] = useState("");
   const [geminiDraft, setGeminiDraft] = useState("");
-  const [guestEngine, setGuestEngine] = useState<GuestEngine>(initial.guestEngine || "fal");
+  const [guestEngine, setGuestEngine] = useState<GuestEngine>(initial.guestEngine || "openai");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [panels, setPanels] = useState<Panel[]>([]);
@@ -214,15 +214,15 @@ export function SuperAiForm({
       >
         <fieldset className="card grid gap-3 p-5" aria-label="Salon hairstyle model">
           <legend className="px-1 text-base font-semibold">Salon hairstyle model</legend>
-          <p className="text-sm text-muted">Style, colour, brows, beard, and nails use this model.</p>
-          <p className="text-sm">Brows follow this choice. FLUX.3 keeps the selfie aspect ratio, so a 3:4 photo is not padded into a 2:3 frame with grey bars. Sunburst is still here when you want that model for every tool.</p>
-          <label className="flex min-h-11 items-center gap-2 text-sm">
-            <input type="radio" name="guest-engine" checked={guestEngine === "fal"} onChange={() => setGuestEngine("fal")} />
-            fal FLUX.3 (default)
-          </label>
+          <p className="text-sm text-muted">Hairstyle, beard, colour, makeup, and bridal use this model.</p>
+          <p className="text-sm">Brows follow this choice. OpenAI gpt-image-2.5-sunburst at quality medium is the default. fal FLUX.3 runs automatically if OpenAI fails.</p>
           <label className="flex min-h-11 items-center gap-2 text-sm">
             <input type="radio" name="guest-engine" checked={guestEngine === "openai"} onChange={() => setGuestEngine("openai")} />
-            OpenAI gpt-image-2.5-sunburst, quality medium
+            OpenAI gpt-image-2.5-sunburst, quality medium (default)
+          </label>
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <input type="radio" name="guest-engine" checked={guestEngine === "fal"} onChange={() => setGuestEngine("fal")} />
+            fal FLUX.3 (fallback)
           </label>
           <button className="btn w-fit" type="button" disabled={busy} onClick={() => void saveGuest(guestEngine)}>Save salon default</button>
         </fieldset>

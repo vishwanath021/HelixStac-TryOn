@@ -120,14 +120,20 @@ export function buildBridalPrompt(
     live?.blush ? "blush on" : "blush off",
     live?.brow ? "brow tint on" : "brow tint off",
   ];
-  const roles = live?.hair
-    ? "Image 1 is the bride's selfie. Image 2 is clothing and jewellery to copy. Do not copy the reference person's face. The hairstyle comes from the written instruction, not from image 2."
-    : "Image 1 is the bride's selfie. Image 2 is clothing and jewellery to copy. Do not copy the reference person's face or hair.";
+  const roles = look.outfit
+    ? live?.hair
+      ? "Image 1 is the customer selfie. Image 2 is an outfit or saree to copy. Copy the clothing from image 2. Do not copy the reference person's face. The hairstyle comes from the written instruction, not from image 2."
+      : "Image 1 is the customer selfie. Image 2 is an outfit or saree to copy. Copy the clothing from image 2. Do not copy the reference person's face or hair."
+    : "Image 1 is the customer selfie. This is a makeup-only look. Keep the customer's own clothing and jewellery. Do not copy clothing or jewellery from image 2. Do not copy the reference person's face or hair.";
+  const clothingLine = look.outfit
+    ? "Copy the clothing from image 2 because this look is an outfit or saree."
+    : "Keep the customer's own clothing and jewellery exactly as in image 1. Change makeup only.";
   const hairLine = live?.hair
     ? `${live.hair} Change the hair only because a hairstyle was chosen. Keep the face the same.`
     : "Do not change the hair. Keep the existing haircut, length, texture, and how it is worn. Tied hair stays tied. Waves stay waves. Ignore any hairstyle named in the look description or shown on the reference person.";
   return [
     roles,
+    clothingLine,
     `Apply one full look: makeup, bindi, and jewellery together. The look is ${look.name}. ${look.prompt}`,
     finish.prompt,
     `Lip colour: ${lip.name}.`,
