@@ -85,7 +85,7 @@ export function ownLookCapInr() {
 function lookDetails(makeup: BridalMakeup) {
   const finish = bridalFinishById(makeup.finishId);
   const lip = bridalLipById(makeup.lipId);
-  return [makeup.prompt, finish?.prompt || "", lip ? `Lip colour: ${lip.name}` : ""]
+  return [makeup.prompt, finish?.prompt || "", lip ? `Lip colour: ${lip.name}` : "", "Eye makeup: soft brown shadow and defined liner, clearly visible"]
     .map((part) => part.replace(/\.$/, "").trim())
     .filter(Boolean)
     .join(". ");
@@ -114,6 +114,7 @@ export function buildOwnLookPrompt(makeup: BridalMakeup, slots: { id: OwnLookSlo
     "Do not change face shape or features; makeup changes colour and finish only.",
     "Keep her natural skin tone and skin texture exactly; do not lighten, whiten or smooth the skin.",
     "Keep any nose pin already in her photo.",
+    "Keep any sindoor at the hair parting and any bindi already in her photo.",
     "Telugu bridal styling: silk drape, a round bindi, and the jewellery from her own photos when she added them.",
     "A portrait, photorealistic, with natural light. No text, logos, watermarks, or extra people.",
     "This is a salon trial preview, not a guarantee of the finished makeup.",
