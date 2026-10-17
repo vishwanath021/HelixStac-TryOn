@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { saveGuestEngine, saveSalonGuestEngine } from "@/lib/ai/guest-hairstyle";
-import { platformAiView, saveFalKey, saveOpenRouterKey, savePlatformAi } from "@/lib/ai/settings-store";
+import { platformAiView, saveFalBillingKey, saveFalKey, saveOpenRouterKey, savePlatformAi } from "@/lib/ai/settings-store";
 import { requireSuper } from "@/lib/session";
 
 const schema = z.object({
@@ -14,6 +14,9 @@ const schema = z.object({
   falKey: z.string().max(400).optional().default(""),
   falEnabled: z.boolean().optional().default(false),
   removeFalKey: z.boolean().optional().default(false),
+  falBillingOnly: z.boolean().optional(),
+  falBillingKey: z.string().max(400).optional().default(""),
+  removeFalBillingKey: z.boolean().optional().default(false),
   openRouterOnly: z.boolean().optional(),
   openRouterKey: z.string().max(400).optional().default(""),
   openRouterEnabled: z.boolean().optional().default(false),
@@ -47,6 +50,11 @@ export async function PUT(req: Request) {
     } else if (parsed.data.openRouterOnly) {
       await saveOpenRouterKey(
         { apiKey: parsed.data.openRouterKey, enabled: parsed.data.openRouterEnabled, remove: parsed.data.removeOpenRouterKey },
+        access.session.user.id,
+      );
+    } else if (parsed.data.falBillingOnly) {
+      await saveFalBillingKey(
+        { apiKey: parsed.data.falBillingKey, remove: parsed.data.removeFalBillingKey },
         access.session.user.id,
       );
     } else if (parsed.data.falOnly) {

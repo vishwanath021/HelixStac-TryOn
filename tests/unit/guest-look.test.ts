@@ -3,7 +3,9 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { GUEST_FAL_MODEL, GUEST_OPENAI_MODEL, engineForGuestTool, guestEngineModel, loadGuestReference } from "@/lib/ai/guest-hairstyle";
 import { prepareGuestReference, quoteComparisonModel } from "@/lib/ai/compare-models";
+import { flux3UsdForResolution } from "@/lib/ai/cost-source";
 import { FAL_NUMBERED_IMAGE_PROMPT } from "@/lib/ai/fal-models";
+import { bufferedInr } from "@/lib/ai/tiers";
 import { readHairstyleReference } from "@/lib/ai/style-reference";
 import { buildColourPrompt } from "@/lib/prompts";
 import { shadeById } from "@/data/shades";
@@ -60,8 +62,8 @@ describe("guest reference generation", () => {
     expect(ready.prompt).toContain("Keep the face, identity, hair, skin, background and framing identical.");
     expect(ready.prompt).not.toContain(FAL_NUMBERED_IMAGE_PROMPT);
     expect(ready.prompt.toLowerCase()).not.toContain("mask");
-    expect(ready.quote.estimateUsd).toBe(0.024);
-    expect(ready.quote.estimateInr).toBe(2.5);
+    expect(ready.quote.estimateUsd).toBe(flux3UsdForResolution("1k"));
+    expect(ready.quote.estimateInr).toBe(bufferedInr(flux3UsdForResolution("1k")));
   });
 
   it("recolours from a shade swatch and keeps the numbered colour prompt", async () => {
@@ -129,8 +131,8 @@ describe("guest reference generation", () => {
     }
     for (const row of rows) {
       expect(row.reference).toBe("512x512");
-      expect(row.fluxUsd).toBe(0.024);
-      expect(row.fluxInr).toBe(2.5);
+      expect(row.fluxUsd).toBe(flux3UsdForResolution("1k"));
+      expect(row.fluxInr).toBe(bufferedInr(flux3UsdForResolution("1k")));
       expect(row.sunburstUsd).toBe(0.143282);
       expect(row.sunburstInr).toBe(14.9);
       expect(row.sunburstSize).toBe("1024x1360");

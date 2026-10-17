@@ -27,6 +27,7 @@ export type PlatformAiSettings = SalonAiSettings & {
   openaiKey: StoredKeyStatus;
   geminiKey: StoredKeyStatus;
   falKey: StoredKeyStatus & { enabled: boolean };
+  falBillingKey: StoredKeyStatus;
   openRouterKey: StoredKeyStatus & { enabled: boolean };
   guestEngine: GuestEngine;
 };
@@ -110,6 +111,7 @@ export async function platformAiView(): Promise<PlatformAiSettings> {
     openaiKey,
     geminiKey,
     falKey: { ...fal, enabled: fal.saved && (await setting("platform_fal_enabled")) === "true" },
+    falBillingKey: await storedStatus("platform_fal_billing_key_cipher", "platform_fal_billing_key_hint"),
     openRouterKey: {
       ...(await storedStatus("platform_openrouter_key_cipher", "platform_openrouter_key_hint")),
       enabled: Boolean(await setting("platform_openrouter_key_cipher")) && (await setting("platform_openrouter_enabled")) === "true",
@@ -196,6 +198,29 @@ export async function saveFalKey(
       action: "AI_KEY_UPDATE",
       target: "platform",
       meta: JSON.stringify({ provider: "fal", rotated: Boolean(input.apiKey.trim()), removed: input.remove, enabled: input.enabled }),
+    },
+  });
+}
+
+export async function saveFalBillingKey(input: { apiKey: string; remove: boolean }, actorId: string) {
+  if (input.remove) {
+    await putSetting("platform_fal_billing_key_cipher", "");
+    await putSetting("platform_fal_billing_key_hint", "");
+  } else {
+    const next = freshFalKey(input.apiKey);
+    if (next) {
+      await putSetting("platform_fal_billing_key_cipher", encryptSecret(next));
+      await putSetting("platform_fal_billing_key_hint", keyHint(next));
+    } else if (!(await setting("platform_fal_billing_key_cipher")) && input.apiKey.trim()) {
+      throw new Error("INVALID_KEY");
+    }
+  }
+  await prisma.auditLog.create({
+    data: {
+      actorId,
+      action: "AI_KEY_UPDATE",
+      target: "platform",
+      meta: JSON.stringify({ provider: "fal-billing", rotated: Boolean(input.apiKey.trim()), removed: input.remove }),
     },
   });
 }

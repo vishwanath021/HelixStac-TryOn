@@ -9,7 +9,9 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { installShutdown } = await import("@/lib/lifecycle");
     const { startRetentionLoop } = await import("@/lib/retention");
+    const { startFalBillingLoop } = await import("@/lib/ai/fal-billing");
     installShutdown();
     startRetentionLoop();
+    startFalBillingLoop();
   }
 }
