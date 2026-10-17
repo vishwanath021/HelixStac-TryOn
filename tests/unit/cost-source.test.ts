@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { actualHeading, capPaise, costSourceLabel, falBilledMegapixels, falPriceListUsd, FLUX3_USD_PER_OUTPUT_MEGAPIXEL, matchFalBillingEvents } from "@/lib/ai/cost-source";
+import { actualHeading, capPaise, costSourceLabel, falBilledMegapixels, falPriceListUsd, FLUX3_USD_PER_OUTPUT_MEGAPIXEL, flux3MegapixelsForResolution, flux3UsdForMegapixels, flux3UsdForResolution, matchFalBillingEvents } from "@/lib/ai/cost-source";
 import { syncFalBillingCosts } from "@/lib/ai/fal-billing";
 import { beginPaidCall, finalizePaidCall, spendSummary } from "@/lib/ai/spend";
 import { costReport } from "@/lib/ai/cost-report";
@@ -26,7 +26,7 @@ describe("cost source", () => {
   });
 
   it("computes fal actual from the documented unit and the downloaded size", () => {
-    expect(FLUX3_USD_PER_OUTPUT_MEGAPIXEL).toBe(0.024);
+    expect(FLUX3_USD_PER_OUTPUT_MEGAPIXEL).toBe(0.048);
     expect(falBilledMegapixels(832, 1248)).toBe(1);
     const billedRun = falPriceListUsd({
       model: "blackforestlabs/flux-3/edit-image",
@@ -34,15 +34,38 @@ describe("cost source", () => {
       outputHeight: 1248,
       at: new Date("2026-10-10T12:00:00Z"),
     });
-    expect(billedRun).toEqual({ usd: 0.024, unit: "output megapixels" });
+    expect(billedRun).toEqual({ usd: flux3UsdForMegapixels((832 * 1248) / 1_000_000), unit: "output megapixels" });
     const larger = falPriceListUsd({
       model: "blackforestlabs/flux-3/edit-image",
       outputWidth: 1024,
       outputHeight: 1536,
     });
-    expect(larger?.usd).toBe(falBilledMegapixels(1024, 1536) * FLUX3_USD_PER_OUTPUT_MEGAPIXEL);
+    expect(larger?.usd).toBe(flux3UsdForMegapixels((1024 * 1536) / 1_000_000));
+    expect(larger?.usd).not.toBe(falBilledMegapixels(1024, 1536) * FLUX3_USD_PER_OUTPUT_MEGAPIXEL);
     expect(falPriceListUsd({ model: "fal-ai/nano-banana-pro/edit", outputWidth: 12, outputHeight: 18 })?.usd).toBe(0.15);
     expect(falPriceListUsd({ model: "openai/gpt-image-2/edit", outputWidth: 1024, outputHeight: 1536 })).toBeNull();
+  });
+
+  it("prices flux-3 from the resolution frame, and treats 768sq as an estimate", () => {
+    expect(flux3MegapixelsForResolution("768sq")).toBeCloseTo((672 * 880) / 1_000_000, 6);
+    expect(flux3MegapixelsForResolution("1k")).toBeCloseTo((880 * 1184) / 1_000_000, 6);
+    expect(flux3MegapixelsForResolution("768sq")).toBeCloseTo(0.59, 2);
+    expect(flux3MegapixelsForResolution("1k")).toBeCloseTo(1.04, 2);
+    const small = flux3UsdForResolution("768sq");
+    const full = flux3UsdForResolution("1k");
+    expect(small).toBe(flux3UsdForMegapixels((672 * 880) / 1_000_000));
+    expect(full).toBe(flux3UsdForMegapixels((880 * 1184) / 1_000_000));
+    expect(small).toBeLessThan(full);
+    expect(flux3MegapixelsForResolution("2k")).toBeCloseTo(flux3MegapixelsForResolution("1k") * 4, 6);
+    expect(flux3MegapixelsForResolution("512sq")).toBeCloseTo(flux3MegapixelsForResolution("1k") / 4, 6);
+    expect(flux3UsdForResolution("2k")).toBeGreaterThan(full);
+    expect(flux3UsdForResolution("4k")).toBeGreaterThan(flux3UsdForResolution("2k"));
+    const downloaded = falPriceListUsd({
+      model: "blackforestlabs/flux-3/edit-image",
+      outputWidth: 672,
+      outputHeight: 880,
+    });
+    expect(downloaded?.usd).toBe(small);
   });
 
   it("matches a billing event by request id even when the status path would differ", () => {

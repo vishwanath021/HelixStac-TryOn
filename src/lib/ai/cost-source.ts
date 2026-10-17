@@ -40,14 +40,46 @@ function megapixels(width: number, height: number) {
 
 /**
  * Dollars per output megapixel for blackforestlabs/flux-3/edit-image.
- * One value. Change it here if fal raises the rate.
- * An Oct 10 2026 dashboard charge for 832×1248 was $0.024, counted as 1.00 MP.
+ * fal doubled this on 17 Oct 2026. The 10 Oct dashboard charge for 832×1248 was $0.024.
  */
-export const FLUX3_USD_PER_OUTPUT_MEGAPIXEL = 0.024;
+export const FLUX3_USD_PER_OUTPUT_MEGAPIXEL = 0.048;
+
+/** fal resolution values for flux-3/edit-image. */
+export const FLUX3_RESOLUTIONS = ["512sq", "768sq", "1k", "2k", "4k"] as const;
+
+export type Flux3Resolution = (typeof FLUX3_RESOLUTIONS)[number];
 
 /**
- * fal bills whole output megapixels: width×height/1_000_000, rounded to the nearest
- * megapixel, and never below 1. 832×1248 is 1.038 MP and bills as 1.00.
+ * Portrait frames used to price a resolution before fal returns a file.
+ * 768sq is about 672×880 (0.59 MP). fal has not published a 768sq price;
+ * that frame is our estimate. 1k is about 880×1184 (1.04 MP).
+ * 512sq, 2k, and 4k scale the 1k frame by the named edge.
+ */
+export const FLUX3_RESOLUTION_FRAME: Record<Flux3Resolution, { width: number; height: number }> = {
+  "512sq": { width: 440, height: 592 },
+  "768sq": { width: 672, height: 880 },
+  "1k": { width: 880, height: 1184 },
+  "2k": { width: 1760, height: 2368 },
+  "4k": { width: 3520, height: 4736 },
+};
+
+export function flux3MegapixelsForResolution(resolution: Flux3Resolution) {
+  const frame = FLUX3_RESOLUTION_FRAME[resolution];
+  return megapixels(frame.width, frame.height);
+}
+
+export function flux3UsdForMegapixels(megapixelCount: number) {
+  return roundUsd(megapixelCount * FLUX3_USD_PER_OUTPUT_MEGAPIXEL);
+}
+
+export function flux3UsdForResolution(resolution: Flux3Resolution) {
+  return flux3UsdForMegapixels(flux3MegapixelsForResolution(resolution));
+}
+
+/**
+ * Older whole-megapixel reading: width×height/1_000_000, rounded to the nearest
+ * megapixel, and never below 1. 832×1248 is 1.038 MP and was billed as 1.00.
+ * flux-3 estimates no longer use this floor, because 768sq is about 0.59 MP.
  */
 export function falBilledMegapixels(width: number, height: number) {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return 1;
@@ -73,7 +105,7 @@ const PER_OUTPUT_MP: Record<string, number> = {
  * Per-image models bill one image. Megapixel models bill the downloaded width times height.
  * Inputs are omitted: the pages that mention them do not say how fal rounds them, and the billing API is the invoice.
  * openai/gpt-image-2/edit is token-billed, so this returns null.
- * flux-3 uses FLUX3_USD_PER_OUTPUT_MEGAPIXEL and fal's whole-megapixel count.
+ * flux-3 uses FLUX3_USD_PER_OUTPUT_MEGAPIXEL times the downloaded width and height.
  */
 export function falPriceListUsd(args: {
   model: string;
@@ -88,7 +120,7 @@ export function falPriceListUsd(args: {
   if (perImage != null) return { usd: perImage, unit: "image" };
   const outMp = megapixels(width, height);
   if (args.model === "blackforestlabs/flux-3/edit-image") {
-    return { usd: roundUsd(falBilledMegapixels(width, height) * FLUX3_USD_PER_OUTPUT_MEGAPIXEL), unit: "output megapixels" };
+    return { usd: flux3UsdForMegapixels(outMp), unit: "output megapixels" };
   }
   if (args.model === "fal-ai/flux-2-pro/edit") {
     const units = Math.max(1, Math.ceil(outMp - 1e-9));

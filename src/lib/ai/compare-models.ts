@@ -7,7 +7,7 @@ import { fitInsideCanvas } from "@/lib/ai/frame";
 import { parseAskedTexture, selectReferenceVariant, type AskedTexture } from "@/lib/ai/reference-texture";
 import { existingHairstyleFiles, hairstyleReferenceFile, readHairstyleReference } from "@/lib/ai/style-reference";
 import { buildReferencePrompt } from "@/lib/prompts";
-import { FAL_COMPARISON_MODELS, FAL_NUMBERED_IMAGE_PROMPT, falUsesNumberedPrompt, quoteFalModel } from "@/lib/ai/fal-models";
+import { FAL_COMPARISON_MODELS, FAL_NUMBERED_IMAGE_PROMPT, falUsesNumberedPrompt, flux3ResolutionFor, quoteFalModel, type Flux3Use } from "@/lib/ai/fal-models";
 import { productionModelNotice } from "@/lib/ai/model-notices";
 import { OPENROUTER_COMPARISON_MODELS, quoteOpenRouterModel } from "@/lib/ai/openrouter-models";
 import { bufferedInr, usdFromTokenCounts } from "@/lib/ai/tiers";
@@ -140,6 +140,7 @@ export function quoteComparisonModel(
   height: number,
   reference = { width: 512, height: 512 },
   quality?: EditQuality,
+  fluxUse: Flux3Use = "saved",
 ) {
   const row = comparisonModel(modelId);
   if (!row) {
@@ -151,7 +152,7 @@ export function quoteComparisonModel(
     return { ...quoted, warning: row.warning, rangeLowInr: null as number | null, rangeHighInr: null as number | null };
   }
   if (row.provider === "fal") {
-    const quoted = quoteFalModel(row.id, width, height, reference);
+    const quoted = quoteFalModel(row.id, width, height, reference, flux3ResolutionFor(fluxUse));
     if (!quoted.ok) return quoted;
     return { ...quoted, warning: row.warning };
   }
@@ -185,7 +186,7 @@ export function quoteComparisonModel(
   return { ...quoted, provider: "openai" as const, warning: row.warning, rangeLowInr: null as number | null, rangeHighInr: null as number | null };
 }
 
-export async function prepareComparison(args: { jpeg: Buffer; styleId: string; colourName?: string; texture?: AskedTexture; modelId: string; quality?: EditQuality }) {
+export async function prepareComparison(args: { jpeg: Buffer; styleId: string; colourName?: string; texture?: AskedTexture; modelId: string; quality?: EditQuality; fluxUse?: Flux3Use }) {
   const row = comparisonModel(args.modelId);
   if (!row) {
     return { ok: false as const, message: `${args.modelId} is not a configured comparison model. No other model was substituted.` };
@@ -214,7 +215,7 @@ export async function prepareComparison(args: { jpeg: Buffer; styleId: string; c
   const width = selfieMeta.width || 0;
   const height = selfieMeta.height || 0;
   if (!width || !height) return { ok: false as const, message: "The selfie could not be read." };
-  const quote = quoteComparisonModel(row.id, width, height, { width: referenceMeta.width || 512, height: referenceMeta.height || 512 }, args.quality);
+  const quote = quoteComparisonModel(row.id, width, height, { width: referenceMeta.width || 512, height: referenceMeta.height || 512 }, args.quality, args.fluxUse ?? "saved");
   if (!quote.ok) return quote;
   const prompt = row.provider === "fal" && falUsesNumberedPrompt(row.id)
     ? FAL_NUMBERED_IMAGE_PROMPT
@@ -270,6 +271,7 @@ export async function prepareGuestReference(args: {
   prompt: string;
   reference: Buffer;
   referenceFile: string;
+  fluxUse?: Flux3Use;
 }) {
   const row = comparisonModel(args.modelId);
   if (!row) {
@@ -286,6 +288,7 @@ export async function prepareGuestReference(args: {
     height,
     { width: referenceMeta.width || 512, height: referenceMeta.height || 512 },
     args.quality,
+    args.fluxUse ?? "everyday",
   );
   if (!quote.ok) return quote;
   const shared = {

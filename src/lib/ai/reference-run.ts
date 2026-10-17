@@ -9,6 +9,7 @@ import { reviewProviderFace } from "@/lib/face/compose-hair";
 import type { DriftReport } from "@/lib/face/hair-composite";
 import { assessClothing } from "@/lib/ai/clothing-check";
 import { resolveFalKey, resolveGeminiKey, resolveOpenAIKey, resolveOpenRouterKey } from "@/lib/ai/credentials";
+import { flux3ResolutionFor, flux3UseFor } from "@/lib/ai/fal-models";
 import { postFalReferenceEdit } from "@/lib/ai/fal-reference";
 import { postOpenRouterReferenceEdit } from "@/lib/ai/openrouter-reference";
 import type { EditQuality, EditSize } from "@/lib/ai/edit-request";
@@ -105,6 +106,8 @@ export async function executeReferenceEdit(args: {
 }): Promise<ReferenceSuccess | ReferenceFailure> {
   await purgeOldBenchmarks().catch(() => undefined);
   const requestedModel = args.modelId?.trim() || "";
+  const fluxUse = flux3UseFor(args.source, args.tool);
+  const fluxResolution = flux3ResolutionFor(fluxUse);
   const prepared = args.guest
     ? await prepareGuestReference({
         jpeg: args.jpeg,
@@ -114,9 +117,10 @@ export async function executeReferenceEdit(args: {
         prompt: args.guest.prompt,
         reference: args.guest.reference,
         referenceFile: args.guest.referenceFile,
+        fluxUse,
       })
     : requestedModel
-      ? await prepareComparison({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture, modelId: requestedModel, quality: args.quality })
+      ? await prepareComparison({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture, modelId: requestedModel, quality: args.quality, fluxUse })
       : await prepareBenchmark({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture });
   if (!prepared.ok) {
     return { ok: false, httpStatus: 400, error: "QUOTE", message: prepared.message, outcome: "quote" };
@@ -282,6 +286,7 @@ export async function executeReferenceEdit(args: {
         referenceJpeg: reference,
         size: quote.size as EditSize,
         estimateUsd: quote.estimateUsd,
+        resolution: fluxResolution,
       });
       usage = undefined;
       providerResponse = fal.image;
