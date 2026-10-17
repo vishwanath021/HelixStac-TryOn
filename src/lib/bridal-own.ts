@@ -11,7 +11,7 @@ import {
   ownLookSlot,
   type OwnLookSlotId,
 } from "@/data/bridal-own";
-import { estimateImageInputTokens, mediumOutputTokenAllowance } from "@/lib/ai/benchmark";
+import { sunburstImageInputTokens, sunburstOutputTokens } from "@/lib/ai/sunburst-tokens";
 import { editFormFields, editSizeForAspect, planImageEdit, type EditSize, type PlannedEdit } from "@/lib/ai/edit-request";
 import { fitInsideCanvas, restoreFrame, type FrameTransform } from "@/lib/ai/frame";
 import { ImageError, sniffImage } from "@/lib/images";
@@ -35,12 +35,10 @@ function catalogueSize(size: OwnLookSize): EditSize {
   return size === OWN_LOOK_THREE_BY_FOUR ? "1024x1536" : size;
 }
 
-/** 1024x1360 is not in the shared output table. Scale the portrait medium allowance by height. */
+/** Same size and quality schedule as a guest Sunburst edit. */
 export function ownLookOutputTokens(size: OwnLookSize) {
-  if (size === OWN_LOOK_THREE_BY_FOUR) {
-    return Math.ceil(mediumOutputTokenAllowance("1024x1536") * (1360 / 1536));
-  }
-  return mediumOutputTokenAllowance(size);
+  const [width, height] = size.split("x").map((part) => Number(part));
+  return sunburstOutputTokens(OWN_LOOK_QUALITY, width, height);
 }
 
 export class OwnLookError extends Error {
@@ -197,7 +195,8 @@ export function quoteOwnLook(args: { prompt: string; selfiePixels: number; itemP
     return { ok: false, message: "Too many photos for one preview." };
   }
   const inputPixels = Math.max(1, args.selfiePixels) + args.itemPixels.reduce((sum, pixels) => sum + Math.max(1, pixels), 0);
-  const imageInputTokens = estimateImageInputTokens(inputPixels, 0);
+  const [frameWidth, frameHeight] = args.size.split("x").map((part) => Number(part));
+  const imageInputTokens = sunburstImageInputTokens(frameWidth, frameHeight);
   const outputTokens = ownLookOutputTokens(args.size);
   const textInputTokens = Math.max(TEXT_TOKEN_FLOOR, Math.ceil(args.prompt.length / 4));
   const estimateUsd = usdFromTokenCounts(OWN_LOOK_MODEL, { textIn: textInputTokens, imageIn: imageInputTokens, output: outputTokens });

@@ -133,8 +133,8 @@ describe("guest reference generation", () => {
       expect(row.reference).toBe("512x512");
       expect(row.fluxUsd).toBe(flux3UsdForResolution("1k"));
       expect(row.fluxInr).toBe(bufferedInr(flux3UsdForResolution("1k")));
-      expect(row.sunburstUsd).toBe(0.143282);
-      expect(row.sunburstInr).toBe(14.9);
+      expect(row.sunburstUsd).toBe(0.03263);
+      expect(row.sunburstInr).toBe(3.4);
       expect(row.sunburstSize).toBe("1024x1360");
     }
     expect(rows.map((row) => `${row.tool}:${row.id}`)).toEqual([

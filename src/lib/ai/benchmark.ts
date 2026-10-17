@@ -17,6 +17,7 @@ import {
 import { fitInsideCanvas, restoreFrame, type FrameTransform } from "@/lib/ai/frame";
 import { buildReferencePrompt } from "@/lib/prompts";
 import { matchSelfieOutput } from "@/lib/ai/output-size";
+import { SUNBURST_TEXT_INPUT_TOKENS, sunburstImageInputTokens, sunburstOutputTokens } from "@/lib/ai/sunburst-tokens";
 import { bufferedInr, usdFromTokenCounts } from "@/lib/ai/tiers";
 import { numberEnv } from "@/lib/env";
 
@@ -114,9 +115,11 @@ export function quoteModelEdit(args: {
     ? matchSelfieOutput(args.width, args.height).size
     : benchmarkCanvasSize(args.width, args.height, caps.sizes);
   const [canvasWidth, canvasHeight] = size.split("x").map((part) => Number(part));
-  const outputTokens = outputTokensFor(args.quality, size);
-  const imageInputTokens = estimateImageInputTokens(canvasWidth * canvasHeight, Math.max(1, reference.width) * Math.max(1, reference.height));
-  const textInputTokens = TEXT_INPUT_TOKEN_ALLOWANCE;
+  const outputTokens = caps.tokenOnly ? sunburstOutputTokens(args.quality, canvasWidth, canvasHeight) : outputTokensFor(args.quality, size);
+  const imageInputTokens = caps.tokenOnly
+    ? sunburstImageInputTokens(canvasWidth, canvasHeight)
+    : estimateImageInputTokens(canvasWidth * canvasHeight, Math.max(1, reference.width) * Math.max(1, reference.height));
+  const textInputTokens = caps.tokenOnly ? SUNBURST_TEXT_INPUT_TOKENS : TEXT_INPUT_TOKEN_ALLOWANCE;
   const outputUsd = usdFromTokenCounts(args.model, { textIn: 0, imageIn: 0, output: outputTokens });
   const imageInputUsd = usdFromTokenCounts(args.model, { textIn: 0, imageIn: imageInputTokens, output: 0 });
   const textInputUsd = usdFromTokenCounts(args.model, { textIn: textInputTokens, imageIn: 0, output: 0 });
