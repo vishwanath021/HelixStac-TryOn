@@ -1,24 +1,47 @@
 import sharp from "sharp";
 import { bridalFinishById, bridalLipById, bridalMakeupById, type BridalMakeup } from "@/data/bridal";
 import {
-  OWN_LOOK_ITEM_EDGE,
   OWN_LOOK_MAX_BYTES,
   OWN_LOOK_MAX_IMAGES,
   OWN_LOOK_MODEL,
   OWN_LOOK_QUALITY,
-  OWN_LOOK_SELFIE_EDGE,
-  OWN_LOOK_SIZE,
   OWN_LOOK_SLOTS,
+  OWN_LOOK_THREE_BY_FOUR,
+  ownLookItemEdge,
   ownLookSlot,
   type OwnLookSlotId,
 } from "@/data/bridal-own";
 import { estimateImageInputTokens, mediumOutputTokenAllowance } from "@/lib/ai/benchmark";
-import { editFormFields, planImageEdit, type PlannedEdit } from "@/lib/ai/edit-request";
+import { editFormFields, editSizeForAspect, planImageEdit, type EditSize, type PlannedEdit } from "@/lib/ai/edit-request";
+import { fitInsideCanvas, restoreFrame, type FrameTransform } from "@/lib/ai/frame";
 import { ImageError, sniffImage } from "@/lib/images";
 import { numberEnv } from "@/lib/env";
 import { bufferedInr, usdFromTokenCounts } from "@/lib/ai/tiers";
 
 const TEXT_TOKEN_FLOOR = 400;
+const CATALOGUE_SIZES = ["1024x1024", "1024x1536", "1536x1024"] as const satisfies readonly EditSize[];
+
+export type OwnLookSize = EditSize | typeof OWN_LOOK_THREE_BY_FOUR;
+export type OwnLookPlan = Omit<PlannedEdit, "size"> & { size: OwnLookSize };
+
+/** 3:4 selfies ask for 1024x1360. Every other aspect uses a catalogue size. */
+export function ownLookFrameSize(width: number, height: number): OwnLookSize {
+  const ratio = width / Math.max(1, height);
+  if (Math.abs(ratio - 0.75) <= 0.02) return OWN_LOOK_THREE_BY_FOUR;
+  return editSizeForAspect(width, height, CATALOGUE_SIZES);
+}
+
+function catalogueSize(size: OwnLookSize): EditSize {
+  return size === OWN_LOOK_THREE_BY_FOUR ? "1024x1536" : size;
+}
+
+/** 1024x1360 is not in the shared output table. Scale the portrait medium allowance by height. */
+export function ownLookOutputTokens(size: OwnLookSize) {
+  if (size === OWN_LOOK_THREE_BY_FOUR) {
+    return Math.ceil(mediumOutputTokenAllowance("1024x1536") * (1360 / 1536));
+  }
+  return mediumOutputTokenAllowance(size);
+}
 
 export class OwnLookError extends Error {
   constructor(
@@ -33,7 +56,7 @@ export class OwnLookError extends Error {
 export type OwnLookQuote = {
   model: typeof OWN_LOOK_MODEL;
   quality: typeof OWN_LOOK_QUALITY;
-  size: typeof OWN_LOOK_SIZE;
+  size: OwnLookSize;
   imageCount: number;
   inputPixels: number;
   imageInputTokens: number;
@@ -59,41 +82,44 @@ export function ownLookCapInr() {
   return Math.max(0, numberEnv("OWN_LOOK_CAP_INR", 30));
 }
 
-/**
- * One portrait. Image 1 is her selfie. Each later image is named as the item it is.
- * The face stays hers. The items are copied. Telugu bridal styling, and no flowers in the hair.
- */
-export function buildOwnLookPrompt(makeup: BridalMakeup, slots: { id: OwnLookSlotId; noun: string }[]) {
+function lookDetails(makeup: BridalMakeup) {
   const finish = bridalFinishById(makeup.finishId);
   const lip = bridalLipById(makeup.lipId);
-  const labels = [
-    "Image 1 is the bride's own selfie. Keep this exact person. Do not copy a face from any later image.",
-  ];
-  slots.forEach((slot, index) => {
+  return [makeup.prompt, finish?.prompt || "", lip ? `Lip colour: ${lip.name}` : ""]
+    .map((part) => part.replace(/\.$/, "").trim())
+    .filter(Boolean)
+    .join(". ");
+}
+
+/**
+ * One portrait. Makeup is named before any clothing line so the edit keeps it.
+ * Image 1 is her selfie. Each later image is the item it is. Hair is neat, with no flowers.
+ */
+export function buildOwnLookPrompt(makeup: BridalMakeup, slots: { id: OwnLookSlotId; noun: string }[]) {
+  const clothing = slots.map((slot, index) => {
     const number = index + 2;
-    labels.push(
-      `Image ${number} is her ${slot.noun}. Copy that ${slot.noun} exactly onto her. Do not invent a different ${slot.noun}, and do not swap it for a catalogue piece.`,
-    );
+    return `Image ${number} is her ${slot.noun}. Copy that ${slot.noun} exactly onto her. Do not invent a different ${slot.noun}, and do not swap it for a catalogue piece.`;
   });
   const items = slots.length
     ? "Dress her in those exact photographed items and no other clothes or jewellery."
     : "She did not add item photos. Apply only the makeup. Do not invent a saree, blouse, or jewellery.";
   return [
-    labels.join(" "),
+    "Image 1 is the bride's own selfie. Keep this exact person. Do not copy a face from any later image.",
+    `Apply clearly visible bridal makeup: ${lookDetails(makeup)}.`,
+    ...clothing,
     items,
     "Make one photo of her wearing that look.",
-    makeup.prompt,
-    finish?.prompt || "",
-    lip ? `Lip colour: ${lip.name}.` : "",
-    "Telugu bridal styling: silk drape, a round bindi, and the jewellery from her own photos when she added them.",
-    "Keep her exact face. Keep the exact face shape, jaw, cheeks, nose, eyes, skin texture, pores, and age. Do not slim, lift, smooth, or beautify the face.",
+    "Style her hair neatly for a bride, as a smooth bun or a braid.",
     "Do not put flowers in her hair. No jasmine, marigold, gajra, or rose braid.",
+    "Do not change face shape or features; makeup changes colour and finish only.",
+    "Keep any nose pin already in her photo.",
+    "Telugu bridal styling: silk drape, a round bindi, and the jewellery from her own photos when she added them.",
     "A portrait, photorealistic, with natural light. No text, logos, watermarks, or extra people.",
     "This is a salon trial preview, not a guarantee of the finished makeup.",
   ].filter(Boolean).join(" ");
 }
 
-export function planOwnLook(makeupId: string, slotIds: string[]) {
+export function planOwnLook(makeupId: string, slotIds: string[], size: OwnLookSize = "1024x1536") {
   const makeup = bridalMakeupById(makeupId);
   if (!makeup) return { ok: false as const, message: "Choose a bridal makeup look." };
   if (slotIds.length > OWN_LOOK_SLOTS.length) {
@@ -118,19 +144,21 @@ export function planOwnLook(makeupId: string, slotIds: string[]) {
     model: OWN_LOOK_MODEL,
     prompt,
     quality: OWN_LOOK_QUALITY,
-    size: OWN_LOOK_SIZE,
+    size: catalogueSize(size),
     outputFormat: "jpeg",
     inputFidelity: null,
     imageOrder,
     mask: false,
   });
   if (!planned.ok) return planned;
-  return { ok: true as const, makeup, ordered, prompt, plan: planned.plan };
+  const plan: OwnLookPlan = { ...planned.plan, size };
+  return { ok: true as const, makeup, ordered, prompt, plan };
 }
 
-/** Fields posted to the image edit. input_fidelity is omitted for this model. */
-export function ownLookForm(plan: PlannedEdit, images: { name: string; jpeg: Buffer }[]) {
-  const fields = editFormFields(plan);
+/** Fields posted to the image edit. input_fidelity is omitted for this model. Size is the selfie frame, including 1024x1360. */
+export function ownLookForm(plan: OwnLookPlan, images: { name: string; jpeg: Buffer }[]) {
+  const fields = editFormFields({ ...plan, size: catalogueSize(plan.size) });
+  fields.size = plan.size;
   const form = new FormData();
   for (const [key, value] of Object.entries(fields)) form.set(key, value);
   for (const image of images) {
@@ -161,14 +189,14 @@ export async function shrinkOwnLookJpeg(input: Buffer, longEdge: number) {
   }
 }
 
-export function quoteOwnLook(args: { prompt: string; selfiePixels: number; itemPixels: number[] }): { ok: true; quote: OwnLookQuote } | { ok: false; message: string } {
+export function quoteOwnLook(args: { prompt: string; selfiePixels: number; itemPixels: number[]; size: OwnLookSize }): { ok: true; quote: OwnLookQuote } | { ok: false; message: string } {
   const imageCount = 1 + args.itemPixels.length;
   if (imageCount > OWN_LOOK_MAX_IMAGES) {
     return { ok: false, message: "Too many photos for one preview." };
   }
   const inputPixels = Math.max(1, args.selfiePixels) + args.itemPixels.reduce((sum, pixels) => sum + Math.max(1, pixels), 0);
   const imageInputTokens = estimateImageInputTokens(inputPixels, 0);
-  const outputTokens = mediumOutputTokenAllowance(OWN_LOOK_SIZE);
+  const outputTokens = ownLookOutputTokens(args.size);
   const textInputTokens = Math.max(TEXT_TOKEN_FLOOR, Math.ceil(args.prompt.length / 4));
   const estimateUsd = usdFromTokenCounts(OWN_LOOK_MODEL, { textIn: textInputTokens, imageIn: imageInputTokens, output: outputTokens });
   if (estimateUsd == null) {
@@ -187,7 +215,7 @@ export function quoteOwnLook(args: { prompt: string; selfiePixels: number; itemP
     quote: {
       model: OWN_LOOK_MODEL,
       quality: OWN_LOOK_QUALITY,
-      size: OWN_LOOK_SIZE,
+      size: args.size,
       imageCount,
       inputPixels,
       imageInputTokens,
@@ -224,27 +252,53 @@ export function logOwnLookEstimate(quote: OwnLookQuote, salonId: string) {
 export type PreparedOwnLook = {
   selfie: Buffer;
   selfiePixels: number;
+  transform: FrameTransform;
   items: { id: OwnLookSlotId; jpeg: Buffer; pixels: number }[];
   prompt: string;
-  plan: PlannedEdit;
+  plan: OwnLookPlan;
   quote: OwnLookQuote;
 };
 
+/** Oriented selfie dimensions, then a canvas that matches that aspect. */
+export async function frameOwnLookSelfie(input: Buffer) {
+  if (input.length > OWN_LOOK_MAX_BYTES) throw new ImageError("SIZE");
+  if (!sniffImage(input)) throw new ImageError("TYPE");
+  let width = 0;
+  let height = 0;
+  try {
+    const oriented = await sharp(input, { failOn: "none", animated: false }).rotate().toBuffer({ resolveWithObject: true });
+    width = oriented.info.width;
+    height = oriented.info.height;
+  } catch {
+    throw new ImageError("DECODE");
+  }
+  if (!width || !height) throw new ImageError("DECODE");
+  if (width < 64 || height < 64 || width > 8000 || height > 8000) throw new ImageError("DIMENSIONS");
+  const size = ownLookFrameSize(width, height);
+  const fitted = await fitInsideCanvas(input, size);
+  const jpeg = await sharp(fitted.png).jpeg({ quality: 85, mozjpeg: true }).toBuffer();
+  const sized = await sharp(jpeg).metadata();
+  const outWidth = sized.width || size.split("x").map(Number)[0];
+  const outHeight = sized.height || size.split("x").map(Number)[1];
+  return { jpeg, width: outWidth, height: outHeight, pixels: outWidth * outHeight, size, transform: fitted.transform };
+}
+
 export async function prepareOwnLook(args: { selfie: Buffer; items: { id: string; bytes: Buffer }[]; makeupId: string }) {
-  const planned = planOwnLook(args.makeupId, args.items.map((item) => item.id));
+  const selfie = await frameOwnLookSelfie(args.selfie);
+  const planned = planOwnLook(args.makeupId, args.items.map((item) => item.id), selfie.size);
   if (!planned.ok) throw new OwnLookError(planned.message.startsWith("Choose") ? "MAKEUP" : "ITEM", planned.message);
-  const selfie = await shrinkOwnLookJpeg(args.selfie, OWN_LOOK_SELFIE_EDGE);
   const items = [];
   for (const slot of planned.ordered) {
     const source = args.items.find((item) => item.id === slot.id);
     if (!source) throw new OwnLookError("ITEM", "That item photo was missing.");
-    const shrunk = await shrinkOwnLookJpeg(source.bytes, OWN_LOOK_ITEM_EDGE);
+    const shrunk = await shrinkOwnLookJpeg(source.bytes, ownLookItemEdge(slot.id));
     items.push({ id: slot.id, jpeg: shrunk.jpeg, pixels: shrunk.pixels });
   }
   const quoted = quoteOwnLook({
     prompt: planned.prompt,
     selfiePixels: selfie.pixels,
     itemPixels: items.map((item) => item.pixels),
+    size: selfie.size,
   });
   if (!quoted.ok) {
     console.info(`[bridal-own] cost estimate refused. ${quoted.message}`);
@@ -253,6 +307,7 @@ export async function prepareOwnLook(args: { selfie: Buffer; items: { id: string
   return {
     selfie: selfie.jpeg,
     selfiePixels: selfie.pixels,
+    transform: selfie.transform,
     items,
     prompt: planned.prompt,
     plan: planned.plan,
@@ -291,7 +346,8 @@ export async function generateOwnLook(args: {
       ...prepared.items.map((item) => ({ name: `${item.id}.jpg`, jpeg: item.jpeg })),
     ]);
     const image = await args.edit(form);
-    return { image, quote: prepared.quote, keys };
+    const restored = await restoreFrame(image, prepared.transform);
+    return { image: restored, quote: prepared.quote, keys };
   } finally {
     await Promise.all(keys.map((key) => args.remove(key).catch(() => undefined)));
   }

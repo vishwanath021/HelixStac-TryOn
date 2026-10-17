@@ -4,13 +4,15 @@ import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 import { GeneratingLook } from "@/components/tryon/GeneratingLook";
 import { BridalOwnLook } from "@/components/tryon/BridalOwnLook";
-import { OWN_LOOK_ITEM_EDGE, OWN_LOOK_MAX_IMAGES, OWN_LOOK_MODEL, OWN_LOOK_SELFIE_EDGE, OWN_LOOK_SLOTS } from "@/data/bridal-own";
+import { OWN_LOOK_ITEM_EDGE, OWN_LOOK_JEWELLERY_EDGE, OWN_LOOK_MAX_IMAGES, OWN_LOOK_MODEL, OWN_LOOK_SAREE_EDGE, OWN_LOOK_SLOTS, OWN_LOOK_THREE_BY_FOUR, ownLookItemEdge } from "@/data/bridal-own";
 import { bridalMakeupById } from "@/data/bridal";
 import {
   buildOwnLookPrompt,
   generateOwnLook,
   isPublicMediaKey,
   ownLookEstimateMeta,
+  ownLookForm,
+  ownLookFrameSize,
   ownLookItemKey,
   planOwnLook,
   prepareOwnLook,
@@ -40,13 +42,19 @@ describe("your own look prompt", () => {
     expect(prompt).toContain("Image 3 is her necklace");
     expect(prompt).toContain("Copy that saree exactly");
     expect(prompt).toContain("Copy that necklace exactly");
-    expect(prompt).toContain("exact face shape");
-    expect(prompt).toContain("Do not slim, lift, smooth, or beautify");
+    const makeupAt = prompt.indexOf("Apply clearly visible bridal makeup:");
+    const sareeAt = prompt.indexOf("Image 2 is her saree");
+    expect(makeupAt).toBeGreaterThan(-1);
+    expect(makeupAt).toBeLessThan(sareeAt);
+    expect(prompt).toContain("Apply clearly visible bridal makeup: Makeup: classic bridal red lip, even HD base, kohl, and a round red bindi. Photo-ready HD makeup with an even base that still looks like skin. Lip colour: Red.");
+    expect(prompt).toContain("Do not change face shape or features; makeup changes colour and finish only.");
+    expect(prompt).not.toContain("exact face shape");
+    expect(prompt).not.toContain("Do not slim, lift, smooth, or beautify");
+    expect(prompt).toContain("Style her hair neatly for a bride, as a smooth bun or a braid.");
+    expect(prompt).toContain("Keep any nose pin already in her photo.");
     expect(prompt).toContain("Telugu bridal styling");
     expect(prompt).toContain("Do not put flowers in her hair");
     expect(prompt).not.toMatch(/add jasmine|add marigold|gajra in the hair/i);
-    expect(prompt).toContain("classic bridal red lip");
-    expect(prompt).toContain("Lip colour: Red");
   });
 
   it("does not invent clothes when she skipped every item", () => {
@@ -66,6 +74,12 @@ describe("your own look prompt", () => {
     expect(planned.plan.model).toBe(OWN_LOOK_MODEL);
     expect(planned.plan.quality).toBe("medium");
     expect(planned.plan.size).toBe("1024x1536");
+    const threeByFour = planOwnLook("makeup-nude-rose", ["saree"], OWN_LOOK_THREE_BY_FOUR);
+    expect(threeByFour.ok).toBe(true);
+    if (threeByFour.ok) {
+      expect(threeByFour.plan.size).toBe("1024x1360");
+      expect(ownLookForm(threeByFour.plan, []).get("size")).toBe("1024x1360");
+    }
     expect(planned.plan.n).toBe(1);
     expect(planned.plan.inputFidelity).toBeNull();
     expect(planned.plan.imageOrder).toEqual(["selfie.jpg", "saree.jpg", "earrings.jpg"]);
@@ -90,20 +104,38 @@ describe("your own look prompt", () => {
 describe("your own look cost and privacy", () => {
   it("shrinks item photos and quotes sunburst at medium", async () => {
     const big = await jpeg(900, 600, { r: 180, g: 40, b: 70 });
-    const item = await shrinkOwnLookJpeg(big, OWN_LOOK_ITEM_EDGE);
-    expect(Math.max(item.width, item.height)).toBeLessThanOrEqual(OWN_LOOK_ITEM_EDGE);
-    const face = await shrinkOwnLookJpeg(await jpeg(1200, 1600, { r: 210, g: 170, b: 150 }), OWN_LOOK_SELFIE_EDGE);
-    expect(Math.max(face.width, face.height)).toBeLessThanOrEqual(OWN_LOOK_SELFIE_EDGE);
+    const saree = await shrinkOwnLookJpeg(big, ownLookItemEdge("saree"));
+    const necklace = await shrinkOwnLookJpeg(await jpeg(900, 900, { r: 180, g: 140, b: 40 }), ownLookItemEdge("necklace"));
+    const blouse = await shrinkOwnLookJpeg(big, ownLookItemEdge("blouse"));
+    expect(ownLookItemEdge("saree")).toBe(OWN_LOOK_SAREE_EDGE);
+    expect(ownLookItemEdge("necklace")).toBe(OWN_LOOK_JEWELLERY_EDGE);
+    expect(ownLookItemEdge("earrings")).toBe(OWN_LOOK_JEWELLERY_EDGE);
+    expect(ownLookItemEdge("maang-tikka")).toBe(OWN_LOOK_JEWELLERY_EDGE);
+    expect(ownLookItemEdge("bangles")).toBe(OWN_LOOK_JEWELLERY_EDGE);
+    expect(ownLookItemEdge("nose-ring")).toBe(OWN_LOOK_JEWELLERY_EDGE);
+    expect(ownLookItemEdge("blouse")).toBe(OWN_LOOK_ITEM_EDGE);
+    expect(Math.max(saree.width, saree.height)).toBeLessThanOrEqual(OWN_LOOK_SAREE_EDGE);
+    expect(Math.max(necklace.width, necklace.height)).toBeLessThanOrEqual(OWN_LOOK_JEWELLERY_EDGE);
+    expect(Math.max(blouse.width, blouse.height)).toBeLessThanOrEqual(OWN_LOOK_ITEM_EDGE);
+    expect(ownLookFrameSize(768, 1024)).toBe("1024x1360");
+    expect(ownLookFrameSize(1400, 1800)).toBe("1024x1536");
+    expect(ownLookFrameSize(1000, 1000)).toBe("1024x1024");
+    expect(ownLookFrameSize(1600, 900)).toBe("1536x1024");
     const quoted = quoteOwnLook({
       prompt: "Image 1 is the bride.",
-      selfiePixels: face.pixels,
-      itemPixels: OWN_LOOK_SLOTS.map(() => OWN_LOOK_ITEM_EDGE * OWN_LOOK_ITEM_EDGE),
+      size: "1024x1360",
+      selfiePixels: 1024 * 1360,
+      itemPixels: OWN_LOOK_SLOTS.map((slot) => {
+        const edge = ownLookItemEdge(slot.id);
+        return edge * edge;
+      }),
     });
     expect(quoted.ok).toBe(true);
     if (!quoted.ok) return;
     expect(quoted.quote.model).toBe("gpt-image-2.5-sunburst");
     expect(quoted.quote.quality).toBe("medium");
     expect(quoted.quote.imageCount).toBe(10);
+    expect(quoted.quote.size).toBe("1024x1360");
     expect(quoted.quote.estimateUsd).toBeGreaterThan(0);
     expect(quoted.quote.estimateInr).toBeLessThanOrEqual(30);
     const meta = ownLookEstimateMeta(quoted.quote, "salon");
@@ -159,6 +191,7 @@ describe("your own look cost and privacy", () => {
           expect(form.get("quality")).toBe("medium");
           expect(form.get("input_fidelity")).toBeNull();
           expect(form.get("n")).toBe("1");
+          expect(form.get("size")).toBe("1024x1536");
           const files = form.getAll("image[]") as File[];
           expect(files.map((file) => file.name)).toEqual(["selfie.jpg", "saree.jpg"]);
           return jpeg(64, 80, { r: 10, g: 10, b: 10 });
@@ -192,17 +225,57 @@ describe("your own look cost and privacy", () => {
     }
   });
 
-  it("sends the shrunk selfie and item, not the original pixels", async () => {
+  it("fits a 3:4 selfie on 1024x1360 and restores the frame", async () => {
     const prepared = await prepareOwnLook({
-      selfie: await jpeg(1400, 1800, { r: 200, g: 160, b: 140 }),
-      items: [{ id: "bangles", bytes: await jpeg(1000, 800, { r: 180, g: 140, b: 40 }) }],
-      makeupId: "makeup-reception-glam",
+      selfie: await jpeg(768, 1024, { r: 200, g: 160, b: 140 }),
+      items: [
+        { id: "saree", bytes: await jpeg(900, 700, { r: 140, g: 20, b: 40 }) },
+        { id: "bangles", bytes: await jpeg(1000, 800, { r: 180, g: 140, b: 40 }) },
+      ],
+      makeupId: "makeup-classic-red",
     });
     const face = await sharp(prepared.selfie).metadata();
-    const item = await sharp(prepared.items[0]?.jpeg).metadata();
-    expect(Math.max(face.width || 0, face.height || 0)).toBeLessThanOrEqual(OWN_LOOK_SELFIE_EDGE);
-    expect(Math.max(item.width || 0, item.height || 0)).toBeLessThanOrEqual(OWN_LOOK_ITEM_EDGE);
-    expect(prepared.plan.imageOrder).toEqual(["selfie.jpg", "bangles.jpg"]);
+    const saree = await sharp(prepared.items[0]?.jpeg).metadata();
+    const bangles = await sharp(prepared.items[1]?.jpeg).metadata();
+    expect(prepared.plan.size).toBe("1024x1360");
+    expect(prepared.quote.size).toBe("1024x1360");
+    expect(face.width).toBe(1024);
+    expect(face.height).toBe(1360);
+    expect(Math.max(saree.width || 0, saree.height || 0)).toBeLessThanOrEqual(OWN_LOOK_SAREE_EDGE);
+    expect(Math.max(bangles.width || 0, bangles.height || 0)).toBeLessThanOrEqual(OWN_LOOK_JEWELLERY_EDGE);
+    expect(prepared.plan.imageOrder).toEqual(["selfie.jpg", "saree.jpg", "bangles.jpg"]);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const ok = await generateOwnLook({
+        selfie: await jpeg(1600, 900, { r: 200, g: 160, b: 140 }),
+        items: [],
+        makeupId: "makeup-classic-red",
+        tenantId: "tenant",
+        requestId: "frame",
+        put: async () => undefined,
+        remove: async () => undefined,
+        edit: async (form) => {
+          expect(form.get("size")).toBe("1536x1024");
+          return jpeg(1536, 1024, { r: 20, g: 20, b: 20 });
+        },
+      });
+      const back = await sharp(ok.image).metadata();
+      expect(back.width).toBe(1536);
+      expect(back.height).toBeLessThan(1024);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("reads a turned selfie as 3:4 before choosing the canvas", async () => {
+    const landscape = await jpeg(1024, 768, { r: 200, g: 160, b: 140 });
+    const turned = await sharp(landscape).withMetadata({ orientation: 6 }).toBuffer();
+    const prepared = await prepareOwnLook({
+      selfie: turned,
+      items: [],
+      makeupId: "makeup-classic-red",
+    });
+    expect(prepared.plan.size).toBe("1024x1360");
   });
 });
 
@@ -229,6 +302,8 @@ describe("your own look screen", () => {
       expect(html).toContain(slot.label);
       expect(html).toContain(`data-item="${slot.id}"`);
     }
+    expect(html).toContain("Take a close-up of each piece on its own");
+    expect(html).toContain("Close-up of the piece, on its own.");
     expect(html).toContain("Live makeup");
     expect(html).toContain("Use photo");
     expect(html).toContain("Take photo");

@@ -237,11 +237,12 @@ export function BridalOwnLook({ config }: { config: SalonConfig }) {
 
       <div data-step="items">
         <p className="mb-2 text-sm font-medium">2. Your items</p>
-        <p className="mb-3 text-sm text-muted">Optional. Photograph the piece on its own. These photos are deleted after the preview and are never published.</p>
+        <p className="mb-3 text-sm text-muted">Optional. Take a close-up of each piece on its own. These photos are deleted after the preview and are never published.</p>
         <div className="grid gap-4">
           {OWN_LOOK_SLOTS.map((slot) => (
             <div key={slot.id} data-item={slot.id}>
               <p className="mb-2 text-sm font-medium">{slot.label}</p>
+              <p className="mb-2 text-sm text-muted">Close-up of the piece, on its own.</p>
               <PhotoBox
                 boxRef={(node) => { boxes.current[slot.id] = node; }}
                 name={slot.id}

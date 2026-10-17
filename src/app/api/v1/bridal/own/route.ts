@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
-import { OWN_LOOK_MAX_BYTES, OWN_LOOK_MODEL, OWN_LOOK_QUALITY, OWN_LOOK_SIZE, OWN_LOOK_SLOTS } from "@/data/bridal-own";
+import { OWN_LOOK_MAX_BYTES, OWN_LOOK_MODEL, OWN_LOOK_QUALITY, OWN_LOOK_SLOTS } from "@/data/bridal-own";
 import { generateOwnLook, OwnLookError, type OwnLookQuote } from "@/lib/bridal-own";
 import { resolveOpenAIKey } from "@/lib/ai/credentials";
 import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
@@ -192,7 +192,7 @@ export async function POST(req: Request) {
           model: OWN_LOOK_MODEL,
           tenantId: tenant.id,
           tool: "bridal-own",
-          imageSize: OWN_LOOK_SIZE,
+          imageSize: next.size,
           estimateInr: next.estimateInr,
           estimateUsd: next.estimateUsd,
         });
@@ -229,7 +229,7 @@ export async function POST(req: Request) {
       estimateInr: result.quote.estimateInr,
       usage,
       latencyMs,
-      imageSize: OWN_LOOK_SIZE,
+      imageSize: result.quote.size,
       costSource: actual != null ? "usage" : "estimate",
     });
     logProviderCall({

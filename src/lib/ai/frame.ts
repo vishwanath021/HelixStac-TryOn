@@ -1,6 +1,9 @@
 import sharp from "sharp";
 import type { EditSize } from "@/lib/ai/edit-request";
 
+/** Catalogue sizes, plus the 3:4 canvas used for a bridal own-look selfie. */
+export type CanvasSize = EditSize | "1024x1360";
+
 export type FrameTransform = {
   sourceWidth: number;
   sourceHeight: number;
@@ -13,7 +16,7 @@ export type FrameTransform = {
   scale: number;
 };
 
-export function parseEditSize(size: EditSize) {
+export function parseEditSize(size: CanvasSize) {
   const [width, height] = size.split("x").map((part) => Number(part));
   return { width, height };
 }
@@ -22,7 +25,7 @@ export function parseEditSize(size: EditSize) {
  * Fit the photo inside a supported edit size. The scale is uniform.
  * Bars use the border colour. The transform maps the padded canvas back to the source rectangle.
  */
-export async function fitInsideCanvas(image: Buffer, size: EditSize): Promise<{ png: Buffer; transform: FrameTransform }> {
+export async function fitInsideCanvas(image: Buffer, size: CanvasSize): Promise<{ png: Buffer; transform: FrameTransform }> {
   const target = parseEditSize(size);
   const decoded = await sharp(image, { failOn: "none" }).rotate().removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const sourceWidth = decoded.info.width;
