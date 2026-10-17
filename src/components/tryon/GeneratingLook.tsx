@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { GENERATION_EXPECTED_MS, generationFrame } from "@/lib/generation-stage";
 
-export function GeneratingLook({ tool, expectedMs = GENERATION_EXPECTED_MS }: { tool: string; expectedMs?: number }) {
+export function GeneratingLook({ tool, expectedMs = GENERATION_EXPECTED_MS, blur = true }: { tool: string; expectedMs?: number; blur?: boolean }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     const started = Date.now();
@@ -12,8 +12,8 @@ export function GeneratingLook({ tool, expectedMs = GENERATION_EXPECTED_MS }: { 
   }, []);
   const frame = generationFrame(tool, elapsed, expectedMs);
   return (
-    <div className="gen-veil" data-generating="yes" data-stage={frame.label} role="status">
-      <div className="gen-blur" />
+    <div className="gen-veil" data-generating="yes" data-stage={frame.label} data-blur={blur ? "yes" : "no"} role="status">
+      {blur ? <div className="gen-blur" /> : null}
       <div className="gen-shimmer" aria-hidden="true" />
       <div className="gen-glow" aria-hidden="true" />
       <div className="gen-corner">

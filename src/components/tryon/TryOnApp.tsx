@@ -23,6 +23,7 @@ import { detectFaceLandmarks } from "@/lib/face/detect-client";
 import type { PlacementDebug } from "@/lib/face/pose";
 import { classifySkinPhoto } from "@/lib/hand-photo";
 import type { SalonConfig } from "@/lib/salon";
+import { salonActionItems } from "@/lib/salon-actions";
 import { normalizeWhatsAppPhone } from "@/lib/whatsapp";
 
 function poseLine(label: string, value: number | string | null) {
@@ -816,12 +817,7 @@ export function TryOnApp({
     { id: "beard", label: "Beard", name: t(lang, "beardChip"), on: config.toolBeard, icon: "beard" },
   ];
   const visibleTools = tools.filter((item) => item.on);
-  const queueInActions = showQueue && !bridalOn;
-  const actionItems = [
-    phone ? "book" as const : null,
-    queueInActions ? "queue" as const : null,
-    phone ? "chat" as const : null,
-  ].filter((item): item is "book" | "queue" | "chat" => item !== null);
+  const actionItems = salonActionItems({ phone: Boolean(phone), showQueue, bridalOn });
   const showActionStrip = showQueue && actionItems.length > 0;
 
   const platformLogo = isPlatformLogo(config.logoUrl);

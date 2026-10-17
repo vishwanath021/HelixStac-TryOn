@@ -2,7 +2,7 @@ import { createHmac, randomBytes, scryptSync, timingSafeEqual, randomInt, create
 
 export type PreviewTier = "anon" | "member" | "salon";
 
-export const AI_PREVIEW_KINDS = ["STYLE", "BROWS", "BEARD", "NAILS", "COLOUR", "BRIDAL", "MEHENDI"] as const;
+export const AI_PREVIEW_KINDS = ["STYLE", "BROWS", "BEARD", "NAILS", "COLOUR", "BRIDAL", "MEHENDI", "BRIDAL_OWN"] as const;
 
 export function capForTier(tier: PreviewTier, anonDailyCap: number, memberDailyCap: number) {
   if (tier === "salon") return null;
