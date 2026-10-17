@@ -170,7 +170,7 @@ export function quoteComparisonModel(
   const note = inputFidelity
     ? benchmarkQuoteNote()
     : tokenOnly
-      ? "Estimate from the model page token rates (text input $5/1M, image input $8/1M, image output $30/1M). That page has no per-image output cell, and it says the GPT Image 2 calculator does not estimate 2.5 token counts. Output tokens use the gpt-image-2 allowance. input_fidelity is omitted because the GPT Image 2.5 parameter table does not list it. The explicit omit sentence is written for gpt-image-2. Not an invoice."
+      ? "Estimate from the model page token rates (text input $5/1M, image input $8/1M, image output $30/1M). Image-input tokens are 400 per 512 tile of the output frame. Output tokens scale the published 1024 square cells by size and quality. A live medium 1024×1360 edit billed 2,400 image-input tokens and 367 output tokens. input_fidelity is omitted because the GPT Image 2.5 parameter table does not list it. Not an invoice."
       : "Estimate, actual from provider usage. input_fidelity is omitted for this model. Image-input tokens use the 1536×1024 calibration with a 15% margin. Output tokens use the pre-gpt-image-2 guide table as an allowance, priced at this model's own rates. Not an invoice.";
   const askedQuality = quality && caps.qualities.includes(quality) ? quality : benchmarkQuality();
   const quoted = quoteModelEdit({
