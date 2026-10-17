@@ -1,5 +1,4 @@
 import sharp from "sharp";
-import type { EditSize } from "@/lib/ai/edit-request";
 
 export type FrameTransform = {
   sourceWidth: number;
@@ -13,8 +12,11 @@ export type FrameTransform = {
   scale: number;
 };
 
-export function parseEditSize(size: EditSize) {
+export function parseEditSize(size: string) {
   const [width, height] = size.split("x").map((part) => Number(part));
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+    throw new Error(`Unsupported edit size ${size}`);
+  }
   return { width, height };
 }
 
@@ -22,7 +24,7 @@ export function parseEditSize(size: EditSize) {
  * Fit the photo inside a supported edit size. The scale is uniform.
  * Bars use the border colour. The transform maps the padded canvas back to the source rectangle.
  */
-export async function fitInsideCanvas(image: Buffer, size: EditSize): Promise<{ png: Buffer; transform: FrameTransform }> {
+export async function fitInsideCanvas(image: Buffer, size: string): Promise<{ png: Buffer; transform: FrameTransform }> {
   const target = parseEditSize(size);
   const decoded = await sharp(image, { failOn: "none" }).rotate().removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const sourceWidth = decoded.info.width;

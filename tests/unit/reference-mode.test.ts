@@ -399,6 +399,7 @@ describe("salon reference switch", () => {
       usage: { inputTokens: 11180, outputTokens: 1899, imageTokens: 10885, textTokens: 295 },
       clothingWarning: "",
       imagePng: Buffer.from("png"),
+      framedPng: Buffer.from("png"),
       rawFaceDrift: false,
       faceScore: null,
       provider: "openai",

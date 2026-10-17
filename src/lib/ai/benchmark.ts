@@ -16,6 +16,7 @@ import {
 } from "@/lib/ai/edit-request";
 import { fitInsideCanvas, restoreFrame, type FrameTransform } from "@/lib/ai/frame";
 import { buildReferencePrompt } from "@/lib/prompts";
+import { matchSelfieOutput } from "@/lib/ai/output-size";
 import { bufferedInr, usdFromTokenCounts } from "@/lib/ai/tiers";
 import { numberEnv } from "@/lib/env";
 
@@ -55,7 +56,15 @@ export function benchmarkCanvasSize(width: number, height: number, allowed: read
 
 /** Medium output-token allowance for one guide size, with the first paid run's margin. */
 export function mediumOutputTokenAllowance(size: EditSize) {
-  return Math.ceil(OUTPUT_TOKEN_TABLE.medium[size] * OUTPUT_TOKEN_MARGIN);
+  return outputTokensFor("medium", size);
+}
+
+/** Guide cell when the size is one of the three classics. Otherwise scale the 1024×1536 cell by pixels. */
+export function outputTokensFor(quality: EditQuality, size: string) {
+  const known = OUTPUT_TOKEN_TABLE[quality][size as EditSize];
+  const [width, height] = size.split("x").map((part) => Number(part));
+  const raw = known ?? OUTPUT_TOKEN_TABLE[quality]["1024x1536"] * ((width * height) / (1024 * 1536));
+  return Math.ceil(raw * OUTPUT_TOKEN_MARGIN);
 }
 
 export function estimateImageInputTokens(canvasPixels: number, referencePixels: number) {
@@ -101,9 +110,11 @@ export function quoteModelEdit(args: {
   if (args.inputFidelity && !caps.inputFidelity?.includes(args.inputFidelity)) {
     return { ok: false as const, message: `${args.model} does not accept input_fidelity=${args.inputFidelity}. The request was not sent.` };
   }
-  const size = benchmarkCanvasSize(args.width, args.height, caps.sizes);
+  const size = caps.flexibleSize
+    ? matchSelfieOutput(args.width, args.height).size
+    : benchmarkCanvasSize(args.width, args.height, caps.sizes);
   const [canvasWidth, canvasHeight] = size.split("x").map((part) => Number(part));
-  const outputTokens = Math.ceil(OUTPUT_TOKEN_TABLE[args.quality][size] * OUTPUT_TOKEN_MARGIN);
+  const outputTokens = outputTokensFor(args.quality, size);
   const imageInputTokens = estimateImageInputTokens(canvasWidth * canvasHeight, Math.max(1, reference.width) * Math.max(1, reference.height));
   const textInputTokens = TEXT_INPUT_TOKEN_ALLOWANCE;
   const outputUsd = usdFromTokenCounts(args.model, { textIn: 0, imageIn: 0, output: outputTokens });

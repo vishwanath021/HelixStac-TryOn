@@ -21,7 +21,7 @@ import { completeGenerationJob, failGenerationJob } from "@/lib/ai/dedupe";
 import { actualHeading, costSourceLabel, falPriceListUsd } from "@/lib/ai/cost-source";
 import { syncFalCostAfterGeneration } from "@/lib/ai/fal-billing";
 import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
-import { costUsdFromUsage, exactInr, type UsageNumbers } from "@/lib/ai/tiers";
+import { costUsdFromUsage, exactInr, providerUsageLog, type UsageNumbers } from "@/lib/ai/tiers";
 import { numberEnv } from "@/lib/env";
 import { logProviderCall } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
@@ -71,6 +71,8 @@ export type ReferenceSuccess = {
   usage: UsageNumbers | null;
   clothingWarning: string;
   imagePng: Buffer;
+  /** Provider output cropped back to the selfie frame. Guest previews use this. */
+  framedPng: Buffer;
   rawFaceDrift: boolean;
   faceScore: number | null;
   message: string;
@@ -84,6 +86,8 @@ export type ReferenceFailure = {
   error: string;
   message: string;
   outcome: "quote" | "key" | "spend-cap" | "uncertain" | "provider";
+  /** True when OpenAI may already have billed the attempt. Fal must not run after that. */
+  billedAttempt?: boolean;
   id?: string;
   callId?: string;
 };
@@ -410,6 +414,7 @@ export async function executeReferenceEdit(args: {
       costSource,
       providerRequestId,
     });
+    const usageLog = providerUsageLog(quote.model, usage);
     if (provider === "fal" && providerRequestId) {
       const billed = await syncFalCostAfterGeneration(providerRequestId);
       if (billed) {
@@ -424,7 +429,10 @@ export async function executeReferenceEdit(args: {
       salonId: args.tenantId,
       status: "ok",
       latencyMs,
-      costUsd: actualKnown ? usd : 0,
+      costUsd: usageLog.known ? usageLog.costUsd : actualKnown ? usd : 0,
+      textCount: usageLog.textCount,
+      pictureIn: usageLog.pictureIn,
+      pictureOut: usageLog.pictureOut,
       requestId: providerRequestId,
     });
     const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
@@ -471,6 +479,7 @@ export async function executeReferenceEdit(args: {
       usage: usage || null,
       clothingWarning: clothing.warning || "",
       imagePng: providerResponse,
+      framedPng: restored,
       rawFaceDrift: Boolean(rawDrift?.flagged),
       faceScore: rawDrift ? rawDrift.landmarkError : null,
       message,
@@ -509,13 +518,18 @@ export async function executeReferenceEdit(args: {
       await finalizePaidCall(gate.id, { model: quote.model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize: quote.size });
       await releasePaidCall(gate.id, "REFUNDED");
     }
+    const failedUsage = error instanceof BilledProviderError ? error.usage : undefined;
+    const failedLog = providerUsageLog(quote.model, failedUsage);
     logProviderCall({
       provider,
       model: quote.model,
       salonId: args.tenantId,
       status: uncertain ? "uncertain" : "failed",
       latencyMs: Date.now() - started,
-      costUsd: error instanceof BilledProviderError ? error.costUsd : 0,
+      costUsd: failedLog.known ? failedLog.costUsd : error instanceof BilledProviderError ? error.costUsd : 0,
+      textCount: failedLog.textCount,
+      pictureIn: failedLog.pictureIn,
+      pictureOut: failedLog.pictureOut,
       requestId: failedRequestId,
     });
     const message = error instanceof Error ? error.message : "The reference edit did not finish.";
@@ -527,6 +541,7 @@ export async function executeReferenceEdit(args: {
       error: uncertain ? "UNCERTAIN" : unknown ? "UNKNOWN_MODEL" : "PROVIDER",
       message,
       outcome: uncertain ? "uncertain" : "provider",
+      billedAttempt: uncertain || error instanceof BilledProviderError,
       id,
       callId: gate.id,
     };

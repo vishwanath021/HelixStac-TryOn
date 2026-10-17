@@ -3,7 +3,7 @@ import { decryptSecret, encryptSecret, keyHint } from "@/lib/crypto/secret";
 import { allowByoKey } from "@/lib/ai/credentials";
 import { spendSummary } from "@/lib/ai/spend";
 import { parseTier, tierCatalog, type ImageProviderName, type ModelTier, type TierRequest } from "@/lib/ai/tiers";
-import { parseGuestEngine, type GuestEngine } from "@/lib/ai/guest-hairstyle";
+import { DEFAULT_GUEST_ENGINE, parseGuestEngine, type GuestEngine } from "@/lib/ai/guest-hairstyle";
 import { prisma } from "@/lib/prisma";
 
 const providerSchema = z.enum(["openai", "gemini"]);
@@ -116,7 +116,7 @@ export async function platformAiView(): Promise<PlatformAiSettings> {
       ...(await storedStatus("platform_openrouter_key_cipher", "platform_openrouter_key_hint")),
       enabled: Boolean(await setting("platform_openrouter_key_cipher")) && (await setting("platform_openrouter_enabled")) === "true",
     },
-    guestEngine: parseGuestEngine(await setting("guest_hairstyle_engine")) || "fal",
+    guestEngine: parseGuestEngine(await setting("guest_hairstyle_engine")) || DEFAULT_GUEST_ENGINE,
   };
 }
 
