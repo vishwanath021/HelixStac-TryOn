@@ -275,13 +275,16 @@ export function paintMakeup(
 
   if (outer.length > 3 && inner.length > 3) {
     ctx.save();
-    ctx.filter = "blur(2.5px)";
-    ctx.globalCompositeOperation = "soft-light";
-    ctx.globalAlpha = 0.45;
     ctx.fillStyle = options.lip;
-    trace(ctx, outer, true);
-    trace(ctx, inner, true);
-    ctx.fill("evenodd");
+    ctx.globalAlpha = 0.9;
+    if (trace(ctx, outer, true)) ctx.fill();
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.globalAlpha = 1;
+    if (trace(ctx, inner, true)) {
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

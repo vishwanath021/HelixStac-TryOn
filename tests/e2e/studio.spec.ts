@@ -70,11 +70,21 @@ test("photo notice, countdown, live makeup, and metallic buttons", async ({ page
   await expect(page.getByRole("button", { name: "Lashes" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Brows" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Upload a photo instead" })).toBeVisible();
-  const hint = page.getByText("Live preview · Capture for the real AI look");
+  const hint = page.getByText("Live preview", { exact: true });
   await expect(hint).toBeVisible();
+  await expect(page.getByText("Tap to get the real AI look")).toBeVisible();
   await expect(page.locator("[data-studio='live'] .cam-guide-face")).toHaveCount(0);
-  const hintSize = await hint.evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize));
-  expect(hintSize).toBeGreaterThanOrEqual(14);
+  const hintBox = await hint.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return {
+      font: Number.parseFloat(style.fontSize),
+      whiteSpace: style.whiteSpace,
+      height: el.getBoundingClientRect().height,
+    };
+  });
+  expect(hintBox.font).toBe(12);
+  expect(hintBox.whiteSpace).toBe("nowrap");
+  expect(hintBox.height).toBeLessThan(28);
   const video = page.locator("[data-studio='live'] video");
   expect(await video.evaluate((el) => getComputedStyle(el).transform)).toBe("none");
   const boxes = await page.evaluate(() => {
@@ -82,7 +92,7 @@ test("photo notice, countdown, live makeup, and metallic buttons", async ({ page
     const zoom = box("Zoom out");
     const row = document.querySelector(".live-row")?.getBoundingClientRect();
     const studio = document.querySelector("[data-studio='live']")?.getBoundingClientRect();
-    const hintBox = document.querySelector("[data-studio='live'] p")?.getBoundingClientRect();
+    const hintBox = document.querySelector("[data-live-note]")?.getBoundingClientRect();
     const back = box("Back");
     const close = box("Close");
     return { zoom, row, studio, hintBox, back, close };
@@ -94,7 +104,7 @@ test("photo notice, countdown, live makeup, and metallic buttons", async ({ page
     expect(overlaps(boxes.zoom, boxes.row)).toBe(false);
     expect(overlaps(boxes.hintBox, boxes.back)).toBe(false);
     expect(overlaps(boxes.hintBox, boxes.close)).toBe(false);
-    const center = { x: boxes.studio.x + boxes.studio.width * 0.28, y: boxes.studio.y + boxes.studio.height * 0.32, width: boxes.studio.width * 0.44, height: boxes.studio.height * 0.26 };
+    const center = { x: boxes.studio.x + boxes.studio.width * 0.28, y: boxes.studio.y + boxes.studio.height * 0.32, width: boxes.studio.width * 0.44, height: boxes.studio.height * 0.22 };
     expect(overlaps(center, boxes.row)).toBe(false);
     expect(overlaps(center, boxes.zoom)).toBe(false);
     expect(overlaps(center, boxes.hintBox)).toBe(false);

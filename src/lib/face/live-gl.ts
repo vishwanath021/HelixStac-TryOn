@@ -93,6 +93,7 @@ uniform float u_lipMix;
 uniform float u_lipFeather;
 uniform float u_lipBody;
 uniform float u_lipAdapt;
+uniform float u_lipStamp;
 uniform float u_blushPeak;
 uniform float u_browMix;
 uniform float u_kajalMix;
@@ -330,12 +331,25 @@ void main() {
     color = mix(color, color * ink, line * u_kajalMix);
   }
 
-  if (u_lipOn > 0.5 && outer && !inner && hairW < 0.25 && eye < 0.5) {
-    float dist = min(polyEdge(p, u_outer, 20), polyEdge(p, u_inner, 20));
-    float feather = smoothstep(0.0, px * max(u_lipFeather, 1.0), dist);
-    vec3 soft = softLight(base, lipInk);
-    vec3 mul = base * lipInk;
-    color = mix(color, mix(soft, mul, u_lipBody), u_lipMix * feather);
+  if (u_lipOn > 0.5 && hairW < 0.25 && eye < 0.5) {
+    float outerEdge = polyEdge(p, u_outer, 20);
+    float innerEdge = polyEdge(p, u_inner, 20);
+    // The inner contour is the open mouth. A tooth just outside that line is
+    // still closer to the opening than to the outer lip, so it stays bare.
+    // The lip centre is about equidistant and keeps its colour.
+    bool opening = inner || (innerEdge + px * 0.5 < outerEdge && innerEdge < px * 1.5);
+    float rim = px;
+    bool onLip = !opening && (outer || (outerEdge <= rim && outerEdge < innerEdge));
+    if (onLip) {
+      float reach = px * max(u_lipFeather, 1.0);
+      float feather = outer ? smoothstep(0.0, reach, outerEdge) : (1.0 - smoothstep(0.0, rim, outerEdge));
+      vec3 soft = softLight(base, lipInk);
+      vec3 mul = base * lipInk;
+      float lipLuma = dot(base, vec3(0.2126, 0.7152, 0.0722));
+      vec3 shaded = lipInk * clamp(lipLuma * 1.35 + 0.45, 0.55, 1.25);
+      vec3 body = mix(mix(soft, mul, u_lipBody), shaded, u_lipStamp);
+      color = mix(color, body, u_lipMix * feather);
+    }
   }
 
   outColor = vec4(color, 1.0);
@@ -518,6 +532,7 @@ export function createLiveGl(canvas: HTMLCanvasElement): LiveGl | null {
       gl.uniform1f(loc("u_lipFeather"), intensity.lipFeather);
       gl.uniform1f(loc("u_lipBody"), intensity.lipBody);
       gl.uniform1f(loc("u_lipAdapt"), intensity.lipAdapt);
+      gl.uniform1f(loc("u_lipStamp"), intensity.lipStamp);
       gl.uniform1f(loc("u_blushPeak"), intensity.blushPeak);
       gl.uniform1f(loc("u_browMix"), intensity.browMix);
       gl.uniform1f(loc("u_kajalMix"), intensity.kajalMix);

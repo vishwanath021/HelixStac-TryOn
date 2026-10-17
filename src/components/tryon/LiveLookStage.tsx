@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { EYE_L, EYE_R, IRIS, lookSamples, type Pt } from "@/lib/face/makeup-paint";
+import { EYE_L, EYE_R, INNER_LIP, IRIS, OUTER_LIP, lookSamples, type Pt } from "@/lib/face/makeup-paint";
 import { LandmarkOneEuro } from "@/lib/face/one-euro";
 import type { LookAudience } from "@/lib/face/makeup-blend";
 import { createLiveGl, type LiveGl, type LiveLookOptions } from "@/lib/face/live-gl";
@@ -62,6 +62,8 @@ function writeSamples(canvas: HTMLCanvasElement, points: Pt[]) {
   ring(EYE_R, "eyeR");
   ring(EYE_L, "eyeL");
   ring(IRIS, "iris");
+  ring(OUTER_LIP, "outerLip");
+  ring(INNER_LIP, "innerLip");
 }
 
 function copyFloat(mask: { getAsFloat32Array: () => Float32Array } | undefined) {

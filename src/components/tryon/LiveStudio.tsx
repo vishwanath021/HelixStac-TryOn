@@ -63,6 +63,7 @@ export function LiveStudio({
   makeup,
   footer,
   note,
+  shutterHint,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   ready: boolean;
@@ -84,8 +85,10 @@ export function LiveStudio({
   frozenUrl?: string;
   makeup?: ReactNode;
   footer?: ReactNode;
-  /** Sits under the back button so it does not push the shutter row onto the face. */
+  /** One short line under the top bar. */
   note?: string;
+  /** Sits on the capture button. */
+  shutterHint?: string;
 }) {
   const [count, setCount] = useState<number | "capturing" | null>(null);
 
@@ -130,7 +133,10 @@ export function LiveStudio({
         </div>
       </div>
       {note ? (
-        <p className="pointer-events-none absolute left-1/2 top-16 z-30 max-w-[calc(100%-8.5rem)] -translate-x-1/2 rounded-full bg-[#241c2e]/90 px-3 py-1.5 text-center text-sm font-medium leading-snug text-white shadow-md">
+        <p
+          data-live-note=""
+          className="pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#241c2e]/90 px-2.5 py-0.5 text-center text-xs font-medium leading-none text-white shadow-md"
+        >
           {note}
         </p>
       ) : null}
@@ -148,7 +154,12 @@ export function LiveStudio({
       />
       <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-2 px-3 pb-3">
         {footer}
-        <button className="cam-shutter" type="button" aria-label="Take photo" disabled={!ready || count !== null || busy} onClick={() => void shoot()} />
+        <div className="flex flex-col items-center gap-1.5">
+          {shutterHint ? (
+            <p data-shutter-hint="" className="text-center text-xs font-medium leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">{shutterHint}</p>
+          ) : null}
+          <button className="cam-shutter" type="button" aria-label="Take photo" disabled={!ready || count !== null || busy} onClick={() => void shoot()} />
+        </div>
         {onUpload ? (
           <button className="btn on-photo" type="button" onClick={onUpload}>Upload a photo instead</button>
         ) : null}

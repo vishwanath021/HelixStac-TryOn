@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { expect, test } from "@playwright/test";
 import { openLive } from "./live-entry";
 
-const OUT = "/opt/cursor/artifacts/bridal-cam-r2";
+const OUT = "/opt/cursor/artifacts/bridal-cam-r3";
 const FACE = "tests/fixtures/live/woman-long-dark.jpg";
 
 test("bridal camera matches everyday, and the compare keeps the original", async ({ page }, testInfo) => {
@@ -48,14 +48,22 @@ test("bridal camera matches everyday, and the compare keeps the original", async
   await expect(page.locator("[data-studio='live'] .cam-shutter")).toBeVisible();
   await expect(page.getByRole("button", { name: "Upload a photo instead" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
-  const hint = page.getByText("Live preview · Capture for the real AI look");
+  const hint = page.getByText("Live preview", { exact: true });
   await expect(hint).toBeVisible();
+  await expect(page.getByText("Tap to get the real AI look")).toBeVisible();
   await expect(page.locator("[data-studio='live'] .cam-guide-face")).toHaveCount(0);
-  expect(await hint.evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
+  const hintBox = await hint.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { font: Number.parseFloat(style.fontSize), whiteSpace: style.whiteSpace, height: el.getBoundingClientRect().height };
+  });
+  expect(hintBox.font).toBe(12);
+  expect(hintBox.whiteSpace).toBe("nowrap");
+  expect(hintBox.height).toBeLessThan(28);
   await expect(page.getByRole("button", { name: "Lashes" })).toHaveCount(0);
   const canvas = page.locator("[data-makeup='live']");
   await expect(canvas).toHaveAttribute("data-makeup-state", "tracking", { timeout: 40_000 });
   const lip = await canvas.evaluate((el) => {
+    const chroma = (rgb: number[]) => (rgb[0] ?? 0) - Math.max(rgb[1] ?? 0, rgb[2] ?? 0);
     const read = (key: string) => {
       const x = Number(el.dataset[`${key}X`]);
       const y = Number(el.dataset[`${key}Y`]);
@@ -68,13 +76,131 @@ test("bridal camera matches everyday, and the compare keeps the original", async
       const pixel = ctx.getImageData(x, y, 1, 1).data;
       return [pixel[0] ?? 0, pixel[1] ?? 0, pixel[2] ?? 0];
     };
-    return { lip: read("lip"), cheek: read("cheek") };
+    const parse = (raw: string | undefined) => {
+      const nums = (raw || "").split(",").map(Number);
+      const poly: { x: number; y: number }[] = [];
+      for (let i = 0; i + 1 < nums.length; i += 2) poly.push({ x: nums[i] ?? 0, y: nums[i + 1] ?? 0 });
+      return poly;
+    };
+    const inside = (x: number, y: number, poly: { x: number; y: number }[]) => {
+      let hit = false;
+      for (let i = 0; i < poly.length; i += 1) {
+        const a = poly[i]!;
+        const b = poly[(i + 1) % poly.length]!;
+        const up = a.y > y !== b.y > y;
+        if (!up) continue;
+        const xCross = ((b.x - a.x) * (y - a.y)) / (b.y - a.y + 1e-6) + a.x;
+        if (x < xCross) hit = !hit;
+      }
+      return hit;
+    };
+    const outer = parse(el.dataset.outerLip);
+    const inner = parse(el.dataset.innerLip);
+    const copy = document.createElement("canvas");
+    copy.width = el.width;
+    copy.height = el.height;
+    const ctx = copy.getContext("2d", { willReadFrequently: true });
+    if (!ctx || outer.length < 8 || inner.length < 8) return null;
+    ctx.drawImage(el, 0, 0);
+    const frame = ctx.getImageData(0, 0, el.width, el.height);
+    const minX = Math.max(0, Math.floor(Math.min(...outer.map((point) => point.x))));
+    const maxX = Math.min(el.width - 1, Math.ceil(Math.max(...outer.map((point) => point.x))));
+    const minY = Math.max(0, Math.floor(Math.min(...outer.map((point) => point.y))));
+    const maxY = Math.min(el.height - 1, Math.ceil(Math.max(...outer.map((point) => point.y))));
+    const edgeDist = (x: number, y: number, poly: { x: number; y: number }[]) => {
+      let best = 1e9;
+      for (let i = 0; i < poly.length; i += 1) {
+        const a = poly[i]!;
+        const b = poly[(i + 1) % poly.length]!;
+        const abx = b.x - a.x;
+        const aby = b.y - a.y;
+        const denom = abx * abx + aby * aby + 1e-6;
+        const t = Math.max(0, Math.min(1, ((x - a.x) * abx + (y - a.y) * aby) / denom));
+        best = Math.min(best, Math.hypot(x - (a.x + abx * t), y - (a.y + aby * t)));
+      }
+      return best;
+    };
+    let lipN = 0;
+    let lipChroma = 0;
+    let lipStrong = 0;
+    let teethN = 0;
+    let teethChroma = 0;
+    let teethMax = 0;
+    let coreN = 0;
+    let coreChroma = 0;
+    let coreMax = 0;
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const index = (y * el.width + x) * 4;
+        const score = chroma([frame.data[index] ?? 0, frame.data[index + 1] ?? 0, frame.data[index + 2] ?? 0]);
+        if (inside(x + 0.5, y + 0.5, inner)) {
+          teethN += 1;
+          teethChroma += score;
+          if (score > teethMax) teethMax = score;
+          if (edgeDist(x + 0.5, y + 0.5, inner) > 2) {
+            coreN += 1;
+            coreChroma += score;
+            if (score > coreMax) coreMax = score;
+          }
+        } else if (inside(x + 0.5, y + 0.5, outer)) {
+          lipN += 1;
+          lipChroma += score;
+          if (score > 60) lipStrong += 1;
+        }
+      }
+    }
+    const padX = Math.max(6, Math.round((maxX - minX) * 0.35));
+    const padY = Math.max(8, Math.round((maxY - minY) * 0.45));
+    const x0 = Math.max(0, minX - padX);
+    const y0 = Math.max(0, minY - padY);
+    const x1 = Math.min(el.width, maxX + padX + 1);
+    const y1 = Math.min(el.height, maxY + padY + 1);
+    const crop = ctx.getImageData(x0, y0, x1 - x0, y1 - y0);
+    return {
+      lip: read("lip"),
+      cheek: read("cheek"),
+      lipN,
+      teethN,
+      lipChroma: lipN ? lipChroma / lipN : 0,
+      teethChroma: teethN ? teethChroma / teethN : 0,
+      teethMax,
+      coreN,
+      coreChroma: coreN ? coreChroma / coreN : 0,
+      coreMax,
+      lipStrong,
+      crop: { width: crop.width, height: crop.height, data: Array.from(crop.data) },
+    };
   });
   expect(lip?.lip && lip.cheek).toBeTruthy();
   if (lip?.lip && lip.cheek) {
     const chroma = (rgb: number[]) => (rgb[0] ?? 0) - Math.max(rgb[1] ?? 0, rgb[2] ?? 0);
     expect(chroma(lip.lip)).toBeGreaterThan(chroma(lip.cheek) + 18);
   }
+  console.log("LIP_MASK", {
+    lipN: lip?.lipN,
+    teethN: lip?.teethN,
+    lipChroma: lip?.lipChroma,
+    teethChroma: lip?.teethChroma,
+    teethMax: lip?.teethMax,
+    coreN: lip?.coreN,
+    coreChroma: lip?.coreChroma,
+    coreMax: lip?.coreMax,
+    lipStrong: lip?.lipStrong,
+  });
+  if (lip?.crop) {
+    await sharp(Buffer.from(lip.crop.data), { raw: { width: lip.crop.width, height: lip.crop.height, channels: 4 } })
+      .resize(lip.crop.width * 3, lip.crop.height * 3, { kernel: "lanczos3" })
+      .png()
+      .toFile(`${OUT}/lip-crop-3x.png`);
+  }
+  expect(lip?.lipN ?? 0).toBeGreaterThan(40);
+  expect(lip?.teethN ?? 0).toBeGreaterThan(8);
+  expect(lip?.coreN ?? 0).toBeGreaterThan(4);
+  expect(lip?.lipChroma ?? 0).toBeGreaterThan(55);
+  expect(lip?.lipChroma ?? 0).toBeGreaterThan((lip?.teethChroma ?? 0) + 35);
+  expect((lip?.lipStrong ?? 0) / Math.max(1, lip?.lipN ?? 1)).toBeGreaterThan(0.4);
+  expect(lip?.coreMax ?? 999).toBeLessThan(80);
+  expect(lip?.coreChroma ?? 999).toBeLessThan(45);
   const latency = Number(await canvas.getAttribute("data-latency"));
   console.log("BRIDAL_LATENCY_MS", latency, "delegate", await canvas.getAttribute("data-delegate"));
   expect(latency).toBeGreaterThanOrEqual(0);

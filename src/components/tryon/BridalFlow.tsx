@@ -465,7 +465,8 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
                   onShutter={captureLive}
                   onRetake={() => beginLive("face")}
                   onUpload={() => consent.gate(() => bridalFile.current?.click())}
-                  note="Live preview · Capture for the real AI look"
+                  note="Live preview"
+                  shutterHint="Tap to get the real AI look"
                   makeup={<MakeupStage video={camReady ? videoRef.current : null} lip={lipHex} kajal={kajal} blush={blushOn} />}
                   footer={(
                       <div className="live-row translate-y-2" role="group" aria-label="Live makeup">

@@ -14,6 +14,8 @@ export const EVERYDAY_LIVE = {
   /** How far lipstick lightness follows the skin. Webcam keeps the chosen hue. */
   lipAdapt: 0.45,
   lipFeather: 6,
+  /** How far the lip moves from the blend toward the lipstick colour itself. */
+  lipStamp: 0,
   blushPeak: BLUSH_PEAK_ALPHA,
   browMix: 0.25,
   kajalMix: 0.6,
@@ -28,6 +30,7 @@ export const BRIDAL_LIVE = {
   lipBody: 0.55,
   lipAdapt: 0.35,
   lipFeather: 6,
+  lipStamp: 0,
   blushPeak: 0.28,
   browMix: 0.48,
   kajalMix: 0.85,
@@ -39,15 +42,16 @@ export const BRIDAL_LIVE = {
 export type LiveIntensity = typeof EVERYDAY_LIVE;
 
 /**
- * Webcam preview. Lips stay readable at a small mouth: a short feather,
- * little skin matching, and a multiply-heavy blend. Kajal and blush stay soft.
+ * Webcam preview. An open smile has a thin lip band, so the colour is the
+ * lipstick itself, with a 1px outer edge. Kajal and blush stay soft.
  * Brows stay off. Live has no lash layer.
  */
 export const CAMERA_LIVE = {
-  lipMix: 0.9,
-  lipBody: 0.82,
-  lipAdapt: 0.12,
-  lipFeather: 2,
+  lipMix: 1,
+  lipBody: 0.9,
+  lipAdapt: 0,
+  lipFeather: 1,
+  lipStamp: 1,
   blushPeak: 0.16,
   browMix: 0,
   kajalMix: 0.42,

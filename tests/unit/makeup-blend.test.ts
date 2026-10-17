@@ -129,6 +129,8 @@ describe("webcam preview", () => {
     expect(CAMERA_LIVE.lipBody).toBeGreaterThan(EVERYDAY_LIVE.lipBody);
     expect(CAMERA_LIVE.lipFeather).toBeLessThan(LIP_FEATHER_PX);
     expect(CAMERA_LIVE.lipAdapt).toBeLessThan(EVERYDAY_LIVE.lipAdapt);
+    expect(CAMERA_LIVE.lipStamp).toBe(1);
+    expect(EVERYDAY_LIVE.lipStamp).toBe(0);
     expect(LIP_FEATHER_PX).toBeGreaterThanOrEqual(4);
     expect(EYE_FEATHER_PX).toBeGreaterThanOrEqual(3);
   });
