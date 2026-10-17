@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sharedRateLimit } from "@/lib/ratelimit";
 import { notifyGuest, type NotifyMessage, type NotifyResult } from "@/lib/notify";
@@ -75,6 +76,35 @@ function timing(entries: EntryRow[], selfId: string | null, avgMinutes: number, 
   const byId = new Map(entries.map((row) => [row.id, row]));
   const minutes = ahead.map((row) => minutesOf(byId.get(row.id) || entries[0], avgMinutes));
   return { ahead: ahead.length, waitMin: waitMinutes(minutes, units) };
+}
+
+function tokenTaken(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
+
+/** Next token for this salon and day. A clash from two joins at the same moment is retried. */
+async function createQueuedEntry(data: Omit<Prisma.QueueEntryUncheckedCreateInput, "token" | "cancelToken">) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const last = await tx.queueEntry.aggregate({
+          where: { tenantId: data.tenantId, dayKey: data.dayKey },
+          _max: { token: true },
+        });
+        return tx.queueEntry.create({
+          data: {
+            ...data,
+            token: (last._max.token ?? 0) + 1,
+            cancelToken: randomBytes(18).toString("base64url"),
+          },
+          include: { service: { select: { name: true, durationMin: true } } },
+        });
+      });
+    } catch (error) {
+      if (!tokenTaken(error) || attempt === 5) throw error;
+    }
+  }
+  throw new QueueError("BUSY", "The queue is busy. Try again.", 409);
 }
 
 function ticket(slug: string, row: EntryRow, mode: string, waitMin: number, ahead: number) {
@@ -232,25 +262,17 @@ export async function joinQueue(input: {
   if (!ipLimit.ok || !phoneLimit.ok) throw new QueueError("RATE", "Too many joins. Wait a few minutes and try again.", 429);
 
   await findService(tenant.id, input.serviceId);
-  const created = await prisma.$transaction(async (tx) => {
-    const last = await tx.queueEntry.aggregate({ where: { tenantId: tenant.id, dayKey }, _max: { token: true } });
-    return tx.queueEntry.create({
-      data: {
-        tenantId: tenant.id,
-        dayKey,
-        token: (last._max.token ?? 0) + 1,
-        name,
-        phone,
-        serviceId: input.serviceId || null,
-        status: state.mode === "REQUEST" ? "REQUESTED" : "WAITING",
-        source: "ONLINE",
-        requestedDate: state.mode === "REQUEST" ? requestedDate : "",
-        requestedSlot: state.mode === "REQUEST" ? requestedSlot : "",
-        cancelToken: randomBytes(18).toString("base64url"),
-        consentAt: new Date(),
-      },
-      include: { service: { select: { name: true, durationMin: true } } },
-    });
+  const created = await createQueuedEntry({
+    tenantId: tenant.id,
+    dayKey,
+    name,
+    phone,
+    serviceId: input.serviceId || null,
+    status: state.mode === "REQUEST" ? "REQUESTED" : "WAITING",
+    source: "ONLINE",
+    requestedDate: state.mode === "REQUEST" ? requestedDate : "",
+    requestedSlot: state.mode === "REQUEST" ? requestedSlot : "",
+    consentAt: new Date(),
   });
   const loaded = await loadDay(tenant.id, dayKey);
   const row = loaded.entries.find((entry) => entry.id === created.id) || (created as EntryRow);
@@ -429,21 +451,14 @@ export async function addWalkIn(tenantId: string, input: { name?: string; phone?
   await findService(tenantId, input.serviceId);
   const dayKey = kolkataDayKey();
   const name = (input.name || "").trim().slice(0, 80) || "Walk-in";
-  const created = await prisma.$transaction(async (tx) => {
-    const last = await tx.queueEntry.aggregate({ where: { tenantId, dayKey }, _max: { token: true } });
-    return tx.queueEntry.create({
-      data: {
-        tenantId,
-        dayKey,
-        token: (last._max.token ?? 0) + 1,
-        name,
-        phone,
-        serviceId: input.serviceId || null,
-        status: "WAITING",
-        source: "WALKIN",
-        cancelToken: randomBytes(18).toString("base64url"),
-      },
-    });
+  const created = await createQueuedEntry({
+    tenantId,
+    dayKey,
+    name,
+    phone,
+    serviceId: input.serviceId || null,
+    status: "WAITING",
+    source: "WALKIN",
   });
   if (phone) {
     await safeSend(send, {

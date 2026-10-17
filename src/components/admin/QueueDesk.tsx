@@ -128,6 +128,9 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
                     <p className="break-all text-lg">{seat.entry.name}{seat.entry.serviceName ? ` · ${seat.entry.serviceName}` : ""}</p>
                     {seat.entry.onTheWay ? <p className="text-sm">{t(lang, "queueOnTheWayBadge")}</p> : null}
                     <div className="mt-3 flex flex-wrap gap-2">
+                      {seat.entry.status === "CALLED" ? (
+                        <button className="btn" type="button" disabled={busy} onClick={() => void act({ action: "start", id: seat.entry?.id })}>{t(lang, "queueStart")}</button>
+                      ) : null}
                       <button className="btn" type="button" disabled={busy} onClick={() => void act({ action: "done", id: seat.entry?.id })}>{t(lang, "queueDone")}</button>
                       <button className="btn secondary" type="button" disabled={busy} onClick={() => void act({ action: "noshow", id: seat.entry?.id })}>{t(lang, "queueNoShow")}</button>
                     </div>
