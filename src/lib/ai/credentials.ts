@@ -111,6 +111,33 @@ export async function resolveFalKey(): Promise<{ ok: true; apiKey: string } | { 
 }
 
 /**
+ * Read-only fal BILLING preset. It does not run models and does not follow the generation-key enable switch.
+ * A missing billing key is not an error here; cost sync falls back to the generation key.
+ */
+export async function resolveFalBillingKey(): Promise<{ ok: true; apiKey: string } | { ok: false; reason: "missing" }> {
+  const cipher = await setting("platform_fal_billing_key_cipher");
+  if (!cipher) return { ok: false, reason: "missing" };
+  try {
+    const apiKey = decryptSecret(cipher);
+    if (apiKey) return { ok: true, apiKey };
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+  return { ok: false, reason: "missing" };
+}
+
+/** Billing key when one is saved. Otherwise the generation key, which fal refuses on billing-events when it is API-scoped. */
+export async function resolveFalCostKey(): Promise<
+  { ok: true; apiKey: string; source: "billing" | "generation" } | { ok: false; reason: "missing" | "off" }
+> {
+  const billing = await resolveFalBillingKey();
+  if (billing.ok) return { ok: true, apiKey: billing.apiKey, source: "billing" };
+  const generation = await resolveFalKey();
+  if (generation.ok) return { ok: true, apiKey: generation.apiKey, source: "generation" };
+  return generation;
+}
+
+/**
  * OpenRouter key from its own cipher. A saved key that is not enabled does not fall back to the environment.
  * No saved key may use OPENROUTER_API_KEY. This comparison does not borrow an OpenAI, Gemini, or fal key.
  */

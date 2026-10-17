@@ -9,6 +9,7 @@ import { reviewProviderFace } from "@/lib/face/compose-hair";
 import type { DriftReport } from "@/lib/face/hair-composite";
 import { assessClothing } from "@/lib/ai/clothing-check";
 import { resolveFalKey, resolveGeminiKey, resolveOpenAIKey, resolveOpenRouterKey } from "@/lib/ai/credentials";
+import { flux3ResolutionFor, flux3UseFor } from "@/lib/ai/fal-models";
 import { postFalReferenceEdit } from "@/lib/ai/fal-reference";
 import { postOpenRouterReferenceEdit } from "@/lib/ai/openrouter-reference";
 import type { EditQuality, EditSize } from "@/lib/ai/edit-request";
@@ -18,6 +19,7 @@ import { BilledProviderError, UnbilledProviderError, UncertainBillingError, Unkn
 import { postImageEdit } from "@/lib/ai/openai";
 import { completeGenerationJob, failGenerationJob } from "@/lib/ai/dedupe";
 import { actualHeading, costSourceLabel, falPriceListUsd } from "@/lib/ai/cost-source";
+import { syncFalCostAfterGeneration } from "@/lib/ai/fal-billing";
 import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
 import { costUsdFromUsage, exactInr, type UsageNumbers } from "@/lib/ai/tiers";
 import { numberEnv } from "@/lib/env";
@@ -105,6 +107,8 @@ export async function executeReferenceEdit(args: {
 }): Promise<ReferenceSuccess | ReferenceFailure> {
   await purgeOldBenchmarks().catch(() => undefined);
   const requestedModel = args.modelId?.trim() || "";
+  const fluxUse = flux3UseFor(args.source, args.tool);
+  const fluxResolution = flux3ResolutionFor(fluxUse);
   const prepared = args.guest
     ? await prepareGuestReference({
         jpeg: args.jpeg,
@@ -114,9 +118,10 @@ export async function executeReferenceEdit(args: {
         prompt: args.guest.prompt,
         reference: args.guest.reference,
         referenceFile: args.guest.referenceFile,
+        fluxUse,
       })
     : requestedModel
-      ? await prepareComparison({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture, modelId: requestedModel, quality: args.quality })
+      ? await prepareComparison({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture, modelId: requestedModel, quality: args.quality, fluxUse })
       : await prepareBenchmark({ jpeg: args.jpeg, styleId: args.styleId, texture: args.hairTexture });
   if (!prepared.ok) {
     return { ok: false, httpStatus: 400, error: "QUOTE", message: prepared.message, outcome: "quote" };
@@ -282,6 +287,7 @@ export async function executeReferenceEdit(args: {
         referenceJpeg: reference,
         size: quote.size as EditSize,
         estimateUsd: quote.estimateUsd,
+        resolution: fluxResolution,
       });
       usage = undefined;
       providerResponse = fal.image;
@@ -391,7 +397,7 @@ export async function executeReferenceEdit(args: {
       costSource = "price_list";
       usd = falComputedUsd;
     }
-    const actualKnown = costSource === "usage" || costSource === "price_list";
+    let actualKnown = costSource === "usage" || costSource === "price_list";
     await finalizePaidCall(gate.id, {
       model: quote.model,
       billed: true,
@@ -404,6 +410,14 @@ export async function executeReferenceEdit(args: {
       costSource,
       providerRequestId,
     });
+    if (provider === "fal" && providerRequestId) {
+      const billed = await syncFalCostAfterGeneration(providerRequestId);
+      if (billed) {
+        costSource = "billing";
+        usd = billed.usd;
+        actualKnown = true;
+      }
+    }
     logProviderCall({
       provider,
       model: quote.model,
@@ -415,6 +429,7 @@ export async function executeReferenceEdit(args: {
     });
     const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
     let message = `Unvalidated model output. The raw provider image is the result. One provider call. No mask, no face paste, no retry.${clothingNote}`;
+    if (provider === "fal" && costSource === "billing") message += " The shown cost is fal billing-events cost_total.";
     if (provider === "fal" && costSource === "price_list") message += " The shown cost is computed from the fal price list. It is not fal's invoice.";
     if (provider === "openai" && costSource === "usage") message += " The shown cost is actual from provider usage.";
     if (provider === "openrouter" && openRouterCostReport === "usage.cost") message += " The shown cost is usage.cost from OpenRouter.";
@@ -475,6 +490,7 @@ export async function executeReferenceEdit(args: {
         costSource: "timeout",
         providerRequestId: failedRequestId,
       });
+      if (provider === "fal" && failedRequestId) await syncFalCostAfterGeneration(failedRequestId);
       await releasePaidCall(gate.id, "UNCERTAIN");
     } else if (error instanceof BilledProviderError) {
       await finalizePaidCall(gate.id, {
@@ -487,6 +503,7 @@ export async function executeReferenceEdit(args: {
         imageSize: quote.size,
         providerRequestId: failedRequestId,
       });
+      if (provider === "fal" && failedRequestId) await syncFalCostAfterGeneration(failedRequestId);
       await releasePaidCall(gate.id, "BILLED_FAILED");
     } else {
       await finalizePaidCall(gate.id, { model: quote.model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize: quote.size });

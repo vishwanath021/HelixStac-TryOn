@@ -94,7 +94,8 @@ describe("bridal prompt shades", () => {
     expect(body && "strength" in body).toBe(false);
     expect(body && "guidance" in body).toBe(false);
     expect(body && "guidance_scale" in body).toBe(false);
-    expect(Object.keys(body ?? {}).sort()).toEqual(["aspect_ratio", "image_urls", "prompt"]);
+    expect(Object.keys(body ?? {}).sort()).toEqual(["aspect_ratio", "image_urls", "prompt", "resolution"]);
+    expect(body?.resolution).toBe("1k");
   });
 
   it("drops an oversized hair id instead of copying it into the prompt", () => {
