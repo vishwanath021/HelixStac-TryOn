@@ -19,6 +19,7 @@ import { BilledProviderError, UnbilledProviderError, UncertainBillingError, Unkn
 import { postImageEdit } from "@/lib/ai/openai";
 import { completeGenerationJob, failGenerationJob } from "@/lib/ai/dedupe";
 import { actualHeading, costSourceLabel, falPriceListUsd } from "@/lib/ai/cost-source";
+import { syncFalCostAfterGeneration } from "@/lib/ai/fal-billing";
 import { beginPaidCall, finalizePaidCall, releasePaidCall } from "@/lib/ai/spend";
 import { costUsdFromUsage, exactInr, type UsageNumbers } from "@/lib/ai/tiers";
 import { numberEnv } from "@/lib/env";
@@ -396,7 +397,7 @@ export async function executeReferenceEdit(args: {
       costSource = "price_list";
       usd = falComputedUsd;
     }
-    const actualKnown = costSource === "usage" || costSource === "price_list";
+    let actualKnown = costSource === "usage" || costSource === "price_list";
     await finalizePaidCall(gate.id, {
       model: quote.model,
       billed: true,
@@ -409,6 +410,14 @@ export async function executeReferenceEdit(args: {
       costSource,
       providerRequestId,
     });
+    if (provider === "fal" && providerRequestId) {
+      const billed = await syncFalCostAfterGeneration(providerRequestId);
+      if (billed) {
+        costSource = "billing";
+        usd = billed.usd;
+        actualKnown = true;
+      }
+    }
     logProviderCall({
       provider,
       model: quote.model,
@@ -420,6 +429,7 @@ export async function executeReferenceEdit(args: {
     });
     const clothingNote = clothing.warning === "clothing_changed" ? " Warning: clothing_changed." : "";
     let message = `Unvalidated model output. The raw provider image is the result. One provider call. No mask, no face paste, no retry.${clothingNote}`;
+    if (provider === "fal" && costSource === "billing") message += " The shown cost is fal billing-events cost_total.";
     if (provider === "fal" && costSource === "price_list") message += " The shown cost is computed from the fal price list. It is not fal's invoice.";
     if (provider === "openai" && costSource === "usage") message += " The shown cost is actual from provider usage.";
     if (provider === "openrouter" && openRouterCostReport === "usage.cost") message += " The shown cost is usage.cost from OpenRouter.";
@@ -480,6 +490,7 @@ export async function executeReferenceEdit(args: {
         costSource: "timeout",
         providerRequestId: failedRequestId,
       });
+      if (provider === "fal" && failedRequestId) await syncFalCostAfterGeneration(failedRequestId);
       await releasePaidCall(gate.id, "UNCERTAIN");
     } else if (error instanceof BilledProviderError) {
       await finalizePaidCall(gate.id, {
@@ -492,6 +503,7 @@ export async function executeReferenceEdit(args: {
         imageSize: quote.size,
         providerRequestId: failedRequestId,
       });
+      if (provider === "fal" && failedRequestId) await syncFalCostAfterGeneration(failedRequestId);
       await releasePaidCall(gate.id, "BILLED_FAILED");
     } else {
       await finalizePaidCall(gate.id, { model: quote.model, billed: false, charged: false, costUsd: 0, estimateInr: 0, imageSize: quote.size });

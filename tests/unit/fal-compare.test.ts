@@ -36,6 +36,8 @@ describe("fal and shutdown catalogue", () => {
             "platform_fal_key_cipher",
             "platform_fal_key_hint",
             "platform_fal_enabled",
+            "platform_fal_billing_key_cipher",
+            "platform_fal_billing_key_hint",
           ],
         },
       },
