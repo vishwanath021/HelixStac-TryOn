@@ -48,9 +48,11 @@ describe("your own look prompt", () => {
     expect(makeupAt).toBeLessThan(sareeAt);
     expect(prompt).toContain("Apply clearly visible bridal makeup: Makeup: classic bridal red lip, even HD base, kohl, and a round red bindi. Photo-ready HD makeup with an even base that still looks like skin. Lip colour: Red.");
     expect(prompt).toContain("Do not change face shape or features; makeup changes colour and finish only.");
+    expect(prompt).toContain("Keep her natural skin tone and skin texture exactly; do not lighten, whiten or smooth the skin.");
     expect(prompt).not.toContain("exact face shape");
     expect(prompt).not.toContain("Do not slim, lift, smooth, or beautify");
-    expect(prompt).toContain("Style her hair neatly for a bride, as a smooth bun or a braid.");
+    expect(prompt).toContain("neat side-swept front with a low bun visible at the side, no flowers.");
+    expect(prompt).not.toContain("smooth bun or a braid");
     expect(prompt).toContain("Keep any nose pin already in her photo.");
     expect(prompt).toContain("Telugu bridal styling");
     expect(prompt).toContain("Do not put flowers in her hair");
