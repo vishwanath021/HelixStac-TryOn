@@ -70,24 +70,34 @@ test("photo notice, countdown, live makeup, and metallic buttons", async ({ page
   await expect(page.getByRole("button", { name: "Lashes" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Brows" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Upload a photo instead" })).toBeVisible();
-  await expect(page.getByText("Live preview · Capture for the real AI look")).toBeVisible();
+  const hint = page.getByText("Live preview · Capture for the real AI look");
+  await expect(hint).toBeVisible();
+  await expect(page.locator("[data-studio='live'] .cam-guide-face")).toHaveCount(0);
+  const hintSize = await hint.evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize));
+  expect(hintSize).toBeGreaterThanOrEqual(14);
   const video = page.locator("[data-studio='live'] video");
   expect(await video.evaluate((el) => getComputedStyle(el).transform)).toBe("none");
   const boxes = await page.evaluate(() => {
-    const box = (name: string) => document.querySelector(`[aria-label='${name}']`)?.getBoundingClientRect();
+    const box = (name: string) => document.querySelector(`[data-studio='live'] [aria-label='${name}']`)?.getBoundingClientRect();
     const zoom = box("Zoom out");
     const row = document.querySelector(".live-row")?.getBoundingClientRect();
-    const guide = document.querySelector(".cam-guide-face")?.getBoundingClientRect();
-    return { zoom, row, guide };
+    const studio = document.querySelector("[data-studio='live']")?.getBoundingClientRect();
+    const hintBox = document.querySelector("[data-studio='live'] p")?.getBoundingClientRect();
+    const back = box("Back");
+    const close = box("Close");
+    return { zoom, row, studio, hintBox, back, close };
   });
-  expect(boxes.zoom && boxes.row && boxes.guide).toBeTruthy();
-  if (boxes.zoom && boxes.row && boxes.guide) {
+  expect(boxes.zoom && boxes.row && boxes.studio && boxes.hintBox && boxes.back && boxes.close).toBeTruthy();
+  if (boxes.zoom && boxes.row && boxes.studio && boxes.hintBox && boxes.back && boxes.close) {
     const overlaps = (a: typeof boxes.zoom, b: typeof boxes.row) =>
       Boolean(a && b && a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y);
     expect(overlaps(boxes.zoom, boxes.row)).toBe(false);
-    const center = { x: boxes.guide.x + boxes.guide.width * 0.35, y: boxes.guide.y + boxes.guide.height * 0.4, width: boxes.guide.width * 0.3, height: boxes.guide.height * 0.25 };
+    expect(overlaps(boxes.hintBox, boxes.back)).toBe(false);
+    expect(overlaps(boxes.hintBox, boxes.close)).toBe(false);
+    const center = { x: boxes.studio.x + boxes.studio.width * 0.28, y: boxes.studio.y + boxes.studio.height * 0.32, width: boxes.studio.width * 0.44, height: boxes.studio.height * 0.26 };
     expect(overlaps(center, boxes.row)).toBe(false);
     expect(overlaps(center, boxes.zoom)).toBe(false);
+    expect(overlaps(center, boxes.hintBox)).toBe(false);
   }
   const canvas = page.locator("[data-makeup='live']");
   await expect(canvas).toHaveAttribute("data-makeup-state", "tracking", { timeout: 40_000 });

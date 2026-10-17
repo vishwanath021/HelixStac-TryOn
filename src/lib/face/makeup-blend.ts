@@ -9,6 +9,11 @@ export const BLUSH_PEAK_ALPHA = 0.18;
 /** Everyday live look. The eye-whites check uses these numbers. */
 export const EVERYDAY_LIVE = {
   lipMix: 0.55,
+  /** How far the lip blend moves from soft-light toward multiply. */
+  lipBody: 0.5,
+  /** How far lipstick lightness follows the skin. Webcam keeps the chosen hue. */
+  lipAdapt: 0.45,
+  lipFeather: 6,
   blushPeak: BLUSH_PEAK_ALPHA,
   browMix: 0.25,
   kajalMix: 0.6,
@@ -20,6 +25,9 @@ export const EVERYDAY_LIVE = {
 /** Bridal live look. Stronger colour, still outside the eye opening. */
 export const BRIDAL_LIVE = {
   lipMix: 0.7,
+  lipBody: 0.55,
+  lipAdapt: 0.35,
+  lipFeather: 6,
   blushPeak: 0.28,
   browMix: 0.48,
   kajalMix: 0.85,
@@ -31,11 +39,15 @@ export const BRIDAL_LIVE = {
 export type LiveIntensity = typeof EVERYDAY_LIVE;
 
 /**
- * Webcam preview. Lips stay readable. Kajal and blush stay soft.
+ * Webcam preview. Lips stay readable at a small mouth: a short feather,
+ * little skin matching, and a multiply-heavy blend. Kajal and blush stay soft.
  * Brows stay off. Live has no lash layer.
  */
 export const CAMERA_LIVE = {
-  lipMix: 0.62,
+  lipMix: 0.9,
+  lipBody: 0.82,
+  lipAdapt: 0.12,
+  lipFeather: 2,
   blushPeak: 0.16,
   browMix: 0,
   kajalMix: 0.42,

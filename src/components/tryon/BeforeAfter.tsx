@@ -30,7 +30,7 @@ export function BeforeAfter({
   return (
     <div
       ref={box}
-      className="relative aspect-[3/4] touch-none overflow-hidden bg-[#F3F0F8]"
+      className="relative mx-auto aspect-[3/4] w-full max-w-md touch-none overflow-hidden bg-[#F3F0F8]"
       data-testid="before-after"
       data-align-mode={alignMode || undefined}
       data-eye-delta={eyeDelta == null ? undefined : eyeDelta.toFixed(2)}

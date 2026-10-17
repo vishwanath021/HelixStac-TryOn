@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { expect, test } from "@playwright/test";
 import { openLive } from "./live-entry";
 
-const OUT = "/opt/cursor/artifacts/bridal-cam-r1";
+const OUT = "/opt/cursor/artifacts/bridal-cam-r2";
 const FACE = "tests/fixtures/live/woman-long-dark.jpg";
 
 test("bridal camera matches everyday, and the compare keeps the original", async ({ page }, testInfo) => {
@@ -48,10 +48,33 @@ test("bridal camera matches everyday, and the compare keeps the original", async
   await expect(page.locator("[data-studio='live'] .cam-shutter")).toBeVisible();
   await expect(page.getByRole("button", { name: "Upload a photo instead" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
-  await expect(page.getByText("Live preview · Capture for the real AI look")).toBeVisible();
+  const hint = page.getByText("Live preview · Capture for the real AI look");
+  await expect(hint).toBeVisible();
+  await expect(page.locator("[data-studio='live'] .cam-guide-face")).toHaveCount(0);
+  expect(await hint.evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
   await expect(page.getByRole("button", { name: "Lashes" })).toHaveCount(0);
   const canvas = page.locator("[data-makeup='live']");
   await expect(canvas).toHaveAttribute("data-makeup-state", "tracking", { timeout: 40_000 });
+  const lip = await canvas.evaluate((el) => {
+    const read = (key: string) => {
+      const x = Number(el.dataset[`${key}X`]);
+      const y = Number(el.dataset[`${key}Y`]);
+      const copy = document.createElement("canvas");
+      copy.width = el.width;
+      copy.height = el.height;
+      const ctx = copy.getContext("2d");
+      if (!ctx || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+      ctx.drawImage(el, 0, 0);
+      const pixel = ctx.getImageData(x, y, 1, 1).data;
+      return [pixel[0] ?? 0, pixel[1] ?? 0, pixel[2] ?? 0];
+    };
+    return { lip: read("lip"), cheek: read("cheek") };
+  });
+  expect(lip?.lip && lip.cheek).toBeTruthy();
+  if (lip?.lip && lip.cheek) {
+    const chroma = (rgb: number[]) => (rgb[0] ?? 0) - Math.max(rgb[1] ?? 0, rgb[2] ?? 0);
+    expect(chroma(lip.lip)).toBeGreaterThan(chroma(lip.cheek) + 18);
+  }
   const latency = Number(await canvas.getAttribute("data-latency"));
   console.log("BRIDAL_LATENCY_MS", latency, "delegate", await canvas.getAttribute("data-delegate"));
   expect(latency).toBeGreaterThanOrEqual(0);
@@ -84,8 +107,35 @@ test("bridal camera matches everyday, and the compare keeps the original", async
   await expect(page.getByTestId("before-after")).toBeVisible({ timeout: 30_000 });
   const before = page.locator("[data-side='before']");
   await expect.poll(async () => before.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1200);
+  const cover = await page.locator("[data-side='after']").evaluate((img) => {
+    const box = img.parentElement?.getBoundingClientRect();
+    const shot = img.getBoundingClientRect();
+    if (!box || box.height === 0) return 0;
+    return shot.height / box.height;
+  });
+  expect(cover).toBeGreaterThan(0.95);
+  await expect.poll(async () => page.getByTestId("before-after").evaluate((el) => {
+    let opacity = 1;
+    let node: HTMLElement | null = el;
+    while (node) {
+      opacity *= Number(getComputedStyle(node).opacity);
+      node = node.parentElement;
+    }
+    return opacity;
+  })).toBe(1);
+  await expect(page.locator("[data-testid='before-after'] .gen-veil, [data-testid='before-after'] .gen-shimmer")).toHaveCount(0);
   await page.setViewportSize({ width: 375, height: 812 });
+  await page.getByTestId("before-after").scrollIntoViewIfNeeded();
   await page.getByTestId("before-after").screenshot({ path: `${OUT}/compare-375.png` });
   await page.setViewportSize({ width: 1280, height: 800 });
+  await page.getByTestId("before-after").scrollIntoViewIfNeeded();
+  const desktopCover = await page.locator("[data-side='after']").evaluate((img) => {
+    const box = img.parentElement?.getBoundingClientRect();
+    const shot = img.getBoundingClientRect();
+    if (!box || box.height === 0) return 0;
+    return { cover: shot.height / box.height, boxH: box.height, viewH: window.innerHeight };
+  });
+  expect(desktopCover.cover).toBeGreaterThan(0.95);
+  expect(desktopCover.boxH).toBeLessThanOrEqual(desktopCover.viewH);
   await page.getByTestId("before-after").screenshot({ path: `${OUT}/compare-desktop.png` });
 });

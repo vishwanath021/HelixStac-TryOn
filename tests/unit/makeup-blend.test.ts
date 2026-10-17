@@ -125,7 +125,10 @@ describe("webcam preview", () => {
     expect(CAMERA_LIVE.browMix).toBe(0);
     expect(CAMERA_LIVE.kajalMix).toBeLessThan(EVERYDAY_LIVE.kajalMix);
     expect(CAMERA_LIVE.blushPeak).toBeLessThan(EVERYDAY_LIVE.blushPeak);
-    expect(CAMERA_LIVE.lipMix).toBeGreaterThan(0.5);
+    expect(CAMERA_LIVE.lipMix).toBeGreaterThan(EVERYDAY_LIVE.lipMix);
+    expect(CAMERA_LIVE.lipBody).toBeGreaterThan(EVERYDAY_LIVE.lipBody);
+    expect(CAMERA_LIVE.lipFeather).toBeLessThan(LIP_FEATHER_PX);
+    expect(CAMERA_LIVE.lipAdapt).toBeLessThan(EVERYDAY_LIVE.lipAdapt);
     expect(LIP_FEATHER_PX).toBeGreaterThanOrEqual(4);
     expect(EYE_FEATHER_PX).toBeGreaterThanOrEqual(3);
   });

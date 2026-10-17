@@ -457,7 +457,7 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
                   videoRef={videoRef}
                   ready={camReady}
                   facing="user"
-                  guide="face"
+                  guide="none"
                   zoom={zoom}
                   onZoom={setZoom}
                   onBack={stopLive}
@@ -560,7 +560,7 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
           <p className="text-center text-xs font-semibold uppercase tracking-wide">Real AI look, not a filter</p>
           <h3 className="text-center font-serif text-2xl">{result.name}</h3>
           <div className="relative overflow-hidden rounded-2xl">
-            <div className="gen-reveal" style={{ transform: `scale(${zoom})` }}>
+            <div style={{ transform: `scale(${zoom})` }}>
               {sliderOn ? (
                 <BeforeAfter before={result.before} after={result.after} beforeLabel="Before" afterLabel="After" />
               ) : (
