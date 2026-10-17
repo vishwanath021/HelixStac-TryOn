@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 import { tooMany } from "@/lib/http/guard";
 import { prisma } from "@/lib/prisma";
-import { salonGuestOrigin } from "@/lib/public-url";
+import { salonWelcomeTarget } from "@/lib/public-url";
 
 export async function GET(req: Request) {
   const limited = await tooMany(req, "qr", 60, 60 * 60 * 1000);
@@ -12,9 +12,12 @@ export async function GET(req: Request) {
   const format = url.searchParams.get("format") === "svg" ? "svg" : "png";
   const tenant = await prisma.tenant.findUnique({ where: { slug } });
   if (!tenant) return NextResponse.json({ error: "TENANT" }, { status: 404 });
-  const target = `${await salonGuestOrigin(tenant.id, tenant.slug)}/?src=qr`;
+  const target = await salonWelcomeTarget(tenant.id, tenant.slug);
+  if (target.local || !target.url) {
+    return NextResponse.json({ error: "LOCAL_DOMAIN", message: "Set a real salon domain before printing the QR." }, { status: 409 });
+  }
   if (format === "svg") {
-    const svg = await QRCode.toString(target, { type: "svg", margin: 1, color: { dark: "#12312e", light: "#ffffff" } });
+    const svg = await QRCode.toString(target.url, { type: "svg", margin: 1, color: { dark: "#12312e", light: "#ffffff" } });
     return new NextResponse(svg, {
       headers: {
         "content-type": "image/svg+xml",
@@ -22,7 +25,7 @@ export async function GET(req: Request) {
       },
     });
   }
-  const png = await QRCode.toBuffer(target, { type: "png", width: 640, margin: 1, color: { dark: "#12312e", light: "#ffffff" } });
+  const png = await QRCode.toBuffer(target.url, { type: "png", width: 640, margin: 1, color: { dark: "#12312e", light: "#ffffff" } });
   return new NextResponse(new Uint8Array(png), {
     headers: {
       "content-type": "image/png",

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { t } from "@/data/i18n";
+import { QUEUE_POLL_MS } from "@/lib/queue/poll";
 
 type Card = {
   id: string;
@@ -62,7 +63,7 @@ export function QueueDesk({ initial, lang }: { initial: Desk; lang: string }) {
           if (data?.state) setDesk(data);
         })
         .catch(() => undefined);
-    }, 12000);
+    }, QUEUE_POLL_MS);
     return () => clearInterval(timer);
   }, []);
 

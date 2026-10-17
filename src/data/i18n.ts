@@ -275,6 +275,7 @@ const en: Record<string, string> = {
   queueNoService: "No preference",
   queueConsent: "I agree to receive queue updates on this phone.",
   queueJoin: "Join the queue",
+  queueJoined: "You have joined, token {token}, about {min} min.",
   queueRequest: "Request a time",
   queueDate: "Preferred date",
   queueTime: "Preferred time",

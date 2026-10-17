@@ -111,9 +111,9 @@ test("Sunday rush across three salons", async ({ page, browser, request }, testI
   const joined: { slug: string; name: string; token: number; ref: string }[] = [];
   let phoneN = 100;
 
-  async function join(api: APIRequestContext, slug: string, name: string, ip: string) {
+  async function join(api: APIRequestContext, slug: string, name: string) {
     const res = await api.post("/api/v1/queue", {
-      headers: { "x-forwarded-for": ip },
+      headers: { "x-forwarded-for": "10.4.4.4" },
       data: {
         slug,
         name,
@@ -129,12 +129,12 @@ test("Sunday rush across three salons", async ({ page, browser, request }, testI
 
   for (const salon of SALONS) {
     const pair = await Promise.all([
-      join(request, salon.slug, names[0], `10.8.${salon.slug.length}.1`),
-      join(request, salon.slug, names[1], `10.8.${salon.slug.length}.2`),
+      join(request, salon.slug, names[0]),
+      join(request, salon.slug, names[1]),
     ]);
     expect(new Set(pair.map((row) => row.token)).size).toBe(2);
     for (let index = 2; index < names.length; index += 1) {
-      await join(request, salon.slug, names[index], `10.9.${salon.slug.length}.${index}`);
+      await join(request, salon.slug, names[index]);
     }
   }
   expect(joined).toHaveLength(27);
@@ -182,7 +182,8 @@ test("Sunday rush across three salons", async ({ page, browser, request }, testI
   await shot(guest, "customer_queue_phone");
   await guest.goto(`/s/meera-beauty/q/${parlour.ref}`);
   await guest.locator("[data-status='WAITING'][data-ready='yes']").waitFor();
-  await expect(guest.getByText("Token 1")).toBeVisible();
+  await expect(guest.getByText("You have joined, token 1, about 0 min.")).toBeVisible();
+  await expect(guest.getByText("Token 1", { exact: true })).toBeVisible();
   await shot(guest, "customer_ticket_phone");
 
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -225,8 +226,15 @@ test("Sunday rush across three salons", async ({ page, browser, request }, testI
   await expect(page.getByText("No one is waiting")).toBeVisible();
   await shot(page, "owner_desk_clear_desktop");
 
+  await page.goto("/s/meera-beauty/welcome");
+  await expect(page.getByRole("link", { name: "Join queue" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Try a look" })).toBeVisible();
+  await shot(page, "salon_welcome_desktop");
   await page.goto("/s/meera-beauty/qr");
   await expect(page.getByRole("heading", { name: "Meera Beauty Parlour" })).toBeVisible();
+  await expect(page.locator("[data-qr-warning]")).toHaveCount(0);
+  await expect(page.locator("[data-qr-url]")).toContainText("meera-beauty.try.lookuvi.test/welcome");
+  await expect(page.locator("[data-qr-url]")).not.toContainText("localhost");
   await expect(page.locator("img[alt*='QR']")).toBeVisible();
   await shot(page, "qr_poster_desktop");
 

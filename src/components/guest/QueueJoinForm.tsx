@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { t } from "@/data/i18n";
 import { QueueWait } from "@/components/guest/QueueWait";
+import { QUEUE_POLL_MS } from "@/lib/queue/poll";
 
 type Board = {
   name: string;
@@ -55,9 +56,22 @@ export function QueueJoinForm({ initial }: { initial: Board }) {
           }
         })
         .catch(() => undefined);
-    }, 12000);
+    }, QUEUE_POLL_MS);
     return () => clearInterval(timer);
   }, [board.slug]);
+
+  function deviceId() {
+    const key = "lookuvi-device";
+    try {
+      const saved = localStorage.getItem(key) || "";
+      if (saved.length >= 8) return saved;
+      const next = crypto.randomUUID();
+      localStorage.setItem(key, next);
+      return next;
+    } catch {
+      return "";
+    }
+  }
 
   async function join(nextName: string, nextPhone: string, agreed: boolean) {
     setBusy(true);
@@ -73,6 +87,7 @@ export function QueueJoinForm({ initial }: { initial: Board }) {
         consent: agreed,
         requestedDate: request ? date : undefined,
         requestedSlot: request ? slot : undefined,
+        deviceId: deviceId(),
       }),
     });
     const data = await res.json().catch(() => ({}));

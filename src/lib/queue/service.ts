@@ -16,6 +16,12 @@ export class QueueError extends Error {
 
 type Sender = (message: NotifyMessage) => Promise<NotifyResult>;
 
+/** One salon Wi-Fi can admit a full hour of guests. Abuse is limited per phone and per device. */
+export const QUEUE_IP_JOINS_PER_HOUR = 60;
+export const QUEUE_PHONE_JOINS_PER_HOUR = 4;
+export const QUEUE_DEVICE_JOINS_PER_HOUR = 8;
+const HOUR_MS = 60 * 60 * 1000;
+
 const LIVE_ACTIVE = ["WAITING", "CALLED", "IN_SERVICE"];
 const REQUEST_ACTIVE = ["REQUESTED", "CONFIRMED"];
 
@@ -229,6 +235,7 @@ export async function joinQueue(input: {
   requestedDate?: string;
   requestedSlot?: string;
   ip: string;
+  deviceId?: string;
   send?: Sender;
 }) {
   const send = input.send || notifyGuest;
@@ -257,9 +264,13 @@ export async function joinQueue(input: {
     return ticket(tenant.slug, existing as EntryRow, state.mode, wait.waitMin, wait.ahead);
   }
 
-  const ipLimit = await sharedRateLimit(`queue:ip:${input.ip}`, 8, 10 * 60 * 1000);
-  const phoneLimit = await sharedRateLimit(`queue:phone:${tenant.id}:${phone}`, 4, 60 * 60 * 1000);
-  if (!ipLimit.ok || !phoneLimit.ok) throw new QueueError("RATE", "Too many joins. Wait a few minutes and try again.", 429);
+  const device = deviceKey(input.deviceId);
+  const ipLimit = await sharedRateLimit(`queue:ip:${input.ip}`, QUEUE_IP_JOINS_PER_HOUR, HOUR_MS);
+  const phoneLimit = await sharedRateLimit(`queue:phone:${tenant.id}:${phone}`, QUEUE_PHONE_JOINS_PER_HOUR, HOUR_MS);
+  const deviceLimit = device
+    ? await sharedRateLimit(`queue:device:${tenant.id}:${device}`, QUEUE_DEVICE_JOINS_PER_HOUR, HOUR_MS)
+    : { ok: true as const };
+  if (!ipLimit.ok || !phoneLimit.ok || !deviceLimit.ok) throw new QueueError("RATE", "Too many joins. Wait a few minutes and try again.", 429);
 
   await findService(tenant.id, input.serviceId);
   const created = await createQueuedEntry({
@@ -277,8 +288,24 @@ export async function joinQueue(input: {
   const loaded = await loadDay(tenant.id, dayKey);
   const row = loaded.entries.find((entry) => entry.id === created.id) || (created as EntryRow);
   const wait = timing(loaded.entries, row.id, loaded.state.avgMinutes, loaded.state.units);
-  if (state.mode !== "REQUEST") await sweepAlerts(tenant.id, send);
+  if (state.mode !== "REQUEST") {
+    await safeSend(send, {
+      ...joinedMessage({
+        salon: tenant.name,
+        token: row.token,
+        waitMin: wait.waitMin,
+        link: statusUrl(tenant.slug, row.cancelToken),
+      }),
+      to: phone,
+    });
+    await sweepAlerts(tenant.id, send);
+  }
   return ticket(tenant.slug, row, state.mode, wait.waitMin, wait.ahead);
+}
+
+function deviceKey(value: string | undefined) {
+  const clean = (value || "").trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
+  return clean.length >= 8 ? clean : "";
 }
 
 export async function guestTicket(slug: string, ref: string) {
@@ -461,10 +488,14 @@ export async function addWalkIn(tenantId: string, input: { name?: string; phone?
     source: "WALKIN",
   });
   if (phone) {
+    const loaded = await loadDay(tenantId, dayKey);
+    const row = loaded.entries.find((entry) => entry.id === created.id);
+    const wait = timing(loaded.entries, created.id, loaded.state.avgMinutes, loaded.state.units);
     await safeSend(send, {
       ...joinedMessage({
         salon: tenant.name,
         token: created.token,
+        waitMin: row ? wait.waitMin : 0,
         link: statusUrl(tenant.slug, created.cancelToken),
       }),
       to: phone,

@@ -12,6 +12,7 @@ const joinSchema = z.object({
   consent: z.boolean(),
   requestedDate: z.string().max(10).optional(),
   requestedSlot: z.string().max(5).optional(),
+  deviceId: z.string().max(80).optional(),
 });
 
 export async function GET(req: Request) {
