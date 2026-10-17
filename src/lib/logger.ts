@@ -33,6 +33,12 @@ export function logProviderCall(entry: {
   latencyMs: number;
   costUsd?: number;
   requestId?: string;
+  /** Text input count from the provider usage object. */
+  textCount?: number;
+  /** Image input count from the provider usage object. */
+  pictureIn?: number;
+  /** Image output count from the provider usage object. */
+  pictureOut?: number;
 }) {
   logInfo("provider call", {
     provider: entry.provider,
@@ -41,6 +47,9 @@ export function logProviderCall(entry: {
     status: entry.status,
     latencyMs: entry.latencyMs,
     costUsd: entry.costUsd ?? 0,
+    textCount: entry.textCount ?? 0,
+    pictureIn: entry.pictureIn ?? 0,
+    pictureOut: entry.pictureOut ?? 0,
     requestId: (entry.requestId || "").slice(0, 128),
   });
 }

@@ -467,20 +467,20 @@ test("super admin chooses the salon hairstyle model without calling a provider",
   await page.goto("/super/ai");
   const model = page.getByRole("group", { name: "Salon hairstyle model" });
   await expect(model).toBeVisible();
-  await expect(model.getByRole("radio", { name: /FLUX\.3/ })).toBeChecked();
-  await expect(model.getByRole("radio", { name: /sunburst/i })).toBeVisible();
+  await expect(model.getByRole("radio", { name: /sunburst/i })).toBeChecked();
+  await expect(model.getByRole("radio", { name: /FLUX\.3/ })).toBeVisible();
   await artifact(page, "super-provider");
   await page.goto("/s/demo");
   await expect(page.getByText("Reference mode")).toHaveCount(0);
   await expect(page.getByText("Hair texture")).toHaveCount(0);
   await expect(page.getByText(/one paid call/i)).toHaveCount(0);
   await page.goto("/super/ai");
-  await model.getByRole("radio", { name: /sunburst/i }).check();
-  await page.getByRole("button", { name: "Save salon default" }).click();
-  await expect(page.getByText("Salon screens use OpenAI sunburst, quality medium.")).toBeVisible();
   await model.getByRole("radio", { name: /FLUX\.3/ }).check();
   await page.getByRole("button", { name: "Save salon default" }).click();
   await expect(page.getByText("Salon screens use FLUX.3.")).toBeVisible();
+  await model.getByRole("radio", { name: /sunburst/i }).check();
+  await page.getByRole("button", { name: "Save salon default" }).click();
+  await expect(page.getByText("Salon screens use OpenAI sunburst, quality medium.")).toBeVisible();
 });
 
 test("super admin sees assumed COGS", async ({ page }) => {
@@ -504,7 +504,7 @@ test("super admin sees assumed COGS", async ({ page }) => {
   const sync = page.getByRole("button", { name: "Sync real cost from fal" });
   await expect(sync).toBeVisible();
   await sync.click();
-  await expect(page.getByText(/ADMIN-scoped key/)).toBeVisible();
+  await expect(page.getByText(/BILLING preset/)).toBeVisible();
   await page.goto("/super/ai");
   await page.getByText("Advanced (internal)").click();
   await page.getByRole("button", { name: "Calibration run" }).click();

@@ -1,5 +1,13 @@
 import { benchmarkRunCapInr } from "@/lib/ai/benchmark";
-import { FLUX3_USD_PER_OUTPUT_MEGAPIXEL } from "@/lib/ai/cost-source";
+import {
+  FLUX3_RESOLUTION_FRAME,
+  FLUX3_USD_PER_OUTPUT_MEGAPIXEL,
+  flux3MegapixelsForResolution,
+  flux3UsdForResolution,
+  type Flux3Resolution,
+} from "@/lib/ai/cost-source";
+
+export type { Flux3Resolution };
 import { editSizeForAspect, type EditSize } from "@/lib/ai/edit-request";
 import { bufferedInr, exactInr } from "@/lib/ai/tiers";
 
@@ -41,7 +49,7 @@ export function falUsesNumberedPrompt(id: string) {
 export const FAL_COMPARISON_MODELS: readonly FalModelRow[] = [
   {
     id: "blackforestlabs/flux-3/edit-image",
-    label: "blackforestlabs/flux-3/edit-image (aspect_ratio from the selfie; resolution left at 1k)",
+    label: "blackforestlabs/flux-3/edit-image (aspect_ratio from the selfie; 1k, or 768sq for everyday when enabled)",
     experimental: false,
     safetyChecker: false,
     sizeMode: "defaults",
@@ -151,6 +159,32 @@ export type FalUsdRange = {
   detail: string;
 };
 
+/** Everyday previews, bridal, or the photo that is kept. */
+export type Flux3Use = "everyday" | "bridal" | "saved";
+
+/**
+ * Everyday try-ons use 768sq only when FLUX3_EVERYDAY_768=1.
+ * The switch ships off, so everyday stays at 1k until it is set.
+ */
+export function flux3Everyday768Enabled() {
+  const value = process.env.FLUX3_EVERYDAY_768?.trim().toLowerCase();
+  return value === "1" || value === "true";
+}
+
+/** Bridal and the saved photo stay at 1k. Everyday is 768sq only while the flag is on. */
+export function flux3ResolutionFor(use: Flux3Use): Flux3Resolution {
+  if (use === "everyday" && flux3Everyday768Enabled()) return "768sq";
+  return "1k";
+}
+
+/** Benchmark runs and any tool that is not an everyday preview or a bridal look stay at 1k. */
+export function flux3UseFor(source: "benchmark" | "tryon", tool: string): Flux3Use {
+  if (source !== "tryon") return "saved";
+  if (tool === "bridal" || tool === "mehendi") return "bridal";
+  if (tool === "style" || tool === "brows" || tool === "beard" || tool === "nails" || tool === "colour") return "everyday";
+  return "saved";
+}
+
 /**
  * Dollar range before the 8% INR buffer.
  * A model that resizes each input to 1MP uses 1 MP as the low input reading and one MP per input as the high reading.
@@ -160,6 +194,7 @@ export function falUsdRange(
   id: string,
   output: EditSize,
   inputs: { width: number; height: number }[],
+  resolution: Flux3Resolution = "1k",
 ): FalUsdRange | null {
   const [outW, outH] = output.split("x").map((part) => Number(part));
   const outMp = megapixels(outW, outH);
@@ -193,11 +228,13 @@ export function falUsdRange(
     };
   }
   if (id === "blackforestlabs/flux-3/edit-image") {
-    const usd = FLUX3_USD_PER_OUTPUT_MEGAPIXEL;
+    const frame = FLUX3_RESOLUTION_FRAME[resolution];
+    const usd = flux3UsdForResolution(resolution);
+    const mp = flux3MegapixelsForResolution(resolution);
     return {
       lowUsd: usd,
       highUsd: usd,
-      detail: `$${FLUX3_USD_PER_OUTPUT_MEGAPIXEL} per output megapixel, one config value. The request leaves resolution at 1k, which fal bills as 1.00 megapixel. A downloaded 832×1248 frame is the same 1.00. The 8% buffer is applied to this figure. image_urls accepts 1–10 images. The schema has no width or height, so aspect_ratio is the closest published ratio to the selfie. Resolution stays at 1k.`,
+      detail: `$${FLUX3_USD_PER_OUTPUT_MEGAPIXEL} per output megapixel. This quote is ${resolution}, about ${frame.width}×${frame.height} (${mp.toFixed(2)} MP). 768sq is about 672×880 (0.59 MP); fal has not published that price, so the 768 figure is our estimate. 1k is about 880×1184 (1.04 MP). The 8% buffer is applied to this figure. image_urls accepts 1–10 images. The schema has no width or height, so aspect_ratio is the closest published ratio to the selfie.`,
     };
   }
   if (id === "fal-ai/nano-banana-pro/edit") {
@@ -238,14 +275,20 @@ export function falUsdRange(
   return null;
 }
 
-export function quoteFalModel(id: string, width: number, height: number, reference = { width: 512, height: 512 }) {
+export function quoteFalModel(
+  id: string,
+  width: number,
+  height: number,
+  reference = { width: 512, height: 512 },
+  resolution: Flux3Resolution = "1k",
+) {
   const row = falModel(id);
   if (!row) return { ok: false as const, message: `${id} is not a configured comparison model. No other model was substituted.` };
   const size = falOutputSize(width, height);
   const range = falUsdRange(id, size, [
     { width, height },
     reference,
-  ]);
+  ], id === "blackforestlabs/flux-3/edit-image" ? resolution : "1k");
   if (!range) return { ok: false as const, message: `${id} has no documented price. The request was not sent.` };
   const estimateUsd = range.highUsd;
   const estimateInr = bufferedInr(estimateUsd);
@@ -344,6 +387,9 @@ export function buildFalEditBody(id: string, args: {
   /** Selfie pixels. Flux-3 uses these for aspect_ratio. Sunburst and the size buckets stay on `size`. */
   width?: number;
   height?: number;
+  /** flux-3 output size. Omitted requests use the saved-photo default, which is 1k. */
+  resolution?: Flux3Resolution;
+  fluxUse?: Flux3Use;
 }) {
   const row = falModel(id);
   if (!row) return null;
@@ -361,6 +407,9 @@ export function buildFalEditBody(id: string, args: {
     }
     if (IMAGE_SIZE_ON_MINIMAL.has(row.id)) minimal.image_size = { width, height };
     if (row.id === "openai/gpt-image-2/edit") minimal.quality = "medium";
+    if (row.id === "blackforestlabs/flux-3/edit-image") {
+      minimal.resolution = args.resolution ?? flux3ResolutionFor(args.fluxUse ?? "saved");
+    }
     return minimal;
   }
   const [width, height] = args.size.split("x").map((part) => Number(part));

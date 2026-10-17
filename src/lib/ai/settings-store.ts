@@ -3,7 +3,7 @@ import { decryptSecret, encryptSecret, keyHint } from "@/lib/crypto/secret";
 import { allowByoKey } from "@/lib/ai/credentials";
 import { spendSummary } from "@/lib/ai/spend";
 import { parseTier, tierCatalog, type ImageProviderName, type ModelTier, type TierRequest } from "@/lib/ai/tiers";
-import { parseGuestEngine, type GuestEngine } from "@/lib/ai/guest-hairstyle";
+import { DEFAULT_GUEST_ENGINE, parseGuestEngine, type GuestEngine } from "@/lib/ai/guest-hairstyle";
 import { prisma } from "@/lib/prisma";
 
 const providerSchema = z.enum(["openai", "gemini"]);
@@ -27,6 +27,7 @@ export type PlatformAiSettings = SalonAiSettings & {
   openaiKey: StoredKeyStatus;
   geminiKey: StoredKeyStatus;
   falKey: StoredKeyStatus & { enabled: boolean };
+  falBillingKey: StoredKeyStatus;
   openRouterKey: StoredKeyStatus & { enabled: boolean };
   guestEngine: GuestEngine;
 };
@@ -110,11 +111,12 @@ export async function platformAiView(): Promise<PlatformAiSettings> {
     openaiKey,
     geminiKey,
     falKey: { ...fal, enabled: fal.saved && (await setting("platform_fal_enabled")) === "true" },
+    falBillingKey: await storedStatus("platform_fal_billing_key_cipher", "platform_fal_billing_key_hint"),
     openRouterKey: {
       ...(await storedStatus("platform_openrouter_key_cipher", "platform_openrouter_key_hint")),
       enabled: Boolean(await setting("platform_openrouter_key_cipher")) && (await setting("platform_openrouter_enabled")) === "true",
     },
-    guestEngine: parseGuestEngine(await setting("guest_hairstyle_engine")) || "fal",
+    guestEngine: parseGuestEngine(await setting("guest_hairstyle_engine")) || DEFAULT_GUEST_ENGINE,
   };
 }
 
@@ -196,6 +198,29 @@ export async function saveFalKey(
       action: "AI_KEY_UPDATE",
       target: "platform",
       meta: JSON.stringify({ provider: "fal", rotated: Boolean(input.apiKey.trim()), removed: input.remove, enabled: input.enabled }),
+    },
+  });
+}
+
+export async function saveFalBillingKey(input: { apiKey: string; remove: boolean }, actorId: string) {
+  if (input.remove) {
+    await putSetting("platform_fal_billing_key_cipher", "");
+    await putSetting("platform_fal_billing_key_hint", "");
+  } else {
+    const next = freshFalKey(input.apiKey);
+    if (next) {
+      await putSetting("platform_fal_billing_key_cipher", encryptSecret(next));
+      await putSetting("platform_fal_billing_key_hint", keyHint(next));
+    } else if (!(await setting("platform_fal_billing_key_cipher")) && input.apiKey.trim()) {
+      throw new Error("INVALID_KEY");
+    }
+  }
+  await prisma.auditLog.create({
+    data: {
+      actorId,
+      action: "AI_KEY_UPDATE",
+      target: "platform",
+      meta: JSON.stringify({ provider: "fal-billing", rotated: Boolean(input.apiKey.trim()), removed: input.remove }),
     },
   });
 }

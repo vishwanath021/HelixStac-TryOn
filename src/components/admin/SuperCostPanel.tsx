@@ -173,7 +173,7 @@ export function SuperCostPanel({ initial }: { initial: Report }) {
       </ul>
       <div className="flex flex-wrap items-center gap-3">
         <button className="btn secondary" type="button" onClick={() => void syncFal()}>Sync real cost from fal</button>
-        <p className="text-sm text-muted">Uses the saved fal key. Billing events need an ADMIN-scoped key. An API-scoped key can run models and is refused here.</p>
+        <p className="text-sm text-muted">Uses the fal billing key when one is saved, otherwise the generation key. Billing events need a read-only BILLING preset. An API-scoped generation key is refused.</p>
       </div>
       {notice && <p className="text-sm" role="status">{notice}</p>}
       <p className="text-sm">{totalCount} {totalCount === 1 ? "image" : "images"}</p>

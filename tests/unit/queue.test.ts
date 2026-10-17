@@ -10,7 +10,7 @@ import { kolkataDayKey } from "@/lib/queue/day";
 import { peopleAhead, waitMinutes } from "@/lib/queue/estimate";
 import { displayedWait } from "@/lib/queue/wait-display";
 import { indianMobile } from "@/lib/queue/phone";
-import { QueueError, addWalkIn, callNext, confirmRequest, ensureQueueState, finishEntry, joinQueue, publicBoard, purgeOldQueueEntries, saveQueueSettings, setQueueOpen, sweepAlerts } from "@/lib/queue/service";
+import { QUEUE_DEVICE_JOINS_PER_HOUR, QUEUE_IP_JOINS_PER_HOUR, QUEUE_PHONE_JOINS_PER_HOUR, QueueError, addWalkIn, callNext, confirmRequest, ensureQueueState, finishEntry, guestVisit, joinQueue, publicBoard, purgeOldQueueEntries, saveQueueSettings, setQueueOpen, sweepAlerts } from "@/lib/queue/service";
 import { resetRateLimits } from "@/lib/ratelimit";
 import { loadSalons } from "@/lib/super/directory";
 
@@ -81,8 +81,9 @@ describe("queue joins", () => {
     expect(second.token).toBe(2);
     expect(second.ahead).toBe(1);
     expect(second.waitMin).toBe(15);
-    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(0);
+    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(2);
     expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(0);
+    expect(send.mock.calls[0][0].body).toContain("you have joined, token 1, about 0 min");
     const again = await joinQueue({ slug, name: "Asha", phone: "9876500101", consent: true, ip: "join-c", send });
     expect(again.ref).toBe(first.ref);
     const before = send.mock.calls.length;
@@ -103,11 +104,12 @@ describe("queue joins", () => {
     await saveQueueSettings(tenant.id, { units: 1, avgMinutes: 20, alertLeadMin: 5, mode: "LIVE", unitLabel: "chair" });
     const ticket = await joinQueue({ slug, name: "Asha", phone: "9876500111", consent: true, ip: "near", send });
     expect(ticket.waitMin).toBe(0);
-    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(0);
+    expect(send.mock.calls.filter((call) => call[0].kind === "joined")).toHaveLength(1);
     expect(send.mock.calls.filter((call) => call[0].kind === "almost")).toHaveLength(1);
+    expect(send.mock.calls[0][0].body).toContain("you have joined, token 1, about 0 min");
     await callNext(tenant.id, send);
-    expect(send.mock.calls).toHaveLength(1);
-    expect(send.mock.calls[0][0].kind).toBe("almost");
+    expect(send.mock.calls).toHaveLength(2);
+    expect(send.mock.calls[1][0].kind).toBe("almost");
   });
 
   it("sends a walk-in with a phone only the join message", async () => {
@@ -118,8 +120,9 @@ describe("queue joins", () => {
     expect(send.mock.calls).toHaveLength(1);
     expect(send.mock.calls[0][0].kind).toBe("joined");
     expect(send.mock.calls[0][0].to).toBe("919876500112");
-    expect(send.mock.calls[0][0].parameters[0]).toBe("1");
-    expect(send.mock.calls[0][0].parameters[1]).toContain(`/s/${slug}/q/`);
+    expect(send.mock.calls[0][0].body).toContain("you have joined, token 1, about 0 min");
+    expect(send.mock.calls[0][0].parameters[1]).toBe("1");
+    expect(send.mock.calls[0][0].parameters[3]).toContain(`/s/${slug}/q/`);
     await addWalkIn(tenant.id, { name: "Desk" }, send);
     expect(send.mock.calls).toHaveLength(1);
     await expect(addWalkIn(tenant.id, { name: "Bad", phone: "12345" }, send)).rejects.toMatchObject({ code: "PHONE" });
@@ -137,12 +140,85 @@ describe("queue joins", () => {
     await expect(joinQueue({ slug: off.slug, name: "Asha", phone: "9876500104", consent: true, ip: "off", send })).rejects.toMatchObject({ status: 404 });
   });
 
-  it("limits how often one network can join", async () => {
+  it("lets one salon Wi-Fi join for an hour, and limits a phone and a device", async () => {
     const { slug } = await salon();
-    for (let index = 0; index < 8; index += 1) {
-      await joinQueue({ slug, name: `Guest ${index}`, phone: `98765002${String(index).padStart(2, "0")}`, consent: true, ip: "shared-net", send });
+    for (let index = 0; index < 27; index += 1) {
+      const ticket = await joinQueue({
+        slug,
+        name: `Guest ${index}`,
+        phone: `96${String(index).padStart(8, "0")}`,
+        consent: true,
+        ip: "salon-wifi",
+        deviceId: `device-${index}-wifi`,
+        send,
+      });
+      expect(ticket.token).toBe(index + 1);
     }
-    await expect(joinQueue({ slug, name: "Late", phone: "9876500299", consent: true, ip: "shared-net", send })).rejects.toMatchObject({ code: "RATE" });
+    for (let index = 27; index < QUEUE_IP_JOINS_PER_HOUR; index += 1) {
+      await joinQueue({
+        slug,
+        name: `More ${index}`,
+        phone: `97${String(index).padStart(8, "0")}`,
+        consent: true,
+        ip: "salon-wifi",
+        deviceId: `device-more-${index}`,
+        send,
+      });
+    }
+    await expect(joinQueue({
+      slug,
+      name: "Late",
+      phone: "9890000099",
+      consent: true,
+      ip: "salon-wifi",
+      deviceId: "device-late-wifi",
+      send,
+    })).rejects.toMatchObject({ code: "RATE" });
+
+    const { slug: phoneSlug } = await salon();
+    for (let index = 0; index < QUEUE_PHONE_JOINS_PER_HOUR; index += 1) {
+      const ticket = await joinQueue({
+        slug: phoneSlug,
+        name: "Repeat",
+        phone: "9876500299",
+        consent: true,
+        ip: `phone-ip-${index}`,
+        deviceId: `phone-device-${index}`,
+        send,
+      });
+      await guestVisit({ slug: phoneSlug, ref: ticket.ref, action: "cancel", ip: `cancel-${index}` });
+    }
+    await expect(joinQueue({
+      slug: phoneSlug,
+      name: "Repeat",
+      phone: "9876500299",
+      consent: true,
+      ip: "phone-ip-last",
+      deviceId: "phone-device-last",
+      send,
+    })).rejects.toMatchObject({ code: "RATE" });
+
+    const { slug: deviceSlug } = await salon();
+    for (let index = 0; index < QUEUE_DEVICE_JOINS_PER_HOUR; index += 1) {
+      await joinQueue({
+        slug: deviceSlug,
+        name: `Desk ${index}`,
+        phone: `95${String(index).padStart(8, "0")}`,
+        consent: true,
+        ip: `device-ip-${index}`,
+        deviceId: "shared-handset-1",
+        send,
+      });
+    }
+    await expect(joinQueue({
+      slug: deviceSlug,
+      name: "Extra",
+      phone: "9599999999",
+      consent: true,
+      ip: "device-ip-last",
+      deviceId: "shared-handset-1",
+      send,
+    })).rejects.toMatchObject({ code: "RATE" });
   });
 
   it("confirms a requested visit and deletes old rows", async () => {

@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { BilledProviderError, UnbilledProviderError, UncertainBillingError, UnknownModelError } from "@/lib/ai/errors";
-import { buildFalEditBody, falModel } from "@/lib/ai/fal-models";
+import { buildFalEditBody, falModel, type Flux3Resolution } from "@/lib/ai/fal-models";
 import type { EditSize } from "@/lib/ai/edit-request";
 import { numberEnv } from "@/lib/env";
 import { logInfo } from "@/lib/logger";
@@ -188,6 +188,8 @@ export async function postFalReferenceEdit(args: {
   referenceJpeg: Buffer;
   size: EditSize;
   estimateUsd: number;
+  /** flux-3 resolution. Omitted calls stay at 1k. */
+  resolution?: Flux3Resolution;
   fetchImpl?: FetchImpl;
   now?: () => number;
   deadlineMs?: number;
@@ -210,6 +212,7 @@ export async function postFalReferenceEdit(args: {
     size: args.size,
     width: selfieUpload.width,
     height: selfieUpload.height,
+    resolution: args.resolution,
   });
   if (!body) throw new UnknownModelError(`${row.id} is not a configured fal edit. No other model was called.`);
   const started = now();

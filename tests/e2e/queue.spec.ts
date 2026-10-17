@@ -76,6 +76,8 @@ test("the desk calls the next guest, finishes the visit, and adds a walk-in", as
   await page.getByRole("button", { name: "NEXT" }).click();
   await expect(page.getByRole("heading", { name: "Now serving" })).toBeVisible();
   await expect(page.getByText("Token")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
   await expect(page.getByRole("button", { name: "Start", exact: true })).toHaveCount(0);
   await expect(page.getByText("Queue Guest")).toBeVisible();
   await page.getByRole("button", { name: "Done" }).click();

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { t } from "@/data/i18n";
 import { QueueWait } from "@/components/guest/QueueWait";
+import { QUEUE_POLL_MS } from "@/lib/queue/poll";
 
 type Ticket = {
   ref: string;
@@ -43,7 +44,7 @@ export function QueueTicket({ slug, initial }: { slug: string; initial: Ticket }
           }
         })
         .catch(() => undefined);
-    }, 12000);
+    }, QUEUE_POLL_MS);
     return () => clearInterval(timer);
   }, [slug, ticket.ref]);
 
@@ -74,8 +75,13 @@ export function QueueTicket({ slug, initial }: { slug: string; initial: Ticket }
   if (ticket.status === "DONE") line = t(lang, "queueFinished");
   if (ticket.status === "NO_SHOW") line = t(lang, "queueMissed");
 
+  const joined = ticket.status === "WAITING" || ticket.status === "CALLED" || ticket.status === "IN_SERVICE"
+    ? t(lang, "queueJoined", { token: ticket.token, min: ticket.waitMin })
+    : "";
+
   return (
     <div data-status={ticket.status} data-ready={ready ? "yes" : "no"}>
+      {joined ? <p className="mt-4 text-lg" data-queue-joined="yes">{joined}</p> : null}
       {live ? (
         <QueueWait key={refreshKey} serverWait={ticket.waitMin} ahead={ticket.ahead} token={ticket.token} lang={lang} phrase={ticket.status === "CALLED" ? "turn" : undefined} />
       ) : (

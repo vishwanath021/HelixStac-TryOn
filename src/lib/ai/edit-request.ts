@@ -12,6 +12,8 @@
  * included. They are list prices, not invoices.
  */
 
+import { isFlexibleOutputSize } from "@/lib/ai/output-size";
+
 export type EditQuality = "low" | "medium" | "high";
 export type EditSize = "1024x1024" | "1024x1536" | "1536x1024";
 export type EditFormat = "png" | "jpeg" | "webp";
@@ -30,6 +32,11 @@ export type ImageEditCaps = {
    * A quote then uses token rates only. Do not invent a per-image dollar cell.
    */
   tokenOnly?: boolean;
+  /**
+   * gpt-image-2 and 2.5 accept WIDTHxHEIGHT, not only the three classic cells.
+   * Guest try-on uses that to match the selfie, including 1024x1360 for 3:4.
+   */
+  flexibleSize?: boolean;
 };
 
 const SIZES = ["1024x1024", "1024x1536", "1536x1024"] as const;
@@ -92,6 +99,7 @@ export const IMAGE_EDIT_MODELS: Record<string, ImageEditCaps> = {
     inputFidelity: null,
     outputUsd: {},
     tokenOnly: true,
+    flexibleSize: true,
   },
   "gpt-image-2.5-flare": {
     id: "gpt-image-2.5-flare",
@@ -101,6 +109,7 @@ export const IMAGE_EDIT_MODELS: Record<string, ImageEditCaps> = {
     inputFidelity: null,
     outputUsd: {},
     tokenOnly: true,
+    flexibleSize: true,
   },
 };
 
@@ -116,7 +125,7 @@ export type PlannedEdit = {
   model: string;
   prompt: string;
   quality: EditQuality;
-  size: EditSize;
+  size: string;
   outputFormat: EditFormat;
   n: 1;
   inputFidelity: "high" | "low" | null;
@@ -136,7 +145,7 @@ export function planImageEdit(args: {
   model: string;
   prompt: string;
   quality: EditQuality;
-  size: EditSize;
+  size: string;
   outputFormat: EditFormat;
   inputFidelity: "high" | "low" | null;
   imageOrder: string[];
@@ -149,7 +158,8 @@ export function planImageEdit(args: {
   if (!caps.qualities.includes(args.quality)) {
     return { ok: false, message: `${args.model} does not support quality ${args.quality}.` };
   }
-  if (!caps.sizes.includes(args.size)) {
+  const classic = (caps.sizes as readonly string[]).includes(args.size);
+  if (caps.flexibleSize ? !isFlexibleOutputSize(args.size) : !classic) {
     return { ok: false, message: `${args.model} does not support size ${args.size}.` };
   }
   if (!caps.outputFormats.includes(args.outputFormat)) {
@@ -195,7 +205,7 @@ export function editFormFields(plan: PlannedEdit): Record<string, string> {
   return fields;
 }
 
-export function outputListUsd(model: string, quality: EditQuality, size: EditSize): number | null {
+export function outputListUsd(model: string, quality: EditQuality, size: string): number | null {
   const caps = imageEditModel(model);
-  return caps?.outputUsd[quality]?.[size] ?? null;
+  return caps?.outputUsd[quality]?.[size as EditSize] ?? null;
 }

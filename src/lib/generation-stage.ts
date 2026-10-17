@@ -1,5 +1,5 @@
-/** Midpoint of the 47–94s generations we have seen. The bar is time-based, and it stops at 92% until the photo arrives. */
-export const GENERATION_EXPECTED_MS = 70_000;
+/** Sunburst at quality medium is about 18 seconds. The bar is time-based, and it stops at 92% until the photo arrives. */
+export const GENERATION_EXPECTED_MS = 18_000;
 
 export function generationStages(tool: string) {
   if (tool === "bridal-own") {

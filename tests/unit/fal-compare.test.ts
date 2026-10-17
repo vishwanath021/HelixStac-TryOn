@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { COMPARISON_MODELS, comparisonModel, quoteComparisonModel } from "@/lib/ai/compare-models";
 import { resolveFalKey, resolveOpenAIKey } from "@/lib/ai/credentials";
 import { BilledProviderError, UncertainBillingError } from "@/lib/ai/errors";
-import { FAL_NUMBERED_IMAGE_PROMPT, buildFalEditBody, closestFluxAspect, falModel } from "@/lib/ai/fal-models";
+import { flux3UsdForResolution } from "@/lib/ai/cost-source";
+import { FAL_NUMBERED_IMAGE_PROMPT, buildFalEditBody, closestFluxAspect, falModel, falUsdRange, flux3ResolutionFor, quoteFalModel } from "@/lib/ai/fal-models";
 import { bufferedInr } from "@/lib/ai/tiers";
 import { falSubmitHeaders, falTimeoutMs, postFalReferenceEdit } from "@/lib/ai/fal-reference";
 import { productionModelNotice } from "@/lib/ai/model-notices";
@@ -35,6 +36,8 @@ describe("fal and shutdown catalogue", () => {
             "platform_fal_key_cipher",
             "platform_fal_key_hint",
             "platform_fal_enabled",
+            "platform_fal_billing_key_cipher",
+            "platform_fal_billing_key_hint",
           ],
         },
       },
@@ -43,6 +46,7 @@ describe("fal and shutdown catalogue", () => {
     delete process.env.FAL_KEY;
     delete process.env.FAL_TIMEOUT_MS;
     delete process.env.FAL_QUEUE_DEADLINE_MS;
+    delete process.env.FLUX3_EVERYDAY_768;
   });
 
   it("waits one hour for a fal comparison unless the deadline is set", () => {
@@ -132,7 +136,7 @@ describe("fal and shutdown catalogue", () => {
     expect(comparisonModel("gpt-image-2")?.provider).toBe("openai");
     expect(comparisonModel("openai/gpt-image-2/edit")?.provider).toBe("fal");
     const usd: Record<string, number> = {
-      "blackforestlabs/flux-3/edit-image": 0.024,
+      "blackforestlabs/flux-3/edit-image": flux3UsdForResolution("1k"),
       "fal-ai/nano-banana-pro/edit": 0.15,
       "fal-ai/nano-banana-2/edit": 0.08,
       "bytedance/seedream/v5/lite/edit": 0.035,
@@ -146,7 +150,7 @@ describe("fal and shutdown catalogue", () => {
         size: "1024x1536",
       });
       const keys: Record<string, string[]> = {
-        "blackforestlabs/flux-3/edit-image": ["aspect_ratio", "image_urls", "prompt"],
+        "blackforestlabs/flux-3/edit-image": ["aspect_ratio", "image_urls", "prompt", "resolution"],
         "fal-ai/nano-banana-pro/edit": ["aspect_ratio", "image_urls", "prompt"],
         "fal-ai/nano-banana-2/edit": ["aspect_ratio", "image_urls", "prompt"],
         "bytedance/seedream/v5/lite/edit": ["image_size", "image_urls", "prompt"],
@@ -174,6 +178,7 @@ describe("fal and shutdown catalogue", () => {
       height: 1024,
     });
     expect(portraitBody?.aspect_ratio).toBe("3:4");
+    expect(portraitBody?.resolution).toBe("1k");
     expect(portraitBody).not.toHaveProperty("image_size");
     expect(closestFluxAspect(1024, 1536)).toBe("2:3");
     expect(closestFluxAspect(1536, 1024)).toBe("3:2");
@@ -220,7 +225,59 @@ describe("fal and shutdown catalogue", () => {
     });
     expect(posted.aspect_ratio).toBe("3:4");
     expect(posted.image_size).toBeUndefined();
-    expect(Object.keys(posted).sort()).toEqual(["aspect_ratio", "image_urls", "prompt"]);
+    expect((posted as { resolution?: string }).resolution).toBe("1k");
+    expect(Object.keys(posted).sort()).toEqual(["aspect_ratio", "image_urls", "prompt", "resolution"]);
+  });
+
+  it("keeps everyday at 1k until the 768 flag is on, and never drops bridal or the saved photo", () => {
+    delete process.env.FLUX3_EVERYDAY_768;
+    expect(flux3ResolutionFor("everyday")).toBe("1k");
+    expect(flux3ResolutionFor("bridal")).toBe("1k");
+    expect(flux3ResolutionFor("saved")).toBe("1k");
+    const off = buildFalEditBody("blackforestlabs/flux-3/edit-image", {
+      prompt: FAL_NUMBERED_IMAGE_PROMPT,
+      selfieUrl: "https://cdn.example/selfie.png",
+      referenceUrl: "https://cdn.example/reference.jpg",
+      size: "1024x1536",
+      fluxUse: "everyday",
+    });
+    expect(off?.resolution).toBe("1k");
+    process.env.FLUX3_EVERYDAY_768 = "1";
+    expect(flux3ResolutionFor("everyday")).toBe("768sq");
+    expect(flux3ResolutionFor("bridal")).toBe("1k");
+    expect(flux3ResolutionFor("saved")).toBe("1k");
+    const everyday = buildFalEditBody("blackforestlabs/flux-3/edit-image", {
+      prompt: FAL_NUMBERED_IMAGE_PROMPT,
+      selfieUrl: "https://cdn.example/selfie.png",
+      referenceUrl: "https://cdn.example/reference.jpg",
+      size: "1024x1536",
+      fluxUse: "everyday",
+    });
+    const bridal = buildFalEditBody("blackforestlabs/flux-3/edit-image", {
+      prompt: FAL_NUMBERED_IMAGE_PROMPT,
+      selfieUrl: "https://cdn.example/selfie.png",
+      referenceUrl: "https://cdn.example/reference.jpg",
+      size: "1024x1536",
+      fluxUse: "bridal",
+    });
+    const saved = buildFalEditBody("blackforestlabs/flux-3/edit-image", {
+      prompt: FAL_NUMBERED_IMAGE_PROMPT,
+      selfieUrl: "https://cdn.example/selfie.png",
+      referenceUrl: "https://cdn.example/reference.jpg",
+      size: "1024x1536",
+      fluxUse: "saved",
+    });
+    expect(everyday?.resolution).toBe("768sq");
+    expect(bridal?.resolution).toBe("1k");
+    expect(saved?.resolution).toBe("1k");
+    const quote = quoteFalModel("blackforestlabs/flux-3/edit-image", 768, 1024, portrait, flux3ResolutionFor("everyday"));
+    expect(quote.ok).toBe(true);
+    if (!quote.ok) return;
+    expect(quote.estimateUsd).toBe(flux3UsdForResolution("768sq"));
+    expect(quote.note).toMatch(/fal has not published/);
+    const range = falUsdRange("blackforestlabs/flux-3/edit-image", "1024x1536", [{ width: 768, height: 1024 }], "768sq");
+    expect(range?.detail).toMatch(/768 figure is our estimate/);
+    delete process.env.FLUX3_EVERYDAY_768;
   });
 
   it("refuses a missing fal key before any request", async () => {

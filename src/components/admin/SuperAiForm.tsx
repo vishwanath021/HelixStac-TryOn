@@ -44,12 +44,14 @@ export function SuperAiForm({
   const [falKey, setFalKey] = useState(initial.falKey);
   const [falDraft, setFalDraft] = useState("");
   const [falEnabled, setFalEnabled] = useState(initial.falKey.enabled);
+  const [falBillingKey, setFalBillingKey] = useState(initial.falBillingKey);
+  const [falBillingDraft, setFalBillingDraft] = useState("");
   const [openRouterKey, setOpenRouterKey] = useState(initial.openRouterKey);
   const [openRouterDraft, setOpenRouterDraft] = useState("");
   const [openRouterEnabled, setOpenRouterEnabled] = useState(initial.openRouterKey.enabled);
   const [openaiDraft, setOpenaiDraft] = useState("");
   const [geminiDraft, setGeminiDraft] = useState("");
-  const [guestEngine, setGuestEngine] = useState<GuestEngine>(initial.guestEngine || "fal");
+  const [guestEngine, setGuestEngine] = useState<GuestEngine>(initial.guestEngine || "openai");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [panels, setPanels] = useState<Panel[]>([]);
@@ -65,6 +67,7 @@ export function SuperAiForm({
     setGeminiKey(data.geminiKey);
     setFalKey(data.falKey);
     setFalEnabled(Boolean(data.falKey?.enabled));
+    setFalBillingKey(data.falBillingKey);
     setOpenRouterKey(data.openRouterKey);
     setOpenRouterEnabled(Boolean(data.openRouterKey?.enabled));
     setAllowByo(data.allowByo);
@@ -179,6 +182,25 @@ export function SuperAiForm({
     setMessage(remove ? "The fal key was removed." : "The fal key was saved.");
   }
 
+  async function saveFalBilling(remove: boolean) {
+    setBusy(true);
+    setMessage("");
+    const res = await fetch("/api/v1/super/ai", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ falBillingOnly: true, falBillingKey: falBillingDraft, removeFalBillingKey: remove }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setMessage(data.message || "Could not save the fal billing key.");
+      return;
+    }
+    applyView(data);
+    setFalBillingDraft("");
+    setMessage(remove ? "The fal billing key was removed." : "The fal billing key was saved.");
+  }
+
   async function saveOpenRouter(remove: boolean) {
     setBusy(true);
     setMessage("");
@@ -214,15 +236,15 @@ export function SuperAiForm({
       >
         <fieldset className="card grid gap-3 p-5" aria-label="Salon hairstyle model">
           <legend className="px-1 text-base font-semibold">Salon hairstyle model</legend>
-          <p className="text-sm text-muted">Style, colour, brows, beard, and nails use this model.</p>
-          <p className="text-sm">Brows follow this choice. FLUX.3 keeps the selfie aspect ratio, so a 3:4 photo is not padded into a 2:3 frame with grey bars. Sunburst is still here when you want that model for every tool.</p>
-          <label className="flex min-h-11 items-center gap-2 text-sm">
-            <input type="radio" name="guest-engine" checked={guestEngine === "fal"} onChange={() => setGuestEngine("fal")} />
-            fal FLUX.3 (default)
-          </label>
+          <p className="text-sm text-muted">Hairstyle, beard, colour, makeup, and bridal use this model.</p>
+          <p className="text-sm">Brows follow this choice. OpenAI gpt-image-2.5-sunburst at quality medium is the default. fal FLUX.3 runs automatically if OpenAI fails.</p>
           <label className="flex min-h-11 items-center gap-2 text-sm">
             <input type="radio" name="guest-engine" checked={guestEngine === "openai"} onChange={() => setGuestEngine("openai")} />
-            OpenAI gpt-image-2.5-sunburst, quality medium
+            OpenAI gpt-image-2.5-sunburst, quality medium (default)
+          </label>
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <input type="radio" name="guest-engine" checked={guestEngine === "fal"} onChange={() => setGuestEngine("fal")} />
+            fal FLUX.3 (fallback)
           </label>
           <button className="btn w-fit" type="button" disabled={busy} onClick={() => void saveGuest(guestEngine)}>Save salon default</button>
         </fieldset>
@@ -273,6 +295,29 @@ export function SuperAiForm({
                 <button className="btn secondary" type="button" disabled={busy} onClick={() => void saveFal(false)}>Save fal key</button>
                 <button className="btn secondary" type="button" disabled={busy || !falKey.saved} onClick={() => void saveFal(true)}>Remove fal key</button>
                 <button className="btn secondary" type="button" disabled={busy} onClick={() => setMessage("fal has no connection test. Save the key and enable it.")}>Test</button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-sm font-semibold">fal billing key</h4>
+                <Badge tone={falBillingKey.saved ? "good" : "neutral"}>{falBillingKey.saved ? "Saved" : "Not saved"}</Badge>
+              </div>
+              <p className="text-sm text-muted">{falBillingKey.saved ? `Billing key saved as ${falBillingKey.hint}.` : "No billing key saved."}</p>
+              <p className="text-sm">Read-only BILLING preset. Used for billing-events. The generation key stays API-scoped.</p>
+              <label className="text-sm">fal billing key
+                <input
+                  className="field mt-1 font-mono"
+                  type="password"
+                  name="fal-billing-key"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-label="fal billing key"
+                  placeholder={falBillingKey.saved ? falBillingKey.hint || "A billing key is saved" : "Paste the read-only billing key"}
+                  value={falBillingDraft}
+                  onChange={(event) => setFalBillingDraft(event.target.value)}
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn secondary" type="button" disabled={busy} onClick={() => void saveFalBilling(false)}>Save billing key</button>
+                <button className="btn secondary" type="button" disabled={busy || !falBillingKey.saved} onClick={() => void saveFalBilling(true)}>Remove billing key</button>
               </div>
             </article>
           </div>
