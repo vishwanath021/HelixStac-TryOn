@@ -187,6 +187,9 @@ test("try-on links to the queue when both products are on", async ({ page }) => 
   await expect(page.getByRole("link", { name: "Join queue" })).toHaveCount(0);
   await page.getByRole("tab", { name: "My looks" }).click();
   await expect(page.getByRole("link", { name: "Join queue" })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Your own look" }).click();
+  await expect(page.locator("[data-own='flow']")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Join queue" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Book bridal trial" })).toBeVisible();
   await page.getByRole("button", { name: "Everyday", exact: true }).click();
   await page.getByRole("link", { name: "Join queue" }).click();

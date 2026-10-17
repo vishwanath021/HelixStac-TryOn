@@ -1,4 +1,8 @@
 import sharp from "sharp";
+import type { EditSize } from "@/lib/ai/edit-request";
+
+/** Catalogue sizes, plus the 3:4 canvas used for a bridal own-look selfie. */
+export type CanvasSize = EditSize | "1024x1360";
 
 export type FrameTransform = {
   sourceWidth: number;

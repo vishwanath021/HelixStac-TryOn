@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { BeforeAfter } from "@/components/tryon/BeforeAfter";
+import { BridalOwnLook } from "@/components/tryon/BridalOwnLook";
 import { BridalLookCard } from "@/components/tryon/BridalLookCard";
 import { ConsentSheet } from "@/components/tryon/ConsentSheet";
 import { GeneratingLook } from "@/components/tryon/GeneratingLook";
@@ -114,7 +115,7 @@ async function blobUrlToData(url: string) {
 
 export function BridalFlow({ config }: { config: SalonConfig }) {
   const [eventId, setEventId] = useState<BridalEventId>("wedding");
-  const [panel, setPanel] = useState<"looks" | "mehendi" | "saved">("looks");
+  const [panel, setPanel] = useState<"looks" | "own" | "mehendi" | "saved">("looks");
   const [lookStyle, setLookStyle] = useState<BridalStyleId>(defaultBridalStyle(BRIDAL_LOOKS));
   const [makeupStyle, setMakeupStyle] = useState<BridalStyleId>(defaultBridalStyle(BRIDAL_MAKEUP));
   const [hairStyle, setHairStyle] = useState<BridalStyleId>(defaultBridalStyle(BRIDAL_HAIR));
@@ -462,12 +463,14 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
       <h2 className="page-title">Bridal</h2>
       <p className="mt-1 text-sm text-muted">Hair, makeup, and jewellery in one look. Then mehendi, and a trial with the salon.</p>
       <div className="seg mt-4" role="tablist" aria-label="Bridal">
-        {(["looks", "mehendi", "saved"] as const).map((item) => (
+        {(["looks", "own", "mehendi", "saved"] as const).map((item) => (
           <button key={item} className="seg-btn" type="button" role="tab" aria-selected={panel === item} onClick={() => setPanel(item)}>
-            {item === "looks" ? "Looks" : item === "mehendi" ? "Mehendi" : "My looks"}
+            {item === "looks" ? "Looks" : item === "own" ? "Your own look" : item === "mehendi" ? "Mehendi" : "My looks"}
           </button>
         ))}
       </div>
+
+      {panel === "own" && <div className="mt-4"><BridalOwnLook config={config} /></div>}
 
       {panel === "looks" && (
         <div className="mt-4 grid gap-4">
@@ -596,9 +599,9 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
         </div>
       )}
 
-      {error && <p className="mt-3 text-sm" role="status">{error}</p>}
+      {error && panel !== "own" && panel !== "saved" ? <p className="mt-3 text-sm" role="status">{error}</p> : null}
 
-      {result && !busy && panel !== "saved" && (
+      {result && !busy && panel !== "saved" && panel !== "own" && (
         <div ref={resultRef} className="mt-4 grid gap-3">
           <p className="text-center text-xs font-semibold uppercase tracking-wide">Real AI look, not a filter</p>
           <h3 className="text-center font-serif text-2xl">{result.name}</h3>

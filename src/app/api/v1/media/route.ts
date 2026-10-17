@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPublicMediaKey } from "@/lib/bridal-own";
 import { getObject, verifyObjectSig } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,7 @@ export async function GET(req: Request) {
   const key = url.searchParams.get("key") || "";
   const exp = Number(url.searchParams.get("exp") || 0);
   const sig = url.searchParams.get("sig") || "";
-  if (!key.startsWith("generations/") && !key.startsWith("benchmarks/")) {
+  if (!isPublicMediaKey(key)) {
     return NextResponse.json({ error: "KEY" }, { status: 404 });
   }
   if (!verifyObjectSig(key, exp, sig)) return NextResponse.json({ error: "SIGNATURE" }, { status: 403 });

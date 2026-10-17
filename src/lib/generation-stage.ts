@@ -2,6 +2,9 @@
 export const GENERATION_EXPECTED_MS = 18_000;
 
 export function generationStages(tool: string) {
+  if (tool === "bridal-own") {
+    return ["Reading your photo", "Placing your items", "Applying the makeup", "Finishing the portrait"];
+  }
   const read = tool === "mehendi" || tool === "nails" ? "Reading your hand" : "Reading your face shape";
   const apply =
     tool === "mehendi"
