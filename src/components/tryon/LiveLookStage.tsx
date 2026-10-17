@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { EYE_L, EYE_R, lookSamples, smoothLandmarks, type Pt } from "@/lib/face/makeup-paint";
+import { EYE_L, EYE_R, INNER_LIP, IRIS, OUTER_LIP, lookSamples, type Pt } from "@/lib/face/makeup-paint";
+import { LandmarkOneEuro } from "@/lib/face/one-euro";
 import type { LookAudience } from "@/lib/face/makeup-blend";
 import { createLiveGl, type LiveGl, type LiveLookOptions } from "@/lib/face/live-gl";
 import { buildHairMask } from "@/lib/face/hair-mask";
@@ -14,7 +15,6 @@ export type LiveLookProps = {
   image?: HTMLImageElement | null;
   lip?: string | null;
   kajal?: boolean;
-  lashes?: boolean;
   blush?: boolean;
   brow?: boolean;
   hair?: string | null;
@@ -26,6 +26,12 @@ export type LiveLookProps = {
   audience?: LookAudience;
   /** Stronger kajal, lip, blush, and brows. Everyday leaves this off. */
   bridal?: boolean;
+  /** Webcam preview uses the soft camera preset and reports draw latency. */
+  camera?: boolean;
+  /** Longest edge of the detection frame. The camera stays on the live budget. */
+  sampleEdge?: number;
+  /** Copied onto the canvas after each painted frame so a test can wait for that frame. */
+  stamp?: number;
   label?: string;
   ariaLabel?: string;
   onPhase?: (phase: "loading" | "watching" | "tracking" | "fallback") => void;
@@ -55,6 +61,9 @@ function writeSamples(canvas: HTMLCanvasElement, points: Pt[]) {
   };
   ring(EYE_R, "eyeR");
   ring(EYE_L, "eyeL");
+  ring(IRIS, "iris");
+  ring(OUTER_LIP, "outerLip");
+  ring(INNER_LIP, "innerLip");
 }
 
 function copyFloat(mask: { getAsFloat32Array: () => Float32Array } | undefined) {
@@ -99,7 +108,6 @@ export function LiveLookStage({
   image = null,
   lip = null,
   kajal = false,
-  lashes = false,
   blush = false,
   brow = false,
   hair = null,
@@ -108,13 +116,20 @@ export function LiveLookStage({
   makeup = false,
   audience,
   bridal = false,
+  camera = false,
+  sampleEdge = LIVE_FULL_EDGE,
+  stamp = 0,
   label = "live",
   ariaLabel,
   onPhase,
 }: LiveLookProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const optionsRef = useRef<LiveLookOptions>({ lip, kajal, lashes, blush, brow, hair, hairStrength, hasMask: false, bridal });
-  optionsRef.current = { lip, kajal, lashes, blush, brow, hair, hairStrength, hasMask: false, bridal };
+  const optionsRef = useRef<LiveLookOptions>({ lip, kajal, blush, brow, hair, hairStrength, hasMask: false, bridal, camera });
+  optionsRef.current = { lip, kajal, blush, brow, hair, hairStrength, hasMask: false, bridal, camera };
+  const sampleEdgeRef = useRef(sampleEdge);
+  sampleEdgeRef.current = sampleEdge;
+  const stampRef = useRef(stamp);
+  stampRef.current = stamp;
   const audienceRef = useRef(audience);
   audienceRef.current = audience;
   const onPhaseRef = useRef(onPhase);
@@ -140,13 +155,14 @@ export function LiveLookStage({
       onPhaseRef.current?.("fallback");
       return;
     }
-    const handle = { stop: false, raf: 0 };
+    const handle = { stop: false, raf: 0, vfc: 0, watchdog: 0 };
     const sample = document.createElement("canvas");
+    const landmarks = new LandmarkOneEuro();
     let smoothed: Pt[] | null = null;
     let mask: Uint8Array | null = null;
     let maskW = 0;
     let maskH = 0;
-    let edge = LIVE_FULL_EDGE;
+    let edge = sampleEdgeRef.current;
     let segInterval = LIVE_SEG_INTERVAL;
     let segOn = true;
     let frame = 0;
@@ -168,6 +184,7 @@ export function LiveLookStage({
         renderer.draw(shot, null, 0, 0, points, { ...options, hasMask: false }, audienceRef.current);
       }
       if (points) writeSamples(canvas, points);
+      canvas.dataset.stamp = String(stampRef.current);
       if (!shownRef.current) {
         shownRef.current = true;
         setShown(true);
@@ -253,31 +270,56 @@ export function LiveLookStage({
         return;
       }
       mark("watching");
+      canvas.dataset.delegate = vision.delegate;
+      let pumping: "vfc" | "raf" | null = null;
+      const armVfc = () => {
+        if (!video || typeof video.requestVideoFrameCallback !== "function") return false;
+        pumping = "vfc";
+        handle.vfc = video.requestVideoFrameCallback((_time, meta) => {
+          if (handle.stop || pumping !== "vfc") return;
+          const stamp = Number.isFinite(meta.mediaTime) ? meta.mediaTime * 1000 : performance.now();
+          tick(stamp);
+          armVfc();
+        });
+        return true;
+      };
+      const armRaf = () => {
+        pumping = "raf";
+        const pump = (stamp: number) => {
+          if (handle.stop || pumping !== "raf") return;
+          handle.raf = requestAnimationFrame(pump);
+          tick(stamp);
+        };
+        handle.raf = requestAnimationFrame(pump);
+      };
       const tick = (now: number) => {
         if (handle.stop) return;
-        handle.raf = requestAnimationFrame(tick);
+        const wall = performance.now();
         if (!video || video.readyState < 2) return;
         const shot = copySource(video, sample, edge);
         if (!shot) return;
-        paint(shot, smoothed);
         frame += 1;
-        const slot = frame % 6;
-        if (slot === 0) {
-          try {
-            const next = vision.landmarker.detect(shot).faceLandmarks[0] as Pt[] | undefined;
-            if (next && next.length > 454) {
-              smoothed = smoothLandmarks(smoothed, next, 0.45);
-              if (!saw) {
-                saw = true;
-                mark("tracking");
-              }
+        try {
+          const next = vision.landmarker.detect(shot).faceLandmarks[0] as Pt[] | undefined;
+          if (next && next.length > 454) {
+            const ready = performance.now();
+            smoothed = landmarks.filter(next, now);
+            paint(shot, smoothed);
+            const latency = performance.now() - ready;
+            canvas.dataset.latency = String(Math.round(latency * 10) / 10);
+            if (!saw) {
+              saw = true;
+              mark("tracking");
             }
-          } catch {
-            mark("fallback");
-            handle.stop = true;
-            return;
+          } else {
+            paint(shot, smoothed);
           }
-        } else if (frame % segInterval === 3 && segOn && vision.segmenter) {
+        } catch {
+          mark("fallback");
+          handle.stop = true;
+          return;
+        }
+        if (optionsRef.current.hair && frame % segInterval === 0 && segOn && vision.segmenter) {
           try {
             const read = readMask(vision, shot, smoothed);
             if (read) {
@@ -286,20 +328,28 @@ export function LiveLookStage({
               maskH = read.height;
             }
           } catch {
-            /* Keep the last mask and let the next slot try again. */
+            /* Keep the last mask and let the next frame try again. */
           }
         }
-        noteBudget(now);
+        noteBudget(wall);
       };
-      handle.raf = requestAnimationFrame(tick);
+      const watchdog = window.setTimeout(() => {
+        if (handle.stop || canvas.dataset.fps) return;
+        if (video && typeof video.cancelVideoFrameCallback === "function") video.cancelVideoFrameCallback(handle.vfc);
+        armRaf();
+      }, 800);
+      if (!armVfc()) armRaf();
+      handle.watchdog = watchdog;
     });
 
     return () => {
       handle.stop = true;
+      window.clearTimeout(handle.watchdog);
       cancelAnimationFrame(handle.raf);
+      if (video && typeof video.cancelVideoFrameCallback === "function") video.cancelVideoFrameCallback(handle.vfc);
       renderer.destroy();
     };
-  }, [image, video]);
+  }, [image, video, sampleEdge]);
 
   return (
     <canvas

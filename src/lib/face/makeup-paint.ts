@@ -15,11 +15,14 @@ export const EYE_L = [263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385
 /** Closed brow rings: top edge then back along the bottom edge. */
 export const BROW_R = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46];
 export const BROW_L = [300, 293, 334, 296, 336, 285, 295, 282, 283, 276];
+/** Iris centre then the four ring points. Right eye, then left. */
+export const IRIS_R = [469, 470, 471, 472];
+export const IRIS_L = [474, 475, 476, 477];
+export const IRIS = [468, 469, 470, 471, 472, 473, 474, 475, 476, 477];
 
 export type MakeupOptions = {
   lip: string;
   kajal: boolean;
-  lashes: boolean;
   blush: boolean;
   brow: boolean;
 };
@@ -144,33 +147,64 @@ function wing(ctx: CanvasRenderingContext2D, outer: Pt, along: Pt, facePx: numbe
   ctx.stroke();
 }
 
-function lashStrokes(ctx: CanvasRenderingContext2D, spots: Pt[], facePx: number) {
-  if (spots.length < 3) return;
-  const length = clamp(facePx * 0.028, 3, 8);
-  const width = clamp(facePx * 0.004, 0.6, 1.3);
-  ctx.strokeStyle = "rgba(12, 10, 12, 0.82)";
-  ctx.lineWidth = width;
-  ctx.lineCap = "round";
-  const mid = centroid(spots);
-  for (let index = 1; index < spots.length - 1; index += 1) {
-    const prev = spots[index - 1]!;
-    const spot = spots[index]!;
-    const next = spots[index + 1]!;
-    const dx = next.x - prev.x;
-    const dy = next.y - prev.y;
+function outward(spots: Pt[], center: Pt, distance: number) {
+  return spots.map((spot) => {
+    const dx = spot.x - center.x;
+    const dy = spot.y - center.y;
     const mag = Math.hypot(dx, dy) || 1;
-    let nx = -dy / mag;
-    let ny = dx / mag;
-    const away = (spot.x - mid.x) * nx + (spot.y - mid.y) * ny;
-    if (away < 0) {
-      nx *= -1;
-      ny *= -1;
-    }
-    ctx.beginPath();
-    ctx.moveTo(spot.x, spot.y);
-    ctx.quadraticCurveTo(spot.x + nx * length * 0.45, spot.y + ny * length * 0.2, spot.x + nx * length, spot.y + ny * length);
-    ctx.stroke();
+    return { x: spot.x + (dx / mag) * distance, y: spot.y + (dy / mag) * distance };
+  });
+}
+
+/** Kajal sits outside the lash line. The eye opening and iris are punched out of the ink. */
+function paintKajal(
+  ctx: CanvasRenderingContext2D,
+  points: Pt[],
+  place: (point: Pt) => Pt,
+  lines: { upper: Pt[]; lower: Pt[]; center: Pt }[],
+  eyes: Pt[][],
+  line: number,
+  facePx: number,
+) {
+  const layer = document.createElement("canvas");
+  layer.width = ctx.canvas.width;
+  layer.height = ctx.canvas.height;
+  const ink = layer.getContext("2d");
+  if (!ink) return;
+  const outset = line * 0.5 + 1;
+  ink.save();
+  ink.globalAlpha = 0.85;
+  for (const lid of lines) {
+    const upper = outward(lid.upper, lid.center, outset);
+    const lower = outward(lid.lower, lid.center, outset);
+    strokeLine(ink, upper, line, "rgba(12, 10, 12, 0.9)");
+    strokeLine(ink, lower, line * 0.85, "rgba(12, 10, 12, 0.75)");
+    const outer = upper[0];
+    const along = upper[2];
+    if (outer && along) wing(ink, outer, along, facePx, line);
   }
+  ink.restore();
+  ink.globalCompositeOperation = "destination-out";
+  ink.fillStyle = "#000";
+  for (const eye of eyes) {
+    if (trace(ink, eye, true)) ink.fill();
+  }
+  for (const [centerIndex, ring] of [[468, IRIS_R], [473, IRIS_L]] as const) {
+    const center = points[centerIndex];
+    if (!center) continue;
+    const spot = place(center);
+    let radius = 1;
+    for (const index of ring) {
+      const point = points[index];
+      if (!point) continue;
+      const ringSpot = place(point);
+      radius = Math.max(radius, Math.hypot(ringSpot.x - spot.x, ringSpot.y - spot.y));
+    }
+    ink.beginPath();
+    ink.arc(spot.x, spot.y, radius + 1, 0, Math.PI * 2);
+    ink.fill();
+  }
+  ctx.drawImage(layer, 0, 0);
 }
 
 export function paintMakeup(
@@ -225,37 +259,32 @@ export function paintMakeup(
   }
 
   if (options.kajal) {
-    ctx.save();
-    ctx.globalAlpha = 0.85;
-    strokeLine(ctx, upperR, line, "rgba(12, 10, 12, 0.9)");
-    strokeLine(ctx, lowerR, line * 0.85, "rgba(12, 10, 12, 0.75)");
-    strokeLine(ctx, upperL, line, "rgba(12, 10, 12, 0.9)");
-    strokeLine(ctx, lowerL, line * 0.85, "rgba(12, 10, 12, 0.75)");
-    const outerR = upperR[0];
-    const alongR = upperR[2];
-    const outerL = upperL[0];
-    const alongL = upperL[2];
-    if (outerR && alongR) wing(ctx, outerR, alongR, facePx, line);
-    if (outerL && alongL) wing(ctx, outerL, alongL, facePx, line);
-    ctx.restore();
-  }
-
-  if (options.lashes) {
-    ctx.save();
-    lashStrokes(ctx, upperR, facePx);
-    lashStrokes(ctx, upperL, facePx);
-    ctx.restore();
+    paintKajal(
+      ctx,
+      points,
+      place,
+      [
+        { upper: upperR, lower: lowerR, center: centroid(upperR.concat(lowerR)) },
+        { upper: upperL, lower: lowerL, center: centroid(upperL.concat(lowerL)) },
+      ],
+      [placed(points, EYE_R, place), placed(points, EYE_L, place)],
+      line,
+      facePx,
+    );
   }
 
   if (outer.length > 3 && inner.length > 3) {
     ctx.save();
-    ctx.filter = "blur(2.5px)";
-    ctx.globalCompositeOperation = "soft-light";
-    ctx.globalAlpha = 0.45;
     ctx.fillStyle = options.lip;
-    trace(ctx, outer, true);
-    trace(ctx, inner, true);
-    ctx.fill("evenodd");
+    ctx.globalAlpha = 0.9;
+    if (trace(ctx, outer, true)) ctx.fill();
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.globalAlpha = 1;
+    if (trace(ctx, inner, true)) {
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

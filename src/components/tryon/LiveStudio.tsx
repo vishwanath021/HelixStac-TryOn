@@ -62,11 +62,13 @@ export function LiveStudio({
   frozenUrl,
   makeup,
   footer,
+  note,
+  shutterHint,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   ready: boolean;
   facing: "user" | "environment";
-  guide: "face" | "hand";
+  guide: "face" | "hand" | "none";
   zoom: number;
   onZoom: (next: number) => void;
   onBack: () => void;
@@ -83,6 +85,10 @@ export function LiveStudio({
   frozenUrl?: string;
   makeup?: ReactNode;
   footer?: ReactNode;
+  /** One short line under the top bar. */
+  note?: string;
+  /** Sits on the capture button. */
+  shutterHint?: string;
 }) {
   const [count, setCount] = useState<number | "capturing" | null>(null);
 
@@ -119,11 +125,21 @@ export function LiveStudio({
             {makeup}
           </div>
           {frozenUrl ? <img src={frozenUrl} alt="" className="absolute inset-0 h-full w-full object-cover" /> : null}
-          <div className="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
-            <div className={guide === "hand" ? "cam-guide-hand" : "cam-guide-face"} />
-          </div>
+          {guide !== "none" ? (
+            <div className="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
+              <div className={guide === "hand" ? "cam-guide-hand" : "cam-guide-face"} />
+            </div>
+          ) : null}
         </div>
       </div>
+      {note ? (
+        <p
+          data-live-note=""
+          className="pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#241c2e]/90 px-2.5 py-0.5 text-center text-xs font-medium leading-none text-white shadow-md"
+        >
+          {note}
+        </p>
+      ) : null}
       <button className="cam-round absolute left-3 top-3 z-30" type="button" aria-label="Back" onClick={onBack}>‹</button>
       <button className="cam-round absolute right-3 top-3 z-30" type="button" aria-label="Close" onClick={onClose}>×</button>
       <StudioRail
@@ -138,7 +154,12 @@ export function LiveStudio({
       />
       <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-2 px-3 pb-3">
         {footer}
-        <button className="cam-shutter" type="button" aria-label="Take photo" disabled={!ready || count !== null || busy} onClick={() => void shoot()} />
+        <div className="flex flex-col items-center gap-1.5">
+          {shutterHint ? (
+            <p data-shutter-hint="" className="text-center text-xs font-medium leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">{shutterHint}</p>
+          ) : null}
+          <button className="cam-shutter" type="button" aria-label="Take photo" disabled={!ready || count !== null || busy} onClick={() => void shoot()} />
+        </div>
         {onUpload ? (
           <button className="btn on-photo" type="button" onClick={onUpload}>Upload a photo instead</button>
         ) : null}

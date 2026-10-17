@@ -9,31 +9,84 @@ export const BLUSH_PEAK_ALPHA = 0.18;
 /** Everyday live look. The eye-whites check uses these numbers. */
 export const EVERYDAY_LIVE = {
   lipMix: 0.55,
+  /** How far the lip blend moves from soft-light toward multiply. */
+  lipBody: 0.5,
+  /** How far lipstick lightness follows the skin. Webcam keeps the chosen hue. */
+  lipAdapt: 0.45,
+  lipFeather: 6,
+  /** How far the lip moves from the blend toward the lipstick colour itself. */
+  lipStamp: 0,
   blushPeak: BLUSH_PEAK_ALPHA,
   browMix: 0.25,
   kajalMix: 0.6,
   kajalIod: 0.02,
   kajalMax: 2.5,
   wing: 0.12,
-  lashMix: 0.35,
 };
 
 /** Bridal live look. Stronger colour, still outside the eye opening. */
 export const BRIDAL_LIVE = {
   lipMix: 0.7,
+  lipBody: 0.55,
+  lipAdapt: 0.35,
+  lipFeather: 6,
+  lipStamp: 0,
   blushPeak: 0.28,
   browMix: 0.48,
   kajalMix: 0.85,
   kajalIod: 0.045,
   kajalMax: 4,
   wing: 0.28,
-  lashMix: 0.55,
 };
 
 export type LiveIntensity = typeof EVERYDAY_LIVE;
 
-export function livePreset(bridal?: boolean): LiveIntensity {
+/**
+ * Webcam preview. An open smile has a thin lip band, so the colour is the
+ * lipstick itself, with a 1px outer edge. Kajal and blush stay soft.
+ * Brows stay off. Live has no lash layer.
+ */
+export const CAMERA_LIVE = {
+  lipMix: 1,
+  lipBody: 0.9,
+  lipAdapt: 0,
+  lipFeather: 1,
+  lipStamp: 1,
+  blushPeak: 0.16,
+  browMix: 0,
+  kajalMix: 0.42,
+  kajalIod: 0.018,
+  kajalMax: 2.2,
+  wing: 0.08,
+};
+
+export function livePreset(bridal?: boolean, camera = false): LiveIntensity {
+  if (camera) return CAMERA_LIVE;
   return bridal ? BRIDAL_LIVE : EVERYDAY_LIVE;
+}
+
+/** Lip and eye edges fade across this many pixels instead of a hard cut. */
+export const LIP_FEATHER_PX = 6;
+export const EYE_FEATHER_PX = 4;
+
+/**
+ * Keep the chosen hue and sit its lightness on the sampled skin.
+ * `mix` is how far the colour moves toward the skin's luminance.
+ */
+export function adaptMakeupRgb(
+  ink: [number, number, number],
+  skin: [number, number, number],
+  mix = 0.45,
+): [number, number, number] {
+  const y = (rgb: [number, number, number]) => 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+  const skinY = Math.max(y(skin), 0.04);
+  const inkY = Math.max(y(ink), 0.04);
+  const scale = (1 - mix) + mix * (skinY / inkY);
+  return [
+    Math.min(1, Math.max(0, ink[0] * scale)),
+    Math.min(1, Math.max(0, ink[1] * scale)),
+    Math.min(1, Math.max(0, ink[2] * scale)),
+  ];
 }
 export const BLUSH_SIGMA_DIV = 2.5;
 /** Floor so a small face cannot turn the wash into a hard disc. */
@@ -182,7 +235,6 @@ export type LookAudience = "women" | "men" | "kids";
 export type LiveEffectFlags = {
   lip: string | null;
   kajal: boolean;
-  lashes: boolean;
   blush: boolean;
   brow: boolean;
   hair: string | null;
@@ -191,5 +243,5 @@ export type LiveEffectFlags = {
 /** Men’s live styling is hair and beard. Makeup stays off unless a bridal look asks for it. */
 export function liveEffectsFor<T extends LiveEffectFlags>(audience: LookAudience | undefined, effects: T): T {
   if (audience !== "men") return effects;
-  return { ...effects, lip: null, kajal: false, lashes: false, blush: false, brow: false };
+  return { ...effects, lip: null, kajal: false, blush: false, brow: false };
 }

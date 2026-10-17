@@ -13,9 +13,9 @@ export function GeneratingLook({ tool, expectedMs = GENERATION_EXPECTED_MS }: { 
   const frame = generationFrame(tool, elapsed, expectedMs);
   return (
     <div className="gen-veil" data-generating="yes" data-stage={frame.label} role="status">
-      <div className="gen-blur" />
+      <div className="gen-edge" aria-hidden="true" />
+      <div className="gen-line" style={{ width: `${frame.pct}%` }} />
       <div className="gen-shimmer" aria-hidden="true" />
-      <div className="gen-glow" aria-hidden="true" />
       <div className="gen-corner">
         <div
           className="gen-ring"

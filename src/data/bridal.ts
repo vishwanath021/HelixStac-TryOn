@@ -281,6 +281,11 @@ export function bridalStylesFor(items: { style: BridalStyleId }[]) {
   return BRIDAL_STYLES.filter((style) => items.some((item) => item.style === style.id));
 }
 
+/** A single category is not a choice, so the tab row stays hidden. */
+export function showStyleTabs(styles: { id: string }[]) {
+  return styles.length > 1;
+}
+
 /** Trending when that set exists, otherwise Temple & Traditional. */
 export function defaultBridalStyle(items: { style: BridalStyleId }[]): BridalStyleId {
   return bridalStylesFor(items)[0]?.id ?? "temple";

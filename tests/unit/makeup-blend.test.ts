@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BRIDAL_LIVE, EVERYDAY_LIVE, blushAlpha, eyelinerAt, kajalWidthPx, liveEffectsFor, livePreset, pointOnLine, type Px } from "@/lib/face/makeup-blend";
+import { BRIDAL_LIVE, CAMERA_LIVE, EYE_FEATHER_PX, EVERYDAY_LIVE, LIP_FEATHER_PX, adaptMakeupRgb, blushAlpha, eyelinerAt, kajalWidthPx, liveEffectsFor, livePreset, pointOnLine, type Px } from "@/lib/face/makeup-blend";
 
 function almond() {
   const upper: Px[] = [];
@@ -119,14 +119,38 @@ describe("bridal live intensity", () => {
   });
 });
 
+describe("webcam preview", () => {
+  it("keeps lips and a soft kajal, and turns brows off", () => {
+    expect(livePreset(true, true)).toEqual(CAMERA_LIVE);
+    expect(CAMERA_LIVE.browMix).toBe(0);
+    expect(CAMERA_LIVE.kajalMix).toBeLessThan(EVERYDAY_LIVE.kajalMix);
+    expect(CAMERA_LIVE.blushPeak).toBeLessThan(EVERYDAY_LIVE.blushPeak);
+    expect(CAMERA_LIVE.lipMix).toBeGreaterThan(EVERYDAY_LIVE.lipMix);
+    expect(CAMERA_LIVE.lipBody).toBeGreaterThan(EVERYDAY_LIVE.lipBody);
+    expect(CAMERA_LIVE.lipFeather).toBeLessThan(LIP_FEATHER_PX);
+    expect(CAMERA_LIVE.lipAdapt).toBeLessThan(EVERYDAY_LIVE.lipAdapt);
+    expect(CAMERA_LIVE.lipStamp).toBe(1);
+    expect(EVERYDAY_LIVE.lipStamp).toBe(0);
+    expect(LIP_FEATHER_PX).toBeGreaterThanOrEqual(4);
+    expect(EYE_FEATHER_PX).toBeGreaterThanOrEqual(3);
+  });
+
+  it("moves a lipstick toward the sampled skin lightness and keeps the hue", () => {
+    const ink: [number, number, number] = [0.6, 0.08, 0.16];
+    const warm = adaptMakeupRgb(ink, [0.45, 0.32, 0.26]);
+    const deep = adaptMakeupRgb(ink, [0.25, 0.16, 0.12]);
+    expect(warm[0]).toBeGreaterThan(deep[0]);
+    expect(warm[0] / warm[1]).toBeCloseTo(ink[0] / ink[1], 1);
+  });
+});
+
 describe("men’s live styling", () => {
-  const on = { lip: "#9B2335", kajal: true, lashes: true, blush: true, brow: true, hair: "#C45C26" };
+  const on = { lip: "#9B2335", kajal: true, blush: true, brow: true, hair: "#C45C26" };
 
   it("drops makeup and keeps hair", () => {
     expect(liveEffectsFor("men", on)).toEqual({
       lip: null,
       kajal: false,
-      lashes: false,
       blush: false,
       brow: false,
       hair: "#C45C26",

@@ -30,7 +30,7 @@ export function BeforeAfter({
   return (
     <div
       ref={box}
-      className="relative aspect-[3/4] touch-none overflow-hidden bg-[#F3F0F8]"
+      className="relative mx-auto aspect-[3/4] w-full max-w-md touch-none overflow-hidden bg-[#F3F0F8]"
       data-testid="before-after"
       data-align-mode={alignMode || undefined}
       data-eye-delta={eyeDelta == null ? undefined : eyeDelta.toFixed(2)}
@@ -44,10 +44,11 @@ export function BeforeAfter({
         setFromClientX(event.clientX);
       }}
     >
-      <img src={after} alt={afterLabel} className="absolute inset-0 h-full w-full object-cover object-center" draggable={false} />
+      <img src={after} alt={afterLabel} data-side="after" className="absolute inset-0 h-full w-full object-cover object-center" draggable={false} />
       <img
         src={before}
         alt={beforeLabel}
+        data-side="before"
         className="absolute inset-0 h-full w-full object-cover object-center"
         draggable={false}
         style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }}

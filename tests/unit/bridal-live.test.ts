@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BRIDAL_HAIR, BRIDAL_LOOKS, BRIDAL_MAKEUP, MEHENDI_CARDS, bridalFinishById, bridalHairById, bridalLipById, bridalLookById, bridalMakeupById, bridalStylesFor, cardsForStyle, defaultBridalStyle, looksForEvent } from "@/data/bridal";
+import { BRIDAL_HAIR, BRIDAL_LOOKS, BRIDAL_MAKEUP, MEHENDI_CARDS, bridalFinishById, bridalHairById, bridalLipById, bridalLookById, bridalMakeupById, bridalStylesFor, cardsForStyle, defaultBridalStyle, looksForEvent, showStyleTabs } from "@/data/bridal";
 import { readBridalGenerateFields } from "@/lib/bridal-request";
 import { coverPoint, liveMakeupAllowed } from "@/lib/face/cover-point";
 import { buildFalEditBody } from "@/lib/ai/fal-models";
@@ -76,6 +76,10 @@ describe("bridal prompt shades", () => {
       expect(item.style).toBe("temple");
     }
     expect(bridalStylesFor(BRIDAL_LOOKS).map((style) => style.label)).toEqual(["Temple & Traditional"]);
+    expect(showStyleTabs(bridalStylesFor(BRIDAL_LOOKS))).toBe(false);
+    expect(showStyleTabs(bridalStylesFor(BRIDAL_HAIR))).toBe(false);
+    expect(showStyleTabs([{ id: "trending" }, { id: "temple" }])).toBe(true);
+    expect(BRIDAL_HAIR.every((item) => item.image === false)).toBe(true);
     expect(defaultBridalStyle(BRIDAL_MAKEUP)).toBe("temple");
     expect(cardsForStyle(BRIDAL_LOOKS, "trending").map((look) => look.id)).toEqual(BRIDAL_LOOKS.map((look) => look.id));
     expect(cardsForStyle(BRIDAL_HAIR, "temple")).toHaveLength(3);
