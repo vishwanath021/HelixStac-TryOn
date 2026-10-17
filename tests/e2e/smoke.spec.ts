@@ -504,7 +504,7 @@ test("super admin sees assumed COGS", async ({ page }) => {
   const sync = page.getByRole("button", { name: "Sync real cost from fal" });
   await expect(sync).toBeVisible();
   await sync.click();
-  await expect(page.getByText(/ADMIN-scoped key/)).toBeVisible();
+  await expect(page.getByText(/BILLING preset/)).toBeVisible();
   await page.goto("/super/ai");
   await page.getByText("Advanced (internal)").click();
   await page.getByRole("button", { name: "Calibration run" }).click();

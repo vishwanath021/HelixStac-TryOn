@@ -44,6 +44,8 @@ export function SuperAiForm({
   const [falKey, setFalKey] = useState(initial.falKey);
   const [falDraft, setFalDraft] = useState("");
   const [falEnabled, setFalEnabled] = useState(initial.falKey.enabled);
+  const [falBillingKey, setFalBillingKey] = useState(initial.falBillingKey);
+  const [falBillingDraft, setFalBillingDraft] = useState("");
   const [openRouterKey, setOpenRouterKey] = useState(initial.openRouterKey);
   const [openRouterDraft, setOpenRouterDraft] = useState("");
   const [openRouterEnabled, setOpenRouterEnabled] = useState(initial.openRouterKey.enabled);
@@ -65,6 +67,7 @@ export function SuperAiForm({
     setGeminiKey(data.geminiKey);
     setFalKey(data.falKey);
     setFalEnabled(Boolean(data.falKey?.enabled));
+    setFalBillingKey(data.falBillingKey);
     setOpenRouterKey(data.openRouterKey);
     setOpenRouterEnabled(Boolean(data.openRouterKey?.enabled));
     setAllowByo(data.allowByo);
@@ -179,6 +182,25 @@ export function SuperAiForm({
     setMessage(remove ? "The fal key was removed." : "The fal key was saved.");
   }
 
+  async function saveFalBilling(remove: boolean) {
+    setBusy(true);
+    setMessage("");
+    const res = await fetch("/api/v1/super/ai", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ falBillingOnly: true, falBillingKey: falBillingDraft, removeFalBillingKey: remove }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setMessage(data.message || "Could not save the fal billing key.");
+      return;
+    }
+    applyView(data);
+    setFalBillingDraft("");
+    setMessage(remove ? "The fal billing key was removed." : "The fal billing key was saved.");
+  }
+
   async function saveOpenRouter(remove: boolean) {
     setBusy(true);
     setMessage("");
@@ -273,6 +295,29 @@ export function SuperAiForm({
                 <button className="btn secondary" type="button" disabled={busy} onClick={() => void saveFal(false)}>Save fal key</button>
                 <button className="btn secondary" type="button" disabled={busy || !falKey.saved} onClick={() => void saveFal(true)}>Remove fal key</button>
                 <button className="btn secondary" type="button" disabled={busy} onClick={() => setMessage("fal has no connection test. Save the key and enable it.")}>Test</button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-sm font-semibold">fal billing key</h4>
+                <Badge tone={falBillingKey.saved ? "good" : "neutral"}>{falBillingKey.saved ? "Saved" : "Not saved"}</Badge>
+              </div>
+              <p className="text-sm text-muted">{falBillingKey.saved ? `Billing key saved as ${falBillingKey.hint}.` : "No billing key saved."}</p>
+              <p className="text-sm">Read-only BILLING preset. Used for billing-events. The generation key stays API-scoped.</p>
+              <label className="text-sm">fal billing key
+                <input
+                  className="field mt-1 font-mono"
+                  type="password"
+                  name="fal-billing-key"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-label="fal billing key"
+                  placeholder={falBillingKey.saved ? falBillingKey.hint || "A billing key is saved" : "Paste the read-only billing key"}
+                  value={falBillingDraft}
+                  onChange={(event) => setFalBillingDraft(event.target.value)}
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn secondary" type="button" disabled={busy} onClick={() => void saveFalBilling(false)}>Save billing key</button>
+                <button className="btn secondary" type="button" disabled={busy || !falBillingKey.saved} onClick={() => void saveFalBilling(true)}>Remove billing key</button>
               </div>
             </article>
           </div>
