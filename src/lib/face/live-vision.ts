@@ -9,6 +9,7 @@ import { hushMediapipeInfo } from "@/lib/face/detect-client";
 export type LiveVision = {
   landmarker: FaceLandmarker;
   segmenter: ImageSegmenter | null;
+  delegate: "GPU" | "CPU";
 };
 
 let pending: Promise<LiveVision | null> | null = null;
@@ -34,9 +35,11 @@ export function loadLiveVision(): Promise<LiveVision | null> {
             ...face,
           });
         let landmarker: FaceLandmarker;
+        let delegate: "GPU" | "CPU" = "GPU";
         try {
           landmarker = await createFace("GPU");
         } catch {
+          delegate = "CPU";
           landmarker = await createFace("CPU");
         }
         const seg = {
@@ -59,7 +62,7 @@ export function loadLiveVision(): Promise<LiveVision | null> {
             segmenter = null;
           }
         }
-        return { landmarker, segmenter };
+        return { landmarker, segmenter, delegate };
       } catch {
         return null;
       }

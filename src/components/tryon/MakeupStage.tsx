@@ -9,16 +9,12 @@ export function MakeupStage({
   video,
   lip,
   kajal,
-  lashes,
   blush,
-  brow,
 }: {
   video: HTMLVideoElement | null;
   lip: string;
   kajal: boolean;
-  lashes: boolean;
   blush: boolean;
-  brow: boolean;
 }) {
   const [note, setNote] = useState("");
 
@@ -28,11 +24,11 @@ export function MakeupStage({
         video={video}
         lip={lip}
         kajal={kajal}
-        lashes={lashes}
+        lashes={false}
         blush={blush}
-        brow={brow}
+        brow={false}
         makeup
-        bridal
+        camera
         label="makeup"
         onPhase={(phase) => setNote(phase === "fallback" ? FALLBACK : "")}
       />

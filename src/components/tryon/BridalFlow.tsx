@@ -9,7 +9,7 @@ import { GeneratingLook } from "@/components/tryon/GeneratingLook";
 import { LiveStudio, StudioRail } from "@/components/tryon/LiveStudio";
 import { MakeupStage } from "@/components/tryon/MakeupStage";
 import { usePhotoConsent } from "@/components/tryon/usePhotoConsent";
-import { captureShouldMirror, visiblePortraitCrop } from "@/lib/capture";
+import { blobForUpload, cameraVideoConstraints, portraitJpeg, raiseToNativeResolution } from "@/lib/capture";
 import {
   BRIDAL_EVENTS,
   BRIDAL_FINISHES,
@@ -22,6 +22,7 @@ import {
   bridalEventById,
   bridalStylesFor,
   cardsForStyle,
+  showStyleTabs,
   defaultBridalStyle,
   looksForEvent,
   type BridalEventId,
@@ -39,28 +40,11 @@ function EyeIcon() {
   );
 }
 
-function LashIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2 10.5c2-3 4-4.2 6-4.2s4 1.2 6 4.2" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M4 9.2 3.2 6.4M8 8.2V5.2M12 9.2l.8-2.8" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function BlushIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
       <circle cx="5" cy="8.5" r="2.2" fill="currentColor" opacity="0.9" />
       <circle cx="11" cy="8.5" r="2.2" fill="currentColor" opacity="0.9" />
-    </svg>
-  );
-}
-
-function BrowIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2 9.5c1.6-2.4 3.2-3.2 4.6-2.4 1.2.7 2.2.2 3.4-1.4C11.2 4.2 12.6 4 14 5.2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   );
 }
@@ -150,9 +134,7 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
   const streamRef = useRef<MediaStream | null>(null);
   const consent = usePhotoConsent(config.slug, config.defaultLang || "en");
   const [kajal, setKajal] = useState(true);
-  const [lashes, setLashes] = useState(true);
   const [blushOn, setBlushOn] = useState(true);
-  const [browOn, setBrowOn] = useState(true);
   const [live, setLive] = useState<null | "face" | "hand">(null);
   const [camReady, setCamReady] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -195,7 +177,7 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
     const hair = overrides?.hairId ?? hairId;
     try {
       const body = new FormData();
-      body.set("photo", shot.blob, kind === "mehendi" ? "hand.jpg" : "selfie.jpg");
+      body.set("photo", await blobForUpload(shot.blob), kind === "mehendi" ? "hand.jpg" : "selfie.jpg");
       body.set("slug", config.slug);
       body.set("sessionId", guestSessionId());
       const consentId = (await consent.persist()) || consent.consentId();
@@ -216,9 +198,9 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
         if (makeup) body.set("makeup", makeup);
         if (hair) body.set("hair", hair);
         body.set("kajal", kajal ? "1" : "0");
-        body.set("lashes", lashes ? "1" : "0");
+        body.set("lashes", "1");
         body.set("blush", blushOn ? "1" : "0");
-        body.set("browTint", browOn ? "1" : "0");
+        body.set("browTint", "1");
       }
       const res = await fetch("/api/v1/tryon/generate", { method: "POST", body });
       if (!res.ok) {
@@ -339,9 +321,8 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
         setCamError("The camera is not available. You can use a photo instead.");
         return;
       }
-      const pending = devices.getUserMedia({
-        video: { facingMode: kind === "hand" ? { ideal: "environment" } : "user" },
-      });
+      const facing = kind === "hand" ? "environment" : "user";
+      const pending = devices.getUserMedia({ video: cameraVideoConstraints(facing) });
       flushSync(() => {
         setCamError("");
         setCamReady(false);
@@ -359,6 +340,8 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
         video.playsInline = true;
         video.srcObject = stream;
         streamRef.current = stream;
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) await raiseToNativeResolution(videoTrack);
         await video.play();
         setCamReady(true);
       }).catch(() => {
@@ -371,23 +354,7 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
   async function captureLive() {
     const video = videoRef.current;
     if (!video || !live) return;
-    const srcW = video.videoWidth || 720;
-    const srcH = video.videoHeight || 960;
-    const crop = visiblePortraitCrop(srcW, srcH);
-    const scale = Math.min(1, 1024 / Math.max(crop.sw, crop.sh));
-    const width = Math.max(2, Math.round(crop.sw * scale));
-    const height = Math.max(2, Math.round(crop.sh * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    if (captureShouldMirror(live === "hand" ? "environment" : "user")) {
-      ctx.translate(width, 0);
-      ctx.scale(-1, 1);
-    }
-    ctx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, width, height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    const blob = await portraitJpeg(video, live === "hand" ? "environment" : "user");
     if (!blob) return;
     const shot = { blob, url: URL.createObjectURL(blob) };
     const kind = live;
@@ -482,10 +449,9 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
           <PhotoGrid step="look" label="2. The look" group="Bridal looks" styles={bridalStylesFor(eventLooks)} style={lookStyle} onStyle={chooseLookStyle} items={looks} value={chosen?.id || ""} onChange={setLookId} />
           <PhotoGrid step="makeup" label="3. Makeup" group="Makeup" styles={bridalStylesFor(BRIDAL_MAKEUP)} style={makeupStyle} onStyle={chooseMakeupStyle} items={makeupCards} value={makeupId} onChange={pickMakeup} />
           <PhotoGrid step="hair" label="4. Hair" hint="Optional. Tap again to leave the look’s own hair." group="Hair" styles={bridalStylesFor(BRIDAL_HAIR)} style={hairStyle} onStyle={chooseHairStyle} items={hairCards} value={hairId} onChange={pickHair} />
-          <div data-step="selfie">
-            <p className="mb-2 text-sm font-medium">5. Your selfie</p>
-            <p className="mb-2 text-sm">Face the light. Keep your whole face inside the outline. No sunglasses.</p>
-            <div ref={faceBox} data-photo-box="face" className="relative mx-auto aspect-[3/4] max-h-[520px] w-full max-w-sm overflow-hidden rounded-2xl bg-[#F3E6D8]">
+          <div data-step="photo">
+            <p className="mb-2 text-sm font-medium">5. Your photo</p>
+            <section ref={faceBox} data-photo-box="face" className="relative mx-auto aspect-[3/4] max-h-[520px] w-full max-w-sm overflow-hidden rounded-[14px] border border-line bg-white shadow-lift" aria-label="Photo">
               {live === "face" ? (
                 <LiveStudio
                   videoRef={videoRef}
@@ -498,54 +464,45 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
                   onClose={stopLive}
                   onShutter={captureLive}
                   onRetake={() => beginLive("face")}
-                  makeup={<MakeupStage video={camReady ? videoRef.current : null} lip={lipHex} kajal={kajal} lashes={lashes} blush={blushOn} brow={browOn} />}
+                  onUpload={() => consent.gate(() => bridalFile.current?.click())}
+                  note="Live preview · Capture for the real AI look"
+                  makeup={<MakeupStage video={camReady ? videoRef.current : null} lip={lipHex} kajal={kajal} blush={blushOn} />}
                   footer={(
-                    <div className="live-row" role="group" aria-label="Live makeup">
-                      <button className="live-pill" type="button" aria-pressed={kajal} aria-label="Kajal" onClick={() => setKajal((value) => !value)}>
-                        <EyeIcon />
-                      </button>
-                      <button className="live-pill" type="button" aria-pressed={lashes} aria-label="Lashes" onClick={() => setLashes((value) => !value)}>
-                        <LashIcon />
-                      </button>
-                      <button className="live-pill" type="button" aria-pressed={blushOn} aria-label="Blush" onClick={() => setBlushOn((value) => !value)}>
-                        <BlushIcon />
-                      </button>
-                      <button className="live-pill" type="button" aria-pressed={browOn} aria-label="Brows" onClick={() => setBrowOn((value) => !value)}>
-                        <BrowIcon />
-                      </button>
-                      <span className="mx-0.5 h-5 w-px shrink-0 self-center bg-white/35" aria-hidden="true" />
-                      {BRIDAL_LIPS.map((lip) => (
-                        <button key={lip.id} type="button" aria-pressed={lipId === lip.id} aria-label={lip.name} className="live-dot" style={{ background: lip.hex }} onClick={() => setLipId(lip.id)} />
-                      ))}
-                    </div>
+                      <div className="live-row translate-y-2" role="group" aria-label="Live makeup">
+                        <button className="live-pill" type="button" aria-pressed={kajal} aria-label="Kajal" onClick={() => setKajal((value) => !value)}>
+                          <EyeIcon />
+                        </button>
+                        <button className="live-pill" type="button" aria-pressed={blushOn} aria-label="Blush" onClick={() => setBlushOn((value) => !value)}>
+                          <BlushIcon />
+                        </button>
+                        <span className="mx-0.5 h-5 w-px shrink-0 self-center bg-white/35" aria-hidden="true" />
+                        {BRIDAL_LIPS.map((lip) => (
+                          <button key={lip.id} type="button" aria-pressed={lipId === lip.id} aria-label={lip.name} className="live-dot" style={{ background: lip.hex }} onClick={() => setLipId(lip.id)} />
+                        ))}
+                      </div>
                   )}
                 />
               ) : (
                 <>
-                  {face ? <img src={face.url} alt="Your selfie" className="h-full w-full object-cover" /> : null}
+                  {face ? <img src={face.url} alt="Your photo" className="h-full w-full object-contain" /> : null}
                   {reveal && result?.kind === "look" ? <img src={reveal} alt="" className="gen-reveal absolute inset-0 h-full w-full object-cover" /> : null}
                   {busyKind === "look" ? <GeneratingLook tool="bridal" /> : null}
-                  {!busyKind && !reveal ? (
-                  <div className="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
-                    <div className="h-[68%] w-[56%] rounded-[50%] border-2 border-white/90 shadow-sm" />
-                  </div>
+                  {!face && !busyKind ? (
+                    <div className="absolute inset-0 grid content-center justify-items-center gap-3 px-6">
+                      <button className="btn sheen min-w-44" type="button" onClick={() => beginLive("face")}>Live makeup</button>
+                      <button className="btn secondary min-w-44" type="button" onClick={() => consent.gate(() => bridalFile.current?.click())}>Use photo</button>
+                      <p className="max-w-xs text-center text-sm text-muted">Face the light. Keep your whole face inside the outline. No sunglasses.</p>
+                    </div>
                   ) : null}
                 </>
               )}
-            </div>
-            {face || live === "face" ? null : <p className="mx-auto mt-3 max-w-sm text-center text-sm">Upload a selfie to see this look on you.</p>}
-            {busyKind === "look" ? null : (
-            <div className="mt-3 grid gap-2">
-              {live === "face" ? null : <button className={result ? "btn" : "btn sheen"} type="button" onClick={() => beginLive("face")}>Live makeup</button>}
-              <button className="btn secondary" type="button" onClick={() => consent.gate(() => bridalFile.current?.click())}>Use photo</button>
-              <input ref={bridalFile} className="sr-only" type="file" accept="image/*" data-photo="bridal" onChange={(event) => {
-                const file = event.target.files?.[0];
-                event.target.value = "";
-                if (!file) return;
-                void fileToShot(file).then((shot) => { setFace(shot); setResult(null); setReveal(""); });
-              }} />
-            </div>
-            )}
+            </section>
+            <input ref={bridalFile} className="sr-only" type="file" accept="image/*" data-photo="bridal" onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file) return;
+              void fileToShot(file).then((shot) => { setFace(shot); setResult(null); setReveal(""); });
+            }} />
             {camError && panel === "looks" ? <p className="text-sm" role="alert">{camError}</p> : null}
           </div>
           {face && chosen && !busy && (!result || result.kind !== "look" || result.lookId !== chosen.id) && (
@@ -706,11 +663,20 @@ export function BridalFlow({ config }: { config: SalonConfig }) {
 }
 
 function PhotoGrid({ step, label, hint, group, styles, style, onStyle, items, value, onChange }: { step: string; label: string; hint?: string; group: string; styles: { id: BridalStyleId; label: string }[]; style: BridalStyleId; onStyle: (id: BridalStyleId) => void; items: { id: string; name: string; image: boolean }[]; value: string; onChange: (id: string) => void }) {
+  const pictured = items.filter((item) => item.image);
+  if (pictured.length === 0) {
+    if (step !== "hair") return null;
+    return (
+      <div data-step={step}>
+        <button type="button" className="text-sm underline" aria-pressed={value === ""} onClick={() => onChange("")}>Keep my own hair</button>
+      </div>
+    );
+  }
   return (
     <div data-step={step}>
       <p className="mb-2 text-sm font-medium">{label}</p>
       {hint ? <p className="mb-2 text-sm text-muted">{hint}</p> : null}
-      {styles.length > 0 && (
+      {showStyleTabs(styles) && (
         <div className="mb-2 flex flex-wrap gap-2" role="group" aria-label={`${group} style`}>
           {styles.map((item) => (
             <button key={item.id} className="chip" type="button" aria-pressed={style === item.id} onClick={() => onStyle(item.id)}>{item.label}</button>
@@ -718,15 +684,23 @@ function PhotoGrid({ step, label, hint, group, styles, style, onStyle, items, va
         </div>
       )}
       <div className="grid grid-cols-2 gap-3" role="list" aria-label={group}>
-        {items.map((item, index) => (
-          <div key={item.id} role="listitem">
-            <button type="button" aria-pressed={item.id === value} className={`w-full overflow-hidden rounded-[14px] border bg-[#F3E6D8] text-left shadow-sm ${item.id === value ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => onChange(item.id)}>
-              <BridalLookCard id={item.id} name={item.name} image={item.image} priority={index < 2} />
-              <span className="block bg-white px-2 py-2 text-sm font-medium leading-snug">{item.name}</span>
-            </button>
-          </div>
+        {pictured.map((item, index) => (
+          <LookChoice key={item.id} item={item} pressed={item.id === value} priority={index < 2} onChange={onChange} />
         ))}
       </div>
+    </div>
+  );
+}
+
+function LookChoice({ item, pressed, priority, onChange }: { item: { id: string; name: string }; pressed: boolean; priority: boolean; onChange: (id: string) => void }) {
+  const [hidden, setHidden] = useState(false);
+  if (hidden) return null;
+  return (
+    <div role="listitem">
+      <button type="button" aria-pressed={pressed} className={`w-full overflow-hidden rounded-[14px] border bg-[#F3E6D8] text-left shadow-sm ${pressed ? "border-[var(--brand)] ring-2 ring-[var(--brand)]" : "border-line"}`} onClick={() => onChange(item.id)}>
+        <BridalLookCard id={item.id} priority={priority} onMissing={() => setHidden(true)} />
+        <span className="block bg-white px-2 py-2 text-sm font-medium leading-snug">{item.name}</span>
+      </button>
     </div>
   );
 }

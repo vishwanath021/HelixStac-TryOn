@@ -18,7 +18,7 @@ import {
   type Pt,
 } from "@/lib/face/makeup-paint";
 import { HAIR_LUMA_LIFT, HAIR_LUMA_LIFT_END, HAIR_LUMA_LIFT_MIX, HAIR_LUMA_LIFT_START } from "@/lib/face/hair-mask";
-import { liveEffectsFor, livePreset, type LookAudience } from "@/lib/face/makeup-blend";
+import { EYE_FEATHER_PX, LIP_FEATHER_PX, liveEffectsFor, livePreset, type LookAudience } from "@/lib/face/makeup-blend";
 
 export type LiveLookOptions = {
   lip: string | null;
@@ -32,6 +32,8 @@ export type LiveLookOptions = {
   hasMask: boolean;
   /** Bridal live makeup uses a stronger preset. Everyday stays on the subtle numbers. */
   bridal?: boolean;
+  /** Webcam preview: lips, soft kajal, soft blush. Lashes and brows stay off. */
+  camera?: boolean;
 };
 
 export type LiveGl = {
@@ -155,12 +157,21 @@ float edge16(vec2 p, vec2 poly[16]) {
   return best;
 }
 
-float eyeMask(vec2 p) {
+float eyeCover(vec2 p, vec2 poly[16]) {
   float px = max(u_px.x, u_px.y);
-  float cover = 0.0;
-  if (inside16(p, u_eyeR) || edge16(p, u_eyeR) < px) cover = 1.0;
-  if (inside16(p, u_eyeL) || edge16(p, u_eyeL) < px) cover = 1.0;
-  return cover;
+  if (inside16(p, poly)) return 1.0;
+  return 1.0 - smoothstep(0.0, px * ${EYE_FEATHER_PX.toFixed(1)}, edge16(p, poly));
+}
+
+float eyeMask(vec2 p) {
+  return max(eyeCover(p, u_eyeR), eyeCover(p, u_eyeL));
+}
+
+vec3 adaptInk(vec3 ink, vec3 skin) {
+  float skinY = max(dot(skin, vec3(0.2126, 0.7152, 0.0722)), 0.04);
+  float inkY = max(dot(ink, vec3(0.2126, 0.7152, 0.0722)), 0.04);
+  float scale = 0.55 + 0.45 * (skinY / inkY);
+  return clamp(ink * scale, 0.0, 1.0);
 }
 
 float linerStroke(vec2 p, vec2 poly[9], float maxW, float blur, float wingLen) {
@@ -280,6 +291,9 @@ void main() {
   float eye = eyeMask(p);
   float px = max(u_px.x, u_px.y);
   vec3 color = base;
+  vec3 skinTone = texture(u_camera, vec2(u_cheekR.x, 1.0 - u_cheekR.y)).rgb;
+  vec3 lipInk = adaptInk(u_lip, skinTone);
+  vec3 blushInk = adaptInk(u_blush, skinTone);
 
   if (u_hairOn > 0.5 && hairW > 0.03) {
     float luma = dot(base, vec3(0.2126, 0.7152, 0.0722));
@@ -297,8 +311,8 @@ void main() {
     float gR = exp(-0.5 * dot(p - u_cheekR, p - u_cheekR) / (sigma * sigma + 1e-8));
     float gL = exp(-0.5 * dot(p - u_cheekL, p - u_cheekL) / (sigma * sigma + 1e-8));
     float blush = max(gR, gL) * u_blushPeak;
-    vec3 soft = softLight(color, u_blush);
-    vec3 mul = color * u_blush;
+    vec3 soft = softLight(color, blushInk);
+    vec3 mul = color * blushInk;
     color = mix(color, mix(soft, mul, 0.5), blush);
   }
 
@@ -309,7 +323,7 @@ void main() {
   }
 
   float kajalW = clamp(u_iod * u_kajalIod, px, px * u_kajalMax);
-  float blur = px * 1.5;
+  float blur = px * ${EYE_FEATHER_PX.toFixed(1)};
   vec3 ink = vec3(0.25, 0.14, 0.12);
   if (u_kajal > 0.5 && eye < 0.5) {
     float wingR = length(u_upR[0] - u_upR[8]) * u_wing;
@@ -329,9 +343,9 @@ void main() {
 
   if (u_lipOn > 0.5 && outer && !inner && hairW < 0.25 && eye < 0.5) {
     float dist = min(polyEdge(p, u_outer, 20), polyEdge(p, u_inner, 20));
-    float feather = smoothstep(0.0, px * 1.5, dist);
-    vec3 soft = softLight(base, u_lip);
-    vec3 mul = base * u_lip;
+    float feather = smoothstep(0.0, px * ${LIP_FEATHER_PX.toFixed(1)}, dist);
+    vec3 soft = softLight(base, lipInk);
+    vec3 mul = base * lipInk;
     color = mix(color, mix(soft, mul, 0.5), u_lipMix * feather);
   }
 
@@ -497,7 +511,7 @@ export function createLiveGl(canvas: HTMLCanvasElement): LiveGl | null {
       gl.uniform1f(loc("u_browOn"), hasFace && look.brow ? 1 : 0);
       gl.uniform1f(loc("u_hairOn"), look.hair ? 1 : 0);
       gl.uniform1f(loc("u_hairStrength"), Math.max(0, Math.min(0.5, look.hairStrength)));
-      const intensity = livePreset(options.bridal);
+      const intensity = livePreset(options.bridal, options.camera);
       gl.uniform1f(loc("u_lipMix"), intensity.lipMix);
       gl.uniform1f(loc("u_blushPeak"), intensity.blushPeak);
       gl.uniform1f(loc("u_browMix"), intensity.browMix);

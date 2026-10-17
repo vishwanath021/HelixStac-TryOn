@@ -17,7 +17,7 @@ import { BROW_COLOURS, BROW_THICKNESS, browsForAudience, type BrowColour, type B
 import { t } from "@/data/i18n";
 import { styleHasPhoto } from "@/data/style-photos";
 import { orderStylesForPicker, suggestStyles, type HairReading } from "@/lib/hair-suitability";
-import { captureShouldMirror, visiblePortraitCrop } from "@/lib/capture";
+import { blobForUpload, cameraVideoConstraints, portraitJpeg, raiseToNativeResolution, ORIGINAL_JPEG_QUALITY } from "@/lib/capture";
 import { alignGeneratedPhoto } from "@/lib/face/align-client";
 import { detectFaceLandmarks } from "@/lib/face/detect-client";
 import type { PlacementDebug } from "@/lib/face/pose";
@@ -365,9 +365,7 @@ export function TryOnApp({
       return;
     }
     // Ask in this click, before React paints, so the browser still treats it as the user gesture.
-    const pending = devices.getUserMedia({
-      video: { facingMode: nextFacing === "user" ? "user" : { ideal: "environment" } },
-    });
+    const pending = devices.getUserMedia({ video: cameraVideoConstraints(nextFacing) });
     flushSync(() => {
       setError("");
       setCameraError("");
@@ -414,6 +412,8 @@ export function TryOnApp({
       video.setAttribute("playsinline", "true");
       video.srcObject = stream;
       streamRef.current = stream;
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) await raiseToNativeResolution(videoTrack);
       await video.play();
       if (cameraGen.current !== gen) {
         stream.getTracks().forEach((track) => track.stop());
@@ -485,10 +485,9 @@ export function TryOnApp({
   }
 
   async function jpegFromBitmap(bitmap: ImageBitmap) {
-    const scale = Math.min(1, 1024 / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.width = Math.max(1, bitmap.width);
+    canvas.height = Math.max(1, bitmap.height);
     const ctx = canvas.getContext("2d");
     if (!ctx) {
       bitmap.close();
@@ -496,7 +495,7 @@ export function TryOnApp({
     }
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     bitmap.close();
-    return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", ORIGINAL_JPEG_QUALITY));
   }
 
   async function loadFile(file: Blob) {
@@ -529,23 +528,7 @@ export function TryOnApp({
   async function shutter() {
     const video = videoRef.current;
     if (!video || !cameraOn) return;
-    const srcW = video.videoWidth || 720;
-    const srcH = video.videoHeight || 960;
-    const crop = visiblePortraitCrop(srcW, srcH);
-    const scale = Math.min(1, 1024 / Math.max(crop.sw, crop.sh));
-    const width = Math.max(2, Math.round(crop.sw * scale));
-    const height = Math.max(2, Math.round(crop.sh * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    if (captureShouldMirror(facing)) {
-      ctx.translate(width, 0);
-      ctx.scale(-1, 1);
-    }
-    ctx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, width, height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    const blob = await portraitJpeg(video, facing);
     if (!blob) return;
     await applyBlob(blob);
   }
@@ -587,7 +570,7 @@ export function TryOnApp({
     setSuggestNote("");
     try {
       const body = new FormData();
-      body.set("photo", faceShot.blob, "selfie.jpg");
+      body.set("photo", await blobForUpload(faceShot.blob), "selfie.jpg");
       body.set("slug", config.slug);
       body.set("consentId", consentId);
       body.set("sessionId", sid || sessionId());
@@ -661,7 +644,7 @@ export function TryOnApp({
       const consentId = (await recordPhotoConsent()) || "";
       track("generate_requested", { styleId: chosen.id, tool: chosen.tool });
       const body = new FormData();
-      body.set("photo", shot.blob, "selfie.jpg");
+      body.set("photo", await blobForUpload(shot.blob), "selfie.jpg");
       body.set("slug", config.slug);
       body.set("styleId", chosen.id);
       body.set("tool", chosen.tool);

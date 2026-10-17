@@ -66,9 +66,11 @@ test("photo notice, countdown, live makeup, and metallic buttons", async ({ page
   await expect(page.locator("[data-studio='live']")).toBeVisible();
   await expect(page.locator("[data-makeup='live']")).toBeVisible();
   await expect(page.getByRole("button", { name: "Kajal" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Lashes" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Upload a photo instead" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Use photo" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Blush" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Lashes" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Brows" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Upload a photo instead" })).toBeVisible();
+  await expect(page.getByText("Live preview · Capture for the real AI look")).toBeVisible();
   const video = page.locator("[data-studio='live'] video");
   expect(await video.evaluate((el) => getComputedStyle(el).transform)).toBe("none");
   const boxes = await page.evaluate(() => {
@@ -92,7 +94,10 @@ test("photo notice, countdown, live makeup, and metallic buttons", async ({ page
   await expect.poll(async () => Number(await canvas.getAttribute("data-fps")), { timeout: 15_000 }).toBeGreaterThan(0);
   const fps = Number(await canvas.getAttribute("data-fps"));
   const degraded = await canvas.getAttribute("data-degraded");
-  console.log("LIVE_FPS", fps, "degraded", degraded, "edge", await canvas.getAttribute("data-edge"), "seg", await canvas.getAttribute("data-seg"));
+  const latency = Number(await canvas.getAttribute("data-latency"));
+  console.log("LIVE_FPS", fps, "degraded", degraded, "edge", await canvas.getAttribute("data-edge"), "seg", await canvas.getAttribute("data-seg"), "latency_ms", latency, "delegate", await canvas.getAttribute("data-delegate"));
+  expect(latency).toBeGreaterThanOrEqual(0);
+  expect(latency).toBeLessThan(40);
   if (fps < 24) expect(degraded).toBe("yes");
   await page.screenshot({ path: `${SHOTS}/04-live-makeup.png` });
   await page.getByRole("button", { name: "Close", exact: true }).click();
@@ -165,12 +170,11 @@ test("bridal catalogue, selfie copy, and header stay put", async ({ page }) => {
   await page.screenshot({ path: `${SHOTS}/375-everyday.png` });
   await page.getByRole("button", { name: "Bridal", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Bridal", exact: true })).toBeVisible();
-  await expect(page.getByText("Upload a selfie to see this look on you.")).toBeVisible();
-  const oval = page.locator("[data-step='selfie'] .rounded-\\[50\\%\\]");
-  const copy = page.getByText("Upload a selfie to see this look on you.");
-  const ovalBox = await oval.boundingBox();
-  const copyBox = await copy.boundingBox();
-  expect(ovalBox && copyBox && copyBox.y >= ovalBox.y + ovalBox.height - 4).toBeTruthy();
+  await expect(page.getByText("5. Your photo")).toBeVisible();
+  const photo = page.locator("[data-photo-box='face']");
+  await expect(photo.getByRole("button", { name: "Live makeup" })).toBeVisible();
+  await expect(photo.getByRole("button", { name: "Use photo" })).toBeVisible();
+  await expect(page.locator("[data-step='photo'] .rounded-\\[50\\%\\]")).toHaveCount(0);
   expect(await page.locator("header").count()).toBe(1);
   await page.locator("[data-scroll='salon']").evaluate((el) => { el.scrollTop = el.scrollHeight; });
   expect(await page.locator("header").count()).toBe(1);
@@ -219,7 +223,8 @@ test("bridal catalogue, selfie copy, and header stay put", async ({ page }) => {
     scroller.style.flex = "";
   });
   await page.locator("[data-step='hair']").scrollIntoViewIfNeeded();
-  await expect(page.getByText("Photo coming").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Keep my own hair" })).toBeVisible();
+  await expect(page.getByText("Photo coming")).toHaveCount(0);
   expect(missing).toEqual([]);
   await page.screenshot({ path: `${SHOTS}/375-hair.png` });
   expect(await header.evaluate((el) => Math.round(el.getBoundingClientRect().top))).toBe(0);

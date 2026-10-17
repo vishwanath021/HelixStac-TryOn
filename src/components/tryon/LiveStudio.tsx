@@ -62,6 +62,7 @@ export function LiveStudio({
   frozenUrl,
   makeup,
   footer,
+  note,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   ready: boolean;
@@ -83,6 +84,8 @@ export function LiveStudio({
   frozenUrl?: string;
   makeup?: ReactNode;
   footer?: ReactNode;
+  /** Sits under the back button so it does not push the shutter row onto the face. */
+  note?: string;
 }) {
   const [count, setCount] = useState<number | "capturing" | null>(null);
 
@@ -124,6 +127,7 @@ export function LiveStudio({
           </div>
         </div>
       </div>
+      {note ? <p className="pointer-events-none absolute inset-x-16 top-14 z-20 text-center text-[11px] leading-tight text-white/80">{note}</p> : null}
       <button className="cam-round absolute left-3 top-3 z-30" type="button" aria-label="Back" onClick={onBack}>‹</button>
       <button className="cam-round absolute right-3 top-3 z-30" type="button" aria-label="Close" onClick={onClose}>×</button>
       <StudioRail

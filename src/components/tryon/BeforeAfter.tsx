@@ -44,10 +44,11 @@ export function BeforeAfter({
         setFromClientX(event.clientX);
       }}
     >
-      <img src={after} alt={afterLabel} className="absolute inset-0 h-full w-full object-cover object-center" draggable={false} />
+      <img src={after} alt={afterLabel} data-side="after" className="absolute inset-0 h-full w-full object-cover object-center" draggable={false} />
       <img
         src={before}
         alt={beforeLabel}
+        data-side="before"
         className="absolute inset-0 h-full w-full object-cover object-center"
         draggable={false}
         style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }}

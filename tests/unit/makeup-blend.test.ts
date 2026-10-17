@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BRIDAL_LIVE, EVERYDAY_LIVE, blushAlpha, eyelinerAt, kajalWidthPx, liveEffectsFor, livePreset, pointOnLine, type Px } from "@/lib/face/makeup-blend";
+import { BRIDAL_LIVE, CAMERA_LIVE, EYE_FEATHER_PX, EVERYDAY_LIVE, LIP_FEATHER_PX, adaptMakeupRgb, blushAlpha, eyelinerAt, kajalWidthPx, liveEffectsFor, livePreset, pointOnLine, type Px } from "@/lib/face/makeup-blend";
 
 function almond() {
   const upper: Px[] = [];
@@ -116,6 +116,27 @@ describe("bridal live intensity", () => {
   it("leaves the eye opening empty even at the bridal stroke width", () => {
     const { upper, lower, center } = almond();
     expect(eyelinerAt(center, upper, lower, BRIDAL_LIVE.kajalMax, 28)).toBe(0);
+  });
+});
+
+describe("webcam preview", () => {
+  it("keeps lips and a soft kajal, and turns lashes and brows off", () => {
+    expect(livePreset(true, true)).toEqual(CAMERA_LIVE);
+    expect(CAMERA_LIVE.lashMix).toBe(0);
+    expect(CAMERA_LIVE.browMix).toBe(0);
+    expect(CAMERA_LIVE.kajalMix).toBeLessThan(EVERYDAY_LIVE.kajalMix);
+    expect(CAMERA_LIVE.blushPeak).toBeLessThan(EVERYDAY_LIVE.blushPeak);
+    expect(CAMERA_LIVE.lipMix).toBeGreaterThan(0.5);
+    expect(LIP_FEATHER_PX).toBeGreaterThanOrEqual(4);
+    expect(EYE_FEATHER_PX).toBeGreaterThanOrEqual(3);
+  });
+
+  it("moves a lipstick toward the sampled skin lightness and keeps the hue", () => {
+    const ink: [number, number, number] = [0.6, 0.08, 0.16];
+    const warm = adaptMakeupRgb(ink, [0.45, 0.32, 0.26]);
+    const deep = adaptMakeupRgb(ink, [0.25, 0.16, 0.12]);
+    expect(warm[0]).toBeGreaterThan(deep[0]);
+    expect(warm[0] / warm[1]).toBeCloseTo(ink[0] / ink[1], 1);
   });
 });
 
