@@ -14,7 +14,7 @@ import { DELETE as removeStaff, POST as inviteStaff } from "@/app/api/v1/admin/t
 import { LOCALES, t } from "@/data/i18n";
 import { csvCell } from "@/lib/csv";
 import { isPlatformHost } from "@/lib/host";
-import { salonGuestOrigin } from "@/lib/public-url";
+import { salonGuestOrigin, salonWelcomeLink } from "@/lib/public-url";
 import { prisma } from "@/lib/prisma";
 import { sessionIsCurrent } from "@/lib/session-revocation";
 
@@ -386,6 +386,12 @@ describe("salon qr host", () => {
       expect(await salonGuestOrigin(tenant.id, tenant.slug)).toBe(`https://${tenant.slug}.try.example.test`);
       await prisma.domain.update({ where: { host: "try.salon.example" }, data: { verified: true } });
       expect(await salonGuestOrigin(tenant.id, tenant.slug)).toBe("https://try.salon.example");
+      const welcome = salonWelcomeLink("https://try.salon.example");
+      expect(welcome.local).toBe(false);
+      expect(welcome.url).toBe("https://try.salon.example/welcome");
+      expect(salonWelcomeLink("http://meera.try.localhost").local).toBe(true);
+      expect(salonWelcomeLink("http://meera.try.localhost").url).toBe("");
+      expect(salonWelcomeLink("http://127.0.0.1:3000").url).toBe("");
     } finally {
       if (previousBase === undefined) delete process.env.APP_BASE_URL;
       else process.env.APP_BASE_URL = previousBase;

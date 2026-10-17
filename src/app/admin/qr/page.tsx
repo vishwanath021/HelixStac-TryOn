@@ -2,7 +2,7 @@ import Link from "next/link";
 import { planById } from "@/data/plans";
 import { appBaseUrl } from "@/lib/env";
 import { ownerFeatures } from "@/lib/features";
-import { salonGuestOrigin } from "@/lib/public-url";
+import { salonWelcomeTarget } from "@/lib/public-url";
 import { pageTenant } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +20,8 @@ export default async function QrAdminPage() {
   const embedOn = ownerFeatures().embed;
   const plan = planById(tenant.plan);
   const base = appBaseUrl();
-  const origin = await salonGuestOrigin(tenant.id, tenant.slug);
-  const pageUrl = `${origin}/?src=qr`;
+  const welcome = await salonWelcomeTarget(tenant.id, tenant.slug);
+  const pageUrl = welcome.url;
   const snippet = `<script src="${base}/embed.js" data-salon="${tenant.slug}" data-lang="${tenant.defaultLang}" defer></script>`;
   return (
     <main>
@@ -29,13 +29,19 @@ export default async function QrAdminPage() {
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <article className="card p-4">
           <h2 className="font-serif text-2xl">Standee</h2>
-          <img className="mt-3 w-48" src={`/api/v1/qr?slug=${tenant.slug}&format=png`} alt="" />
-          <div className="mt-3 flex flex-wrap gap-2">
-            <a className="btn" href={`/api/v1/qr?slug=${tenant.slug}&format=png`}>PNG</a>
-            <a className="btn secondary" href={`/api/v1/qr?slug=${tenant.slug}&format=svg`}>SVG</a>
-            <Link className="btn secondary" href={`/s/${tenant.slug}/qr`}>Printable page</Link>
-          </div>
-          <p className="mt-3 break-all text-xs text-muted">{pageUrl}</p>
+          {welcome.local ? (
+            <p className="mt-3 text-sm" role="alert" data-qr-warning="yes">This QR is not ready to print. The salon address is on this computer, not a real domain. Set the public domain, or verify the salon’s own domain, then print again.</p>
+          ) : (
+            <>
+              <img className="mt-3 w-48" src={`/api/v1/qr?slug=${tenant.slug}&format=png`} alt="" />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a className="btn" href={`/api/v1/qr?slug=${tenant.slug}&format=png`}>PNG</a>
+                <a className="btn secondary" href={`/api/v1/qr?slug=${tenant.slug}&format=svg`}>SVG</a>
+                <Link className="btn secondary" href={`/s/${tenant.slug}/qr`}>Printable page</Link>
+              </div>
+              <p className="mt-3 break-all text-xs text-muted" data-qr-url={pageUrl}>{pageUrl}</p>
+            </>
+          )}
         </article>
         {embedOn ? <article className="card p-4">
           <h2 className="font-serif text-2xl">Website embed</h2>

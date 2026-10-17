@@ -9,12 +9,12 @@ export function statusUrl(slug: string, ref: string) {
   return `${appBaseUrl()}${statusPath(slug, ref)}`;
 }
 
-export function joinedMessage(input: { salon: string; token: number; link: string }): NotifyMessage {
+export function joinedMessage(input: { salon: string; token: number; waitMin: number; link: string }): NotifyMessage {
   return {
     to: "",
     kind: "joined",
-    body: `${input.salon}: token ${input.token}. ${input.link}`,
-    parameters: [String(input.token), input.link],
+    body: `${input.salon}: you have joined, token ${input.token}, about ${input.waitMin} min. ${input.link}`,
+    parameters: [input.salon, String(input.token), String(input.waitMin), input.link],
   };
 }
 
