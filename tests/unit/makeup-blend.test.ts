@@ -120,9 +120,8 @@ describe("bridal live intensity", () => {
 });
 
 describe("webcam preview", () => {
-  it("keeps lips and a soft kajal, and turns lashes and brows off", () => {
+  it("keeps lips and a soft kajal, and turns brows off", () => {
     expect(livePreset(true, true)).toEqual(CAMERA_LIVE);
-    expect(CAMERA_LIVE.lashMix).toBe(0);
     expect(CAMERA_LIVE.browMix).toBe(0);
     expect(CAMERA_LIVE.kajalMix).toBeLessThan(EVERYDAY_LIVE.kajalMix);
     expect(CAMERA_LIVE.blushPeak).toBeLessThan(EVERYDAY_LIVE.blushPeak);
@@ -141,13 +140,12 @@ describe("webcam preview", () => {
 });
 
 describe("men’s live styling", () => {
-  const on = { lip: "#9B2335", kajal: true, lashes: true, blush: true, brow: true, hair: "#C45C26" };
+  const on = { lip: "#9B2335", kajal: true, blush: true, brow: true, hair: "#C45C26" };
 
   it("drops makeup and keeps hair", () => {
     expect(liveEffectsFor("men", on)).toEqual({
       lip: null,
       kajal: false,
-      lashes: false,
       blush: false,
       brow: false,
       hair: "#C45C26",

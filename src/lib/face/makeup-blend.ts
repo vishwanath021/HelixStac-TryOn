@@ -15,7 +15,6 @@ export const EVERYDAY_LIVE = {
   kajalIod: 0.02,
   kajalMax: 2.5,
   wing: 0.12,
-  lashMix: 0.35,
 };
 
 /** Bridal live look. Stronger colour, still outside the eye opening. */
@@ -27,14 +26,13 @@ export const BRIDAL_LIVE = {
   kajalIod: 0.045,
   kajalMax: 4,
   wing: 0.28,
-  lashMix: 0.55,
 };
 
 export type LiveIntensity = typeof EVERYDAY_LIVE;
 
 /**
  * Webcam preview. Lips stay readable. Kajal and blush stay soft.
- * Lashes and brows are off: they read as stickers at webcam resolution.
+ * Brows stay off. Live has no lash layer.
  */
 export const CAMERA_LIVE = {
   lipMix: 0.62,
@@ -44,7 +42,6 @@ export const CAMERA_LIVE = {
   kajalIod: 0.018,
   kajalMax: 2.2,
   wing: 0.08,
-  lashMix: 0,
 };
 
 export function livePreset(bridal?: boolean, camera = false): LiveIntensity {
@@ -222,7 +219,6 @@ export type LookAudience = "women" | "men" | "kids";
 export type LiveEffectFlags = {
   lip: string | null;
   kajal: boolean;
-  lashes: boolean;
   blush: boolean;
   brow: boolean;
   hair: string | null;
@@ -231,5 +227,5 @@ export type LiveEffectFlags = {
 /** Men’s live styling is hair and beard. Makeup stays off unless a bridal look asks for it. */
 export function liveEffectsFor<T extends LiveEffectFlags>(audience: LookAudience | undefined, effects: T): T {
   if (audience !== "men") return effects;
-  return { ...effects, lip: null, kajal: false, lashes: false, blush: false, brow: false };
+  return { ...effects, lip: null, kajal: false, blush: false, brow: false };
 }

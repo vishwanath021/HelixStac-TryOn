@@ -24,7 +24,6 @@ export function MakeupStage({
         video={video}
         lip={lip}
         kajal={kajal}
-        lashes={false}
         blush={blush}
         brow={false}
         makeup

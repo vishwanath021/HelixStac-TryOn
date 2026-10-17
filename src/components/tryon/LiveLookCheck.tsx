@@ -26,7 +26,7 @@ export function LiveLookCheck() {
         <figcaption className="absolute left-2 top-2 text-xs text-white">Before</figcaption>
       </figure>
       <figure className="relative mx-auto aspect-[3/4] w-full max-w-md overflow-hidden bg-black">
-        <LiveLookStage image={image} label="after" lip="#9B2335" kajal lashes blush brow bridal={bridal} />
+        <LiveLookStage image={image} label="after" lip="#9B2335" kajal blush brow bridal={bridal} />
         <figcaption className="absolute left-2 top-2 text-xs text-white">After</figcaption>
       </figure>
       <figure className="relative mx-auto aspect-[3/4] w-full max-w-md overflow-hidden bg-black">

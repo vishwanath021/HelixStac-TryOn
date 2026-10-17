@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { EYE_L, EYE_R, lookSamples, type Pt } from "@/lib/face/makeup-paint";
+import { EYE_L, EYE_R, IRIS, lookSamples, type Pt } from "@/lib/face/makeup-paint";
 import { LandmarkOneEuro } from "@/lib/face/one-euro";
 import type { LookAudience } from "@/lib/face/makeup-blend";
 import { createLiveGl, type LiveGl, type LiveLookOptions } from "@/lib/face/live-gl";
@@ -15,7 +15,6 @@ export type LiveLookProps = {
   image?: HTMLImageElement | null;
   lip?: string | null;
   kajal?: boolean;
-  lashes?: boolean;
   blush?: boolean;
   brow?: boolean;
   hair?: string | null;
@@ -29,6 +28,10 @@ export type LiveLookProps = {
   bridal?: boolean;
   /** Webcam preview uses the soft camera preset and reports draw latency. */
   camera?: boolean;
+  /** Longest edge of the detection frame. The camera stays on the live budget. */
+  sampleEdge?: number;
+  /** Copied onto the canvas after each painted frame so a test can wait for that frame. */
+  stamp?: number;
   label?: string;
   ariaLabel?: string;
   onPhase?: (phase: "loading" | "watching" | "tracking" | "fallback") => void;
@@ -58,6 +61,7 @@ function writeSamples(canvas: HTMLCanvasElement, points: Pt[]) {
   };
   ring(EYE_R, "eyeR");
   ring(EYE_L, "eyeL");
+  ring(IRIS, "iris");
 }
 
 function copyFloat(mask: { getAsFloat32Array: () => Float32Array } | undefined) {
@@ -102,7 +106,6 @@ export function LiveLookStage({
   image = null,
   lip = null,
   kajal = false,
-  lashes = false,
   blush = false,
   brow = false,
   hair = null,
@@ -112,13 +115,19 @@ export function LiveLookStage({
   audience,
   bridal = false,
   camera = false,
+  sampleEdge = LIVE_FULL_EDGE,
+  stamp = 0,
   label = "live",
   ariaLabel,
   onPhase,
 }: LiveLookProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const optionsRef = useRef<LiveLookOptions>({ lip, kajal, lashes, blush, brow, hair, hairStrength, hasMask: false, bridal, camera });
-  optionsRef.current = { lip, kajal, lashes, blush, brow, hair, hairStrength, hasMask: false, bridal, camera };
+  const optionsRef = useRef<LiveLookOptions>({ lip, kajal, blush, brow, hair, hairStrength, hasMask: false, bridal, camera });
+  optionsRef.current = { lip, kajal, blush, brow, hair, hairStrength, hasMask: false, bridal, camera };
+  const sampleEdgeRef = useRef(sampleEdge);
+  sampleEdgeRef.current = sampleEdge;
+  const stampRef = useRef(stamp);
+  stampRef.current = stamp;
   const audienceRef = useRef(audience);
   audienceRef.current = audience;
   const onPhaseRef = useRef(onPhase);
@@ -151,7 +160,7 @@ export function LiveLookStage({
     let mask: Uint8Array | null = null;
     let maskW = 0;
     let maskH = 0;
-    let edge = LIVE_FULL_EDGE;
+    let edge = sampleEdgeRef.current;
     let segInterval = LIVE_SEG_INTERVAL;
     let segOn = true;
     let frame = 0;
@@ -173,6 +182,7 @@ export function LiveLookStage({
         renderer.draw(shot, null, 0, 0, points, { ...options, hasMask: false }, audienceRef.current);
       }
       if (points) writeSamples(canvas, points);
+      canvas.dataset.stamp = String(stampRef.current);
       if (!shownRef.current) {
         shownRef.current = true;
         setShown(true);
@@ -337,7 +347,7 @@ export function LiveLookStage({
       if (video && typeof video.cancelVideoFrameCallback === "function") video.cancelVideoFrameCallback(handle.vfc);
       renderer.destroy();
     };
-  }, [image, video]);
+  }, [image, video, sampleEdge]);
 
   return (
     <canvas

@@ -10,6 +10,8 @@ import {
   EYE_L,
   EYE_R,
   INNER_LIP,
+  IRIS_L,
+  IRIS_R,
   LOWER_LASH_L,
   LOWER_LASH_R,
   OUTER_LIP,
@@ -18,12 +20,11 @@ import {
   type Pt,
 } from "@/lib/face/makeup-paint";
 import { HAIR_LUMA_LIFT, HAIR_LUMA_LIFT_END, HAIR_LUMA_LIFT_MIX, HAIR_LUMA_LIFT_START } from "@/lib/face/hair-mask";
-import { EYE_FEATHER_PX, LIP_FEATHER_PX, liveEffectsFor, livePreset, type LookAudience } from "@/lib/face/makeup-blend";
+import { EYE_FEATHER_PX, LINER_BLUR_PX, LIP_FEATHER_PX, liveEffectsFor, livePreset, type LookAudience } from "@/lib/face/makeup-blend";
 
 export type LiveLookOptions = {
   lip: string | null;
   kajal: boolean;
-  lashes: boolean;
   blush: boolean;
   brow: boolean;
   hair: string | null;
@@ -32,7 +33,7 @@ export type LiveLookOptions = {
   hasMask: boolean;
   /** Bridal live makeup uses a stronger preset. Everyday stays on the subtle numbers. */
   bridal?: boolean;
-  /** Webcam preview: lips, soft kajal, soft blush. Lashes and brows stay off. */
+  /** Webcam preview: lips, soft kajal, soft blush. Brows stay off. There is no lash layer. */
   camera?: boolean;
 };
 
@@ -68,6 +69,10 @@ uniform vec2 u_eyeR[16];
 uniform vec2 u_eyeL[16];
 uniform vec2 u_centerR;
 uniform vec2 u_centerL;
+uniform vec2 u_irisR;
+uniform vec2 u_irisL;
+uniform float u_irisRadR;
+uniform float u_irisRadL;
 uniform float u_iod;
 uniform vec3 u_lip;
 uniform vec3 u_hair;
@@ -79,7 +84,6 @@ uniform vec2 u_px;
 uniform float u_faceUv;
 uniform float u_lipOn;
 uniform float u_kajal;
-uniform float u_lashes;
 uniform float u_blushOn;
 uniform float u_browOn;
 uniform float u_hairOn;
@@ -92,7 +96,6 @@ uniform float u_kajalMix;
 uniform float u_kajalIod;
 uniform float u_kajalMax;
 uniform float u_wing;
-uniform float u_lashMix;
 
 bool insidePoly(vec2 p, vec2 poly[20], int n) {
   bool hit = false;
@@ -174,48 +177,7 @@ vec3 adaptInk(vec3 ink, vec3 skin) {
   return clamp(ink * scale, 0.0, 1.0);
 }
 
-float linerStroke(vec2 p, vec2 poly[9], float maxW, float blur, float wingLen) {
-  float best = 1.0;
-  float bestS = 1.0;
-  float total = 0.0;
-  float walked = 0.0;
-  for (int i = 0; i < 8; i++) total += length(poly[i + 1] - poly[i]);
-  for (int i = 0; i < 8; i++) {
-    vec2 a = poly[i];
-    vec2 b = poly[i + 1];
-    vec2 ab = b - a;
-    float seg = length(ab);
-    float t = clamp(dot(p - a, ab) / (dot(ab, ab) + 1e-6), 0.0, 1.0);
-    float d = length(p - (a + ab * t));
-    if (d < best) {
-      best = d;
-      bestS = (walked + t * seg) / (total + 1e-6);
-    }
-    walked += seg;
-  }
-  if (wingLen > 0.0001) {
-    vec2 wingDir = poly[0] - poly[1];
-    wingDir /= length(wingDir) + 1e-6;
-    vec2 tip = poly[0] + wingDir * wingLen;
-    vec2 wab = poly[0] - tip;
-    float wt = clamp(dot(p - tip, wab) / (dot(wab, wab) + 1e-6), 0.0, 1.0);
-    float wd = length(p - (tip + wab * wt));
-    if (wd < best) {
-      best = wd;
-      bestS = wt - 1.0;
-    }
-  }
-  float width = 0.0;
-  if (bestS > -1.0 && bestS < 1.0) {
-    if (bestS < 0.0) width = maxW * (1.0 + bestS);
-    else if (bestS <= 0.33) width = maxW;
-    else width = maxW * (1.0 - bestS) / 0.67;
-  }
-  if (width <= 0.0001) return 0.0;
-  return 1.0 - smoothstep(width * 0.5, width * 0.5 + blur, best);
-}
-
-float lashBand(vec2 p, vec2 poly[9], vec2 center) {
+float linerStroke(vec2 p, vec2 poly[9], vec2 center, float maxW, float blur, float wingLen) {
   float best = 1.0;
   float bestS = 1.0;
   vec2 closest = poly[0];
@@ -238,10 +200,39 @@ float lashBand(vec2 p, vec2 poly[9], vec2 center) {
     }
     walked += seg;
   }
-  if (bestS < 0.05 || bestS > 0.9) return 0.0;
-  if (dot(p - closest, closest - center) < 0.0) return 0.0;
-  float sigma = px * 2.4;
-  return exp(-0.5 * (best * best) / (sigma * sigma + 1e-8));
+  if (wingLen > 0.0001) {
+    vec2 wingDir = poly[0] - poly[1];
+    wingDir /= length(wingDir) + 1e-6;
+    vec2 tip = poly[0] + wingDir * wingLen;
+    vec2 wab = poly[0] - tip;
+    float wt = clamp(dot(p - tip, wab) / (dot(wab, wab) + 1e-6), 0.0, 1.0);
+    vec2 c = tip + wab * wt;
+    float wd = length(p - c);
+    if (wd < best) {
+      best = wd;
+      bestS = wt - 1.0;
+      closest = c;
+    }
+  }
+  if (dot(p - closest, closest - center) <= 0.0) return 0.0;
+  float width = 0.0;
+  if (bestS > -1.0 && bestS < 1.0) {
+    if (bestS < 0.0) width = maxW * (1.0 + bestS);
+    else if (bestS <= 0.33) width = maxW;
+    else width = maxW * (1.0 - bestS) / 0.67;
+  }
+  if (width <= 0.0001) return 0.0;
+  float reach = best - px;
+  if (reach < 0.0) return 0.0;
+  return 1.0 - smoothstep(width, width + blur, reach);
+}
+
+bool onIris(vec2 p) {
+  return length(p - u_irisR) <= u_irisRadR || length(p - u_irisL) <= u_irisRadL;
+}
+
+bool inEye(vec2 p) {
+  return inside16(p, u_eyeR) || inside16(p, u_eyeL);
 }
 
 float polyEdge(vec2 p, vec2 poly[20], int n) {
@@ -323,22 +314,17 @@ void main() {
   }
 
   float kajalW = clamp(u_iod * u_kajalIod, px, px * u_kajalMax);
-  float blur = px * ${EYE_FEATHER_PX.toFixed(1)};
+  float blur = px * ${LINER_BLUR_PX.toFixed(1)};
   vec3 ink = vec3(0.25, 0.14, 0.12);
-  if (u_kajal > 0.5 && eye < 0.5) {
+  if (u_kajal > 0.5 && !inEye(p) && !onIris(p)) {
     float wingR = length(u_upR[0] - u_upR[8]) * u_wing;
     float wingL = length(u_upL[0] - u_upL[8]) * u_wing;
     float line = 0.0;
-    line = max(line, linerStroke(p, u_upR, kajalW, blur, wingR));
-    line = max(line, linerStroke(p, u_loR, kajalW, blur, 0.0));
-    line = max(line, linerStroke(p, u_upL, kajalW, blur, wingL));
-    line = max(line, linerStroke(p, u_loL, kajalW, blur, 0.0));
+    line = max(line, linerStroke(p, u_upR, u_centerR, kajalW, blur, wingR));
+    line = max(line, linerStroke(p, u_loR, u_centerR, kajalW, blur, 0.0));
+    line = max(line, linerStroke(p, u_upL, u_centerL, kajalW, blur, wingL));
+    line = max(line, linerStroke(p, u_loL, u_centerL, kajalW, blur, 0.0));
     color = mix(color, color * ink, line * u_kajalMix);
-  }
-
-  if (u_lashes > 0.5 && eye < 0.5) {
-    float band = max(lashBand(p, u_upR, u_centerR), lashBand(p, u_upL, u_centerL));
-    color = mix(color, color * ink, band * u_lashMix);
   }
 
   if (u_lipOn > 0.5 && outer && !inner && hairW < 0.25 && eye < 0.5) {
@@ -491,6 +477,20 @@ export function createLiveGl(canvas: HTMLCanvasElement): LiveGl | null {
       gl.uniform2f(loc("u_centerL"), centerL.x, centerL.y);
       const irisR = pts[468] ?? centerR;
       const irisL = pts[473] ?? centerL;
+      const pxUv = Math.max(1 / Math.max(1, canvas.width), 1 / Math.max(1, canvas.height));
+      const disc = (center: Pt, ring: readonly number[]) => {
+        let radius = 0;
+        for (const index of ring) {
+          const point = pts[index];
+          if (!point) continue;
+          radius = Math.max(radius, Math.hypot(point.x - center.x, point.y - center.y));
+        }
+        return radius + pxUv;
+      };
+      gl.uniform2f(loc("u_irisR"), irisR.x, irisR.y);
+      gl.uniform2f(loc("u_irisL"), irisL.x, irisL.y);
+      gl.uniform1f(loc("u_irisRadR"), disc(irisR, IRIS_R));
+      gl.uniform1f(loc("u_irisRadL"), disc(irisL, IRIS_L));
       gl.uniform1f(loc("u_iod"), Math.hypot(irisR.x - irisL.x, irisR.y - irisL.y) || faceUv * 0.45);
       const lip = hexToRgb(look.lip || "#9B2335");
       const hair = hexToRgb(look.hair || "#5C3317");
@@ -506,7 +506,6 @@ export function createLiveGl(canvas: HTMLCanvasElement): LiveGl | null {
       gl.uniform1f(loc("u_faceUv"), faceUv);
       gl.uniform1f(loc("u_lipOn"), hasFace && look.lip ? 1 : 0);
       gl.uniform1f(loc("u_kajal"), hasFace && look.kajal ? 1 : 0);
-      gl.uniform1f(loc("u_lashes"), hasFace && look.lashes ? 1 : 0);
       gl.uniform1f(loc("u_blushOn"), hasFace && look.blush ? 1 : 0);
       gl.uniform1f(loc("u_browOn"), hasFace && look.brow ? 1 : 0);
       gl.uniform1f(loc("u_hairOn"), look.hair ? 1 : 0);
@@ -519,7 +518,6 @@ export function createLiveGl(canvas: HTMLCanvasElement): LiveGl | null {
       gl.uniform1f(loc("u_kajalIod"), intensity.kajalIod);
       gl.uniform1f(loc("u_kajalMax"), intensity.kajalMax);
       gl.uniform1f(loc("u_wing"), intensity.wing);
-      gl.uniform1f(loc("u_lashMix"), intensity.lashMix);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     },
     destroy() {
